@@ -1010,3 +1010,16 @@
 2026-04-15 13:45:09,505 - tgc_app - DEBUG - create:23 - Object created successfully in user_collections
 2026-04-15 13:45:39,095 - tgc_app - DEBUG - create:19 - Creating object in user_collections
 2026-04-15 13:45:39,123 - tgc_app - DEBUG - create:23 - Object created successfully in user_collections
+2026-04-15 20:05:43,966 - tgc_app - DEBUG - create:19 - Creating object in tgc
+2026-04-15 20:05:44,195 - tgc_app - DEBUG - create:23 - Object created successfully in tgc
+2026-04-15 20:05:44,195 - tgc_app - DEBUG - create:19 - Creating object in tgc
+2026-04-15 20:05:44,420 - tgc_app - DEBUG - create:23 - Object created successfully in tgc
+2026-04-15 20:05:44,420 - tgc_app - DEBUG - create:19 - Creating object in tgc
+2026-04-15 20:05:44,644 - tgc_app - DEBUG - create:23 - Object created successfully in tgc
+2026-04-15 20:05:52,898 - tgc_app - INFO - login:40 - Login attempt for: sanisisi
+2026-04-15 20:05:52,898 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-15 20:05:53,019 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-15 20:05:53,019 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-15 20:05:53,509 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-15 20:05:53,509 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-15 20:05:53,569 - tgc_app - INFO - login:46 - Login successful for: sanisisi

@@ -1,0 +1,8 @@
+backend/middleware.log
+backend/app/__pycache__/logger.cpython-311.pyc
+backend/app/__pycache__/main.cpython-311.pyc
+backend/app/database/__pycache__/connection.cpython-311.pyc
+backend/app/logs/app.log
+backend/app/services/__pycache__/auth_service.cpython-311.pyc
+backend/app/routes/__pycache__/auth.cpython-311.pyc
+backend/middleware.log

@@ -6,7 +6,21 @@ from app.models import Base
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/tgc_db")
+def resolve_database_url():
+    target = os.getenv("DATABASE_TARGET", "").strip().upper()
+    pre_url = os.getenv("DATABASE_URL_PRE")
+    pro_url = os.getenv("DATABASE_URL_PRO")
+    default_url = os.getenv("DATABASE_URL")
+
+    if target == "PRE" and pre_url:
+        return pre_url
+    if target == "PRO" and pro_url:
+        return pro_url
+
+    return default_url or pro_url or pre_url or "postgresql://user:password@localhost/tgc_db"
+
+
+DATABASE_URL = resolve_database_url()
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
