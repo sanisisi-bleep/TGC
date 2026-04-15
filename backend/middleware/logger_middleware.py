@@ -2,13 +2,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 import logging
 import time
-import json
+import sys
 
-# Configurar logging
 logging.basicConfig(
-    filename='middleware.log',
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    stream=sys.stdout,
 )
 
 class LoggerMiddleware(BaseHTTPMiddleware):
