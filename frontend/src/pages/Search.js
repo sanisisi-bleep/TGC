@@ -2,8 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { getGameConfig } from '../tcgConfig';
 
-const API_BASE = 'http://host.docker.internal:8000';
-
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 const normalize = (value) => (value || '').trim().toLowerCase();
 
 const buildOrderedOptions = (values, preferredOrder = []) => {
