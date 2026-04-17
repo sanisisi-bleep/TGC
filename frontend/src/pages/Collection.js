@@ -10,7 +10,14 @@ function Collection({ activeTcgSlug, activeTgc }) {
   const [decks, setDecks] = useState([]);
   const [updatingCardId, setUpdatingCardId] = useState(null);
   const [quantityInputs, setQuantityInputs] = useState({});
+  const [collectionView, setCollectionView] = useState(
+    () => localStorage.getItem('collectionViewMode') || 'detail'
+  );
   const navigate = useNavigate();
+
+  useEffect(() => {
+    localStorage.setItem('collectionViewMode', collectionView);
+  }, [collectionView]);
 
   useEffect(() => {
     if (!activeTgc?.id) {
@@ -132,71 +139,113 @@ function Collection({ activeTcgSlug, activeTgc }) {
         </div>
       </section>
 
-      <div className="collection-list">
+      <section className="panel view-toggle-panel">
+        <div className="view-toggle-copy">
+          <strong>Vista de coleccion</strong>
+          <span>Cambia entre una ficha amplia o una cuadricula compacta.</span>
+        </div>
+        <div className="view-toggle" role="tablist" aria-label="Vista de coleccion">
+          <button
+            type="button"
+            className={collectionView === 'detail' ? 'is-active' : ''}
+            onClick={() => setCollectionView('detail')}
+          >
+            Ficha
+          </button>
+          <button
+            type="button"
+            className={collectionView === 'grid' ? 'is-active' : ''}
+            onClick={() => setCollectionView('grid')}
+          >
+            Cuadricula
+          </button>
+          <button
+            type="button"
+            className={collectionView === 'inventory' ? 'is-active' : ''}
+            onClick={() => setCollectionView('inventory')}
+          >
+            Solo copias
+          </button>
+        </div>
+      </section>
+
+      <div className={`collection-list ${collectionView !== 'detail' ? 'is-grid' : ''}`}>
         {safeCollection.map((item) => {
           const isUpdating = updatingCardId === item.card.id;
+          const isInventoryView = collectionView === 'inventory';
 
           return (
-            <article key={item.card.id} className="collection-item">
+            <article
+              key={item.card.id}
+              className={`collection-item ${collectionView !== 'detail' ? 'is-grid' : ''} ${isInventoryView ? 'is-inventory' : ''}`}
+            >
               <div className="collection-visual">
                 <img src={item.card.image_url} alt={item.card.name} />
-                <div className="collection-stepper-panel">
-                  <span className="collection-panel-label">Copias</span>
-                  <div className="quantity-stepper-controls">
-                    <button
-                      type="button"
-                      onClick={() => adjustCollectionQuantity(item.card.id, -1)}
-                      disabled={isUpdating}
-                    >
-                      -
-                    </button>
-                    <span>x{item.total_quantity}</span>
-                    <button
-                      type="button"
-                      onClick={() => adjustCollectionQuantity(item.card.id, 1)}
-                      disabled={isUpdating}
-                    >
-                      +
-                    </button>
+                {isInventoryView ? (
+                  <div className="collection-count-panel">
+                    <span className="collection-panel-label">Copias</span>
+                    <strong>x{item.total_quantity}</strong>
+                    <span>Disponibles x{item.available_quantity}</span>
                   </div>
-
-                  <div className="collection-batch-editor">
-                    <div className="collection-batch-controls">
+                ) : (
+                  <div className="collection-stepper-panel">
+                    <span className="collection-panel-label">Copias</span>
+                    <div className="quantity-stepper-controls">
                       <button
                         type="button"
-                        className="secondary-inline-button secondary-inline-button-icon"
-                        onClick={() => applyManualCollectionChange(item.card.id, 'subtract')}
+                        onClick={() => adjustCollectionQuantity(item.card.id, -1)}
                         disabled={isUpdating}
-                        aria-label="Restar varias copias"
                       >
                         -
                       </button>
-                      <input
-                        id={`collection-quantity-${item.card.id}`}
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={quantityInputs[item.card.id] || '1'}
-                        onChange={(e) =>
-                          setQuantityInputs((current) => ({
-                            ...current,
-                            [item.card.id]: e.target.value,
-                          }))
-                        }
-                        disabled={isUpdating}
-                      />
+                      <span>x{item.total_quantity}</span>
                       <button
                         type="button"
-                        className="secondary-inline-button secondary-inline-button-icon"
-                        onClick={() => applyManualCollectionChange(item.card.id, 'add')}
+                        onClick={() => adjustCollectionQuantity(item.card.id, 1)}
                         disabled={isUpdating}
-                        aria-label="Sumar varias copias"
                       >
                         +
                       </button>
                     </div>
+
+                    <div className="collection-batch-editor">
+                      <div className="collection-batch-controls">
+                        <button
+                          type="button"
+                          className="secondary-inline-button secondary-inline-button-icon"
+                          onClick={() => applyManualCollectionChange(item.card.id, 'subtract')}
+                          disabled={isUpdating}
+                          aria-label="Restar varias copias"
+                        >
+                          -
+                        </button>
+                        <input
+                          id={`collection-quantity-${item.card.id}`}
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={quantityInputs[item.card.id] || '1'}
+                          onChange={(e) =>
+                            setQuantityInputs((current) => ({
+                              ...current,
+                              [item.card.id]: e.target.value,
+                            }))
+                          }
+                          disabled={isUpdating}
+                        />
+                        <button
+                          type="button"
+                          className="secondary-inline-button secondary-inline-button-icon"
+                          onClick={() => applyManualCollectionChange(item.card.id, 'add')}
+                          disabled={isUpdating}
+                          aria-label="Sumar varias copias"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               <div className="collection-main">
@@ -236,20 +285,22 @@ function Collection({ activeTcgSlug, activeTgc }) {
                   </div>
                 </div>
 
-                <div className="collection-actions">
-                  <span className="collection-panel-label">Agregar al mazo</span>
-                  <div className="deck-buttons">
-                    {decks.map((deck) => (
-                      <button
-                        key={deck.id}
-                        type="button"
-                        onClick={() => addCardToDeck(deck.id, item.card.id)}
-                      >
-                        Agregar a {deck.name}
-                      </button>
-                    ))}
+                {!isInventoryView && (
+                  <div className="collection-actions">
+                    <span className="collection-panel-label">Agregar al mazo</span>
+                    <div className="deck-buttons">
+                      {decks.map((deck) => (
+                        <button
+                          key={deck.id}
+                          type="button"
+                          onClick={() => addCardToDeck(deck.id, item.card.id)}
+                        >
+                          Agregar a {deck.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </article>
           );

@@ -13,6 +13,9 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const [selectedDeck, setSelectedDeck] = useState(null);
   const [draftDeckName, setDraftDeckName] = useState('');
   const [advancedMode, setAdvancedMode] = useState(false);
+  const [deckCardView, setDeckCardView] = useState(
+    () => localStorage.getItem('deckCardViewMode') || 'detail'
+  );
   const advancedDeckControlsEnabled = Boolean(
     selectedDeck?.advanced_mode !== undefined ? selectedDeck.advanced_mode : advancedMode
   );
@@ -49,6 +52,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
     fetchPreferences();
   }, [navigate]);
+
+  useEffect(() => {
+    localStorage.setItem('deckCardViewMode', deckCardView);
+  }, [deckCardView]);
 
   useEffect(() => {
     const deckId = location.state?.openDeckId;
@@ -385,6 +392,29 @@ function Decks({ activeTcgSlug, activeTgc }) {
                         </span>
                       )}
                     </div>
+                    <div className="view-toggle deck-view-toggle" role="tablist" aria-label="Vista del mazo">
+                      <button
+                        type="button"
+                        className={deckCardView === 'detail' ? 'is-active' : ''}
+                        onClick={() => setDeckCardView('detail')}
+                      >
+                        Ficha
+                      </button>
+                      <button
+                        type="button"
+                        className={deckCardView === 'grid' ? 'is-active' : ''}
+                        onClick={() => setDeckCardView('grid')}
+                      >
+                        Cuadricula
+                      </button>
+                      <button
+                        type="button"
+                        className={deckCardView === 'inventory' ? 'is-active' : ''}
+                        onClick={() => setDeckCardView('inventory')}
+                      >
+                        Solo copias
+                      </button>
+                    </div>
                   </div>
                   <div className="deck-detail-actions">
                     <button
@@ -417,9 +447,12 @@ function Decks({ activeTcgSlug, activeTgc }) {
                   </div>
                 </div>
 
-                <div className="deck-detail-grid">
+                <div className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''}`}>
                   {(selectedDeck?.cards || []).map((card) => (
-                    <article key={card.id} className={`deck-card-row ${card.missing_quantity > 0 ? 'has-missing-copies' : ''}`}>
+                    <article
+                      key={card.id}
+                      className={`deck-card-row ${card.missing_quantity > 0 ? 'has-missing-copies' : ''} ${deckCardView !== 'detail' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory' : ''}`}
+                    >
                       <img src={card.image_url} alt={card.name} />
                       <div className="deck-card-copy">
                         <h4>{card.name}</h4>
@@ -428,7 +461,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
                         <div className="deck-owned-panel">
                           <span>En colección: x{card.owned_quantity || 0}</span>
                         </div>
-                        {advancedDeckControlsEnabled && (
+                        {deckCardView !== 'inventory' && advancedDeckControlsEnabled && (
                           <div className="deck-advanced-panel">
                             <div className="deck-advanced-header">
                               <span className="deck-owned-popover-label">Ajustes avanzados del mazo</span>
@@ -471,7 +504,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
                             )}
                           </div>
                         )}
-                        {!advancedDeckControlsEnabled && (
+                        {deckCardView !== 'inventory' && !advancedDeckControlsEnabled && (
                           <div className="deck-advanced-hint">
                             Activa Ajustes avanzados en Configuración para marcar copias faltantes sin tocar tu colección.
                           </div>
@@ -494,29 +527,38 @@ function Decks({ activeTcgSlug, activeTgc }) {
                           <span className="deck-covered-text">Completa x{card.fulfilled_quantity || 0}</span>
                         )}
                       </div>
-                      <div className="deck-card-controls">
-                        <div className="quantity-stepper-controls deck-stepper-controls">
-                          <button
-                            type="button"
-                            onClick={() => adjustDeckCardQuantity(selectedDeck.id, card.id, -1)}
-                            disabled={updatingDeckCardId === card.id}
-                          >
-                            -
-                          </button>
-                          <span className="deck-stepper-value">x{card.quantity}</span>
-                          <button
-                            type="button"
-                            onClick={() => adjustDeckCardQuantity(selectedDeck.id, card.id, 1)}
-                            disabled={
-                              updatingDeckCardId === card.id ||
-                              card.quantity >= MAX_COPIES_PER_CARD
-                            }
-                          >
-                            +
-                          </button>
+                      {deckCardView === 'inventory' ? (
+                        <div className="deck-card-controls deck-card-controls-static">
+                          <div className="deck-card-quantity-display">
+                            <span className="collection-panel-label">Copias</span>
+                            <strong>x{card.quantity}</strong>
+                          </div>
                         </div>
-                        <span className="deck-card-limit-note">Max {MAX_COPIES_PER_CARD}</span>
-                      </div>
+                      ) : (
+                        <div className="deck-card-controls">
+                          <div className="quantity-stepper-controls deck-stepper-controls">
+                            <button
+                              type="button"
+                              onClick={() => adjustDeckCardQuantity(selectedDeck.id, card.id, -1)}
+                              disabled={updatingDeckCardId === card.id}
+                            >
+                              -
+                            </button>
+                            <span className="deck-stepper-value">x{card.quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => adjustDeckCardQuantity(selectedDeck.id, card.id, 1)}
+                              disabled={
+                                updatingDeckCardId === card.id ||
+                                card.quantity >= MAX_COPIES_PER_CARD
+                              }
+                            >
+                              +
+                            </button>
+                          </div>
+                          <span className="deck-card-limit-note">Max {MAX_COPIES_PER_CARD}</span>
+                        </div>
+                      )}
                     </article>
                   ))}
                 </div>
