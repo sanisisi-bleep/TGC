@@ -1,6 +1,7 @@
+import math
 from typing import List, Optional
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Card, UserCollection, Deck, DeckCard, Tgc, User
@@ -38,11 +39,116 @@ class CardService:
             "image_url": normalize_card_image_url(card.image_url),
         }
 
+    def _normalize_filter_value(self, value: Optional[str]) -> Optional[str]:
+        normalized = (value or "").strip()
+        return normalized or None
+
+    def _build_cards_query(
+        self,
+        tgc_id: Optional[int] = None,
+        search: Optional[str] = None,
+        card_type: Optional[str] = None,
+        color: Optional[str] = None,
+        rarity: Optional[str] = None,
+        set_name: Optional[str] = None,
+    ):
+        query = self.db.query(Card)
+
+        if tgc_id is not None:
+            query = query.filter(Card.tgc_id == tgc_id)
+
+        normalized_search = self._normalize_filter_value(search)
+        if normalized_search:
+            pattern = f"%{normalized_search}%"
+            query = query.filter(
+                or_(
+                    Card.name.ilike(pattern),
+                    Card.source_card_id.ilike(pattern),
+                )
+            )
+
+        normalized_type = self._normalize_filter_value(card_type)
+        if normalized_type:
+            query = query.filter(func.lower(Card.card_type) == normalized_type.lower())
+
+        normalized_color = self._normalize_filter_value(color)
+        if normalized_color:
+            query = query.filter(func.lower(Card.color) == normalized_color.lower())
+
+        normalized_rarity = self._normalize_filter_value(rarity)
+        if normalized_rarity:
+            query = query.filter(func.lower(Card.rarity) == normalized_rarity.lower())
+
+        normalized_set = self._normalize_filter_value(set_name)
+        if normalized_set:
+            query = query.filter(func.lower(Card.set_name) == normalized_set.lower())
+
+        return query
+
     def get_all_cards(self, tgc_id: Optional[int] = None) -> List[Card]:
         query = self.db.query(Card)
         if tgc_id is not None:
             query = query.filter(Card.tgc_id == tgc_id)
         return [self.serialize_card(card) for card in query.order_by(Card.name.asc()).all()]
+
+    def get_cards_page(
+        self,
+        tgc_id: Optional[int] = None,
+        search: Optional[str] = None,
+        card_type: Optional[str] = None,
+        color: Optional[str] = None,
+        rarity: Optional[str] = None,
+        set_name: Optional[str] = None,
+        page: int = 1,
+        limit: int = 100,
+    ):
+        query = self._build_cards_query(
+            tgc_id=tgc_id,
+            search=search,
+            card_type=card_type,
+            color=color,
+            rarity=rarity,
+            set_name=set_name,
+        )
+
+        total = query.count()
+        total_pages = math.ceil(total / limit) if total else 0
+        current_page = min(page, total_pages) if total_pages else 1
+        offset = (current_page - 1) * limit
+
+        items = (
+            query.order_by(Card.name.asc(), Card.id.asc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        return {
+            "items": [self.serialize_card(card) for card in items],
+            "page": current_page,
+            "limit": limit,
+            "total": total,
+            "total_pages": total_pages,
+            "has_previous": current_page > 1,
+            "has_next": total_pages > 0 and current_page < total_pages,
+        }
+
+    def _get_distinct_card_values(self, column, tgc_id: Optional[int] = None):
+        query = self.db.query(column).filter(column.isnot(None), column != "")
+
+        if tgc_id is not None:
+            query = query.filter(Card.tgc_id == tgc_id)
+
+        rows = query.distinct().order_by(func.lower(column).asc()).all()
+        return [value for value, in rows if value]
+
+    def get_card_facets(self, tgc_id: Optional[int] = None):
+        return {
+            "card_types": self._get_distinct_card_values(Card.card_type, tgc_id),
+            "colors": self._get_distinct_card_values(Card.color, tgc_id),
+            "rarities": self._get_distinct_card_values(Card.rarity, tgc_id),
+            "set_names": self._get_distinct_card_values(Card.set_name, tgc_id),
+        }
 
     def create_card(self, tgc_id: int, name: str, card_type: str = None, lv: int = None, cost: int = None, ap: int = None, hp: int = None, color: str = None, rarity: str = None, set_name: str = None, version: str = None, abilities: str = None, description: str = None, image_url: str = None) -> Card:
         card = Card(tgc_id=tgc_id, name=name, card_type=card_type, lv=lv, cost=cost, ap=ap, hp=hp, color=color, rarity=rarity, set_name=set_name, version=version, abilities=abilities, description=description, image_url=image_url)

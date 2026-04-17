@@ -25,7 +25,7 @@ os.environ["DATABASE_TARGET"] = POPULATE_DATABASE_TARGET
 from app.database.connection import SessionLocal, init_db
 
 #one-piece, gundam
-TCG_SLUG = os.getenv("TCG_SLUG", "gundam").strip().lower()
+TCG_SLUG = os.getenv("TCG_SLUG", "one-piece").strip().lower()
 MAX_RETRIES = int(os.getenv("POPULATE_RETRIES", "2"))
 REQUEST_TIMEOUT = int(os.getenv("POPULATE_REQUEST_TIMEOUT", "20"))
 CARDS_PAGE_LIMIT = max(1, int(os.getenv("CARDS_PAGE_LIMIT", "100")))

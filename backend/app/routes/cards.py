@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database.connection import get_db
@@ -27,9 +27,33 @@ class CardCreate(BaseModel):
     image_url: str = None
 
 @router.get("")
-def get_cards(tgc_id: Optional[int] = None, db: Session = Depends(get_db)):
+def get_cards(
+    tgc_id: Optional[int] = None,
+    search: Optional[str] = None,
+    card_type: Optional[str] = None,
+    color: Optional[str] = None,
+    rarity: Optional[str] = None,
+    set_name: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(100, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     service = CardService(db)
-    return service.get_all_cards(tgc_id)
+    return service.get_cards_page(
+        tgc_id=tgc_id,
+        search=search,
+        card_type=card_type,
+        color=color,
+        rarity=rarity,
+        set_name=set_name,
+        page=page,
+        limit=limit,
+    )
+
+@router.get("/facets")
+def get_card_facets(tgc_id: Optional[int] = None, db: Session = Depends(get_db)):
+    service = CardService(db)
+    return service.get_card_facets(tgc_id)
 
 @router.post("")
 def create_card(card: CardCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
