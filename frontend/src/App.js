@@ -7,9 +7,9 @@ import Search from './pages/Search';
 import Collection from './pages/Collection';
 import Decks from './pages/Decks';
 import Settings from './pages/Settings';
+import SharedDeck from './pages/SharedDeck';
 import { buildTcgMap, DEFAULT_TCG_SLUG, GAME_CONFIGS, getGameConfig } from './tcgConfig';
-
-const API_BASE = 'http://host.docker.internal:8000';
+import API_BASE from './apiBase';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
@@ -139,6 +139,7 @@ function App() {
               path="/decks"
               element={token ? <Decks activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} /> : <Navigate to="/" />}
             />
+            <Route path="/shared-deck/:shareToken" element={<SharedDeck />} />
             <Route path="/settings" element={token ? <Settings /> : <Navigate to="/" />} />
           </Routes>
         </main>

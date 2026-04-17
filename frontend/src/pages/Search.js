@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { getGameConfig } from '../tcgConfig';
-
-const API_BASE = 'http://host.docker.internal:8000';
+import API_BASE from '../apiBase';
 
 const normalize = (value) => (value || '').trim().toLowerCase();
 
@@ -19,6 +18,7 @@ const buildOrderedOptions = (values, preferredOrder = []) => {
 function Search({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const [cards, setCards] = useState([]);
+  const [decks, setDecks] = useState([]);
   const [filteredCards, setFilteredCards] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
@@ -29,6 +29,10 @@ function Search({ activeTcgSlug, activeTgc }) {
   });
   const [selectedCard, setSelectedCard] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState(null);
+  const [deckPickerCard, setDeckPickerCard] = useState(null);
+  const [newDeckName, setNewDeckName] = useState('');
+  const [submittingDeckAction, setSubmittingDeckAction] = useState(false);
 
   useEffect(() => {
     const fetchCards = async () => {
@@ -59,6 +63,38 @@ function Search({ activeTcgSlug, activeTgc }) {
   }, [activeTcgSlug, activeTgc]);
 
   useEffect(() => {
+    const fetchDecks = async () => {
+      if (!activeTgc?.id) {
+        return;
+      }
+
+      try {
+        const res = await axios.get(`${API_BASE}/decks`, {
+          params: { tgc_id: activeTgc.id },
+        });
+        const deckList = Array.isArray(res.data) ? res.data : [];
+        setDecks(deckList);
+      } catch (error) {
+        console.error('Error al cargar mazos para el buscador:', error);
+      }
+    };
+
+    fetchDecks();
+  }, [activeTcgSlug, activeTgc]);
+
+  useEffect(() => {
+    if (!toast) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setToast(null);
+    }, 2400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
+
+  useEffect(() => {
     let filtered = cards.filter((card) =>
       normalize(card.name).includes(normalize(searchTerm))
     );
@@ -87,14 +123,14 @@ function Search({ activeTcgSlug, activeTgc }) {
       const token = localStorage.getItem('token');
 
       if (!token) {
-        alert('Debes iniciar sesion para agregar cartas a tu coleccion');
+        setToast({ type: 'error', message: 'Debes iniciar sesion para agregar cartas a tu coleccion' });
         return;
       }
 
       const parsedCardId = Number(cardId);
 
       if (!Number.isInteger(parsedCardId) || parsedCardId <= 0) {
-        alert('Error: ID de carta invalido');
+        setToast({ type: 'error', message: 'Error: ID de carta invalido' });
         return;
       }
 
@@ -116,14 +152,14 @@ function Search({ activeTcgSlug, activeTgc }) {
       );
 
       console.log('Respuesta backend:', response.data);
-      alert('Carta agregada a la coleccion');
+      setToast({ type: 'success', message: 'Carta agregada a la coleccion' });
     } catch (error) {
       console.error('Error al agregar a la coleccion:', error);
       console.error('Status:', error.response?.status);
       console.error('Respuesta backend:', error.response?.data);
 
       if (error.response?.status === 401) {
-        alert('Sesion expirada. Por favor, inicia sesion de nuevo.');
+        setToast({ type: 'error', message: 'Sesion expirada. Por favor, inicia sesion de nuevo.' });
         localStorage.removeItem('token');
         return;
       }
@@ -139,7 +175,7 @@ function Search({ activeTcgSlug, activeTgc }) {
             })
             .join('\n');
 
-          alert(`Error de validacion:\n${errorMsg}`);
+          setToast({ type: 'error', message: `Error de validacion: ${errorMsg}` });
           return;
         }
       }
@@ -154,7 +190,83 @@ function Search({ activeTcgSlug, activeTgc }) {
         }
       }
 
-      alert(errorMsg);
+      setToast({ type: 'error', message: errorMsg });
+    }
+  };
+
+  const handleAddToDeck = async (cardId) => {
+    const card = cards.find((item) => item.id === cardId) || null;
+    setDeckPickerCard(card);
+    setNewDeckName(card ? `${card.name} Test` : '');
+  };
+
+  const addCardToExistingDeck = async (deckId) => {
+    if (!deckPickerCard) {
+      return;
+    }
+
+    setSubmittingDeckAction(true);
+
+    try {
+      await axios.post(`${API_BASE}/decks/${deckId}/cards`, {
+        card_id: deckPickerCard.id,
+        quantity: 1,
+      });
+      setToast({ type: 'success', message: 'Carta agregada al mazo' });
+      setDeckPickerCard(null);
+    } catch (error) {
+      setToast({
+        type: 'error',
+        message: error.response?.data?.detail || 'No se pudo agregar la carta al mazo',
+      });
+    } finally {
+      setSubmittingDeckAction(false);
+    }
+  };
+
+  const createDeckAndAddCard = async () => {
+    if (!deckPickerCard) {
+      return;
+    }
+
+    const trimmedDeckName = newDeckName.trim();
+    if (!trimmedDeckName) {
+      setToast({ type: 'error', message: 'Pon un nombre al mazo nuevo' });
+      return;
+    }
+
+    setSubmittingDeckAction(true);
+
+    try {
+      const createResponse = await axios.post(`${API_BASE}/decks`, {
+        name: trimmedDeckName,
+        tgc_id: activeTgc.id,
+      });
+
+      const deckId = createResponse.data?.id;
+      if (!deckId) {
+        throw new Error('Deck creation did not return an id');
+      }
+
+      await axios.post(`${API_BASE}/decks/${deckId}/cards`, {
+        card_id: deckPickerCard.id,
+        quantity: 1,
+      });
+
+      const res = await axios.get(`${API_BASE}/decks`, {
+        params: { tgc_id: activeTgc.id },
+      });
+      setDecks(Array.isArray(res.data) ? res.data : []);
+      setToast({ type: 'success', message: 'Mazo creado y carta agregada' });
+      setDeckPickerCard(null);
+      setNewDeckName('');
+    } catch (error) {
+      setToast({
+        type: 'error',
+        message: error.response?.data?.detail || 'No se pudo crear el mazo y agregar la carta',
+      });
+    } finally {
+      setSubmittingDeckAction(false);
     }
   };
 
@@ -203,6 +315,12 @@ function Search({ activeTcgSlug, activeTgc }) {
 
   return (
     <div className="search page-shell">
+      {toast && (
+        <div className={`floating-toast ${toast.type === 'error' ? 'is-error' : 'is-success'}`}>
+          {toast.message}
+        </div>
+      )}
+
       <section className="page-hero search-hero">
         <div>
           <span className="eyebrow">{activeGame.eyebrow}</span>
@@ -270,10 +388,11 @@ function Search({ activeTcgSlug, activeTgc }) {
           <option value="">Todas las expansiones</option>
           {uniqueExpansions.map((exp) => (
             <option key={exp} value={exp}>
-              {exp}
-            </option>
-          ))}
-        </select>
+            {exp}
+          </option>
+        ))}
+      </select>
+
       </div>
 
       <div className="cards-grid">
@@ -298,6 +417,16 @@ function Search({ activeTcgSlug, activeTgc }) {
                 }}
               >
                 Agregar a Coleccion
+              </button>
+              <button
+                type="button"
+                className="ghost-button card-secondary-action"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleAddToDeck(card.id);
+                }}
+              >
+                Agregar al Mazo
               </button>
             </div>
           ))
@@ -364,11 +493,88 @@ function Search({ activeTcgSlug, activeTgc }) {
 
             <button
               type="button"
+              className="ghost-button"
+              onClick={() => handleAddToCollection(selectedCard.id)}
+              style={{ marginTop: '20px', marginRight: '10px', padding: '10px 20px' }}
+            >
+              Agregar a Coleccion
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => handleAddToDeck(selectedCard.id)}
+              style={{ marginTop: '20px', marginRight: '10px', padding: '10px 20px' }}
+            >
+              Agregar al Mazo
+            </button>
+            <button
+              type="button"
               onClick={() => setSelectedCard(null)}
               style={{ marginTop: '20px', padding: '10px 20px' }}
             >
               Cerrar
             </button>
+          </div>
+        </div>
+      )}
+
+      {deckPickerCard && (
+        <div className="card-modal" onClick={() => !submittingDeckAction && setDeckPickerCard(null)}>
+          <div className="deck-picker-modal panel" onClick={(e) => e.stopPropagation()}>
+            <div className="settings-panel-header">
+              <h2>Anadir a mazo</h2>
+              <p>Elige un mazo existente o crea uno nuevo para {deckPickerCard.name}.</p>
+            </div>
+
+            <div className="deck-picker-section">
+              <span className="collection-panel-label">Mazos existentes</span>
+              <div className="deck-picker-list">
+                {decks.length > 0 ? (
+                  decks.map((deck) => (
+                    <button
+                      key={deck.id}
+                      type="button"
+                      className="deck-picker-option"
+                      onClick={() => addCardToExistingDeck(deck.id)}
+                      disabled={submittingDeckAction}
+                    >
+                      <strong>{deck.name}</strong>
+                      <span>Anadir 1 copia a este mazo</span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="collection-empty-text">Todavia no tienes mazos de {activeGame.shortName}.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="deck-picker-section">
+              <span className="collection-panel-label">Crear mazo nuevo</span>
+              <div className="deck-picker-create">
+                <input
+                  type="text"
+                  value={newDeckName}
+                  onChange={(e) => setNewDeckName(e.target.value)}
+                  placeholder={`Nuevo mazo de ${activeGame.shortName}`}
+                  maxLength={100}
+                  disabled={submittingDeckAction}
+                />
+                <button type="button" onClick={createDeckAndAddCard} disabled={submittingDeckAction}>
+                  {submittingDeckAction ? 'Procesando...' : 'Crear y anadir'}
+                </button>
+              </div>
+            </div>
+
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setDeckPickerCard(null)}
+                disabled={submittingDeckAction}
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

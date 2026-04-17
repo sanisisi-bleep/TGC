@@ -2,14 +2,14 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { getGameConfig } from '../tcgConfig';
-
-const API_BASE = 'http://host.docker.internal:8000';
+import API_BASE from '../apiBase';
 
 function Collection({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const [collection, setCollection] = useState([]);
   const [decks, setDecks] = useState([]);
   const [updatingCardId, setUpdatingCardId] = useState(null);
+  const [quantityInputs, setQuantityInputs] = useState({});
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,7 +26,17 @@ function Collection({ activeTcgSlug, activeTgc }) {
       const res = await axios.get(`${API_BASE}/collection`, {
         params: { tgc_id: activeTgc.id },
       });
-      setCollection(Array.isArray(res.data) ? res.data : []);
+      const items = Array.isArray(res.data) ? res.data : [];
+      setCollection(items);
+      setQuantityInputs((current) => {
+        const next = { ...current };
+        items.forEach((item) => {
+          if (item?.card?.id && !next[item.card.id]) {
+            next[item.card.id] = '1';
+          }
+        });
+        return next;
+      });
     } catch (error) {
       if (error.response?.status === 401) {
         navigate('/');
@@ -69,6 +79,18 @@ function Collection({ activeTcgSlug, activeTgc }) {
     } finally {
       setUpdatingCardId(null);
     }
+  };
+
+  const applyManualCollectionChange = async (cardId, direction) => {
+    const rawValue = quantityInputs[cardId] || '1';
+    const parsedValue = Number(rawValue);
+
+    if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+      alert('La cantidad debe ser un numero entero mayor que 0');
+      return;
+    }
+
+    await adjustCollectionQuantity(cardId, direction === 'add' ? parsedValue : -parsedValue);
   };
 
   const addCardToDeck = async (deckId, cardId) => {
@@ -137,6 +159,43 @@ function Collection({ activeTcgSlug, activeTgc }) {
                       +
                     </button>
                   </div>
+
+                  <div className="collection-batch-editor">
+                    <div className="collection-batch-controls">
+                      <button
+                        type="button"
+                        className="secondary-inline-button secondary-inline-button-icon"
+                        onClick={() => applyManualCollectionChange(item.card.id, 'subtract')}
+                        disabled={isUpdating}
+                        aria-label="Restar varias copias"
+                      >
+                        -
+                      </button>
+                      <input
+                        id={`collection-quantity-${item.card.id}`}
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={quantityInputs[item.card.id] || '1'}
+                        onChange={(e) =>
+                          setQuantityInputs((current) => ({
+                            ...current,
+                            [item.card.id]: e.target.value,
+                          }))
+                        }
+                        disabled={isUpdating}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-inline-button secondary-inline-button-icon"
+                        onClick={() => applyManualCollectionChange(item.card.id, 'add')}
+                        disabled={isUpdating}
+                        aria-label="Sumar varias copias"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -153,8 +212,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
                   </div>
 
                   <p className="collection-meta">
-                    {item.card.card_type || 'Sin tipo'} · {item.card.color || 'Sin color'} ·{' '}
-                    {item.card.rarity || 'Sin rareza'}
+                    {[item.card.card_type || 'Sin tipo', item.card.color || 'Sin color', item.card.rarity || 'Sin rareza'].join(' · ')}
                   </p>
 
                   <div className="collection-decks">
@@ -173,7 +231,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
                         ))}
                       </div>
                     ) : (
-                      <span className="collection-empty-text">Todavia no esta en ningun mazo.</span>
+                      <span className="collection-empty-text">Todav?a no esta en ning?n mazo.</span>
                     )}
                   </div>
                 </div>
@@ -200,7 +258,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
         {safeCollection.length === 0 && (
           <div className="empty-state panel">
             <h3>No hay cartas de {activeGame.shortName} en tu coleccion todavia</h3>
-            <p>Anade cartas desde el buscador para empezar a construir mazos.</p>
+            <p>A?ade cartas desde el buscador para empezar a construir mazos.</p>
           </div>
         )}
       </div>

@@ -11,7 +11,13 @@ CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(30) DEFAULT 'player',
+    display_name VARCHAR(100),
+    bio TEXT,
+    advanced_mode BOOLEAN DEFAULT FALSE,
+    favorite_tgc_id INTEGER REFERENCES tgc(id) ON DELETE SET NULL,
+    default_tgc_id INTEGER REFERENCES tgc(id) ON DELETE SET NULL
 );
  
 CREATE TABLE cards (
@@ -99,6 +105,7 @@ CREATE TABLE decks (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     tgc_id INTEGER REFERENCES tgc(id) ON DELETE CASCADE,
+    share_token VARCHAR(64) UNIQUE,
     name VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -107,7 +114,8 @@ CREATE TABLE deck_cards (
     id SERIAL PRIMARY KEY,
     deck_id INTEGER REFERENCES decks(id) ON DELETE CASCADE,
     card_id INTEGER REFERENCES cards(id) ON DELETE CASCADE,
-    quantity INTEGER NOT NULL DEFAULT 1
+    quantity INTEGER NOT NULL DEFAULT 1,
+    assigned_quantity INTEGER
 );
 
 CREATE UNIQUE INDEX idx_deck_cards_deck_card

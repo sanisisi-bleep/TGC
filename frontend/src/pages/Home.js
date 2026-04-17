@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { GAME_CONFIGS, getGameConfig } from '../tcgConfig';
-
-const API_BASE = 'http://host.docker.internal:8000';
+import API_BASE from '../apiBase';
 
 const PUBLIC_GAME_OPTIONS = Object.values(GAME_CONFIGS);
 

@@ -64,6 +64,28 @@ def ensure_game_detail_columns():
 def ensure_deck_columns():
     statements = [
         "ALTER TABLE decks ADD COLUMN IF NOT EXISTS tgc_id INTEGER",
+        "ALTER TABLE decks ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)",
+        "ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS assigned_quantity INTEGER",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_decks_share_token ON decks(share_token)",
+    ]
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
+def ensure_user_columns():
+    statements = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(30) DEFAULT 'player'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS advanced_mode BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_tgc_id INTEGER",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS default_tgc_id INTEGER",
+        "ALTER TABLE users ALTER COLUMN role SET DEFAULT 'player'",
+        "ALTER TABLE users ALTER COLUMN advanced_mode SET DEFAULT FALSE",
+        "UPDATE users SET role = 'player' WHERE role IS NULL OR trim(role) = ''",
+        "UPDATE users SET advanced_mode = FALSE WHERE advanced_mode IS NULL",
     ]
 
     with engine.begin() as connection:
@@ -75,6 +97,7 @@ def init_db():
     ensure_card_columns()
     ensure_game_detail_columns()
     ensure_deck_columns()
+    ensure_user_columns()
 
 def get_db():
     db = SessionLocal()

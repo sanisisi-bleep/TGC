@@ -83,7 +83,7 @@ def adjust_collection_quantity(
         return {
             "message": "Collection quantity updated",
             "card_id": card_id,
-            "quantity": collection.quantity,
+            "quantity": collection.quantity if collection else 0,
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

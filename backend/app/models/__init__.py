@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, TIMESTAMP, func
+from sqlalchemy import Boolean, Column, Integer, String, Text, ForeignKey, TIMESTAMP, func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -16,6 +16,15 @@ class User(Base):
     username = Column(String(50), unique=True, index=True)
     email = Column(String(100), unique=True, index=True)
     password_hash = Column(String(255))
+    role = Column(String(30), default="player")
+    display_name = Column(String(100))
+    bio = Column(Text)
+    advanced_mode = Column(Boolean, default=False)
+    favorite_tgc_id = Column(Integer, ForeignKey('tgc.id'))
+    default_tgc_id = Column(Integer, ForeignKey('tgc.id'))
+
+    favorite_tgc = relationship("Tgc", foreign_keys=[favorite_tgc_id])
+    default_tgc = relationship("Tgc", foreign_keys=[default_tgc_id])
 
 class Card(Base):
     __tablename__ = 'cards'
@@ -114,6 +123,7 @@ class Deck(Base):
     user_id = Column(Integer, ForeignKey('users.id'))
     tgc_id = Column(Integer, ForeignKey('tgc.id'))
     name = Column(String(100))
+    share_token = Column(String(64), unique=True, index=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     user = relationship("User")
@@ -125,6 +135,7 @@ class DeckCard(Base):
     deck_id = Column(Integer, ForeignKey('decks.id'))
     card_id = Column(Integer, ForeignKey('cards.id'))
     quantity = Column(Integer, default=1)
+    assigned_quantity = Column(Integer)
 
     deck = relationship("Deck")
     card = relationship("Card")

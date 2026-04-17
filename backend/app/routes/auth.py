@@ -26,7 +26,13 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         logger.warning(f"User already exists: {user.username} or {user.email}")
         raise HTTPException(status_code=400, detail="Username or email already registered")
     hashed_password = get_password_hash(user.password)
-    new_user = User(username=user.username, email=user.email, password_hash=hashed_password)
+    new_user = User(
+        username=user.username,
+        email=user.email,
+        password_hash=hashed_password,
+        display_name=user.username,
+        role="player",
+    )
     try:
         repo.create(new_user)
         logger.info(f"User registered successfully: {user.username}")
