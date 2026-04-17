@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -9,11 +10,11 @@ from app.models import User
 from app.database.repositories.user_repository import UserRepository
 from app.logger import logger
 
-SECRET_KEY = "kWmQ0x6vQd8TQJ9gM3m0Rz8lQ2n7vF4lB1zYcUoR9pA"  # Change this
+SECRET_KEY = os.getenv("SECRET_KEY", "kWmQ0x6vQd8TQJ9gM3m0Rz8lQ2n7vF4lB1zYcUoR9pA")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -78,5 +79,3 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
-from fastapi.security import OAuth2PasswordBearer
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")

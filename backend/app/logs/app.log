@@ -1264,3 +1264,87 @@
 2026-04-17 01:50:50,187 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
 2026-04-17 01:50:50,187 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
 2026-04-17 01:50:50,189 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 10:13:26,631 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 10:13:26,632 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 10:13:26,804 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 10:13:26,805 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 10:13:27,129 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 10:13:27,129 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 10:13:27,290 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 10:14:22,294 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 10:14:22,294 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 10:14:22,411 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 10:14:22,412 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 10:14:22,722 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 10:14:22,722 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 10:14:22,723 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 12:56:39,540 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 12:56:39,543 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 12:56:39,572 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 12:56:39,573 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 12:56:40,289 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 12:56:40,289 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 12:56:40,297 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 13:07:53,411 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 13:07:53,412 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 13:07:53,436 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 13:07:53,436 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 13:07:54,079 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 13:07:54,080 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 13:07:54,081 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 14:12:41,840 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 14:12:41,841 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 14:12:42,014 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 14:12:42,014 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 14:12:42,615 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 14:12:42,616 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 14:12:42,619 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 14:16:44,248 - tgc_app - DEBUG - create:19 - Creating object in user_collections
+2026-04-17 14:16:44,760 - tgc_app - DEBUG - create:23 - Object created successfully in user_collections
+2026-04-17 14:48:10,196 - tgc_app - INFO - login:46 - Login attempt for: sanisisisi
+2026-04-17 14:48:10,197 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisisi
+2026-04-17 14:48:10,213 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisisi
+2026-04-17 14:48:10,214 - tgc_app - WARNING - authenticate_user:53 - User not found: sanisisisi
+2026-04-17 14:48:10,214 - tgc_app - WARNING - login:49 - Login failed for: sanisisisi
+2026-04-17 14:48:16,606 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 14:48:16,607 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 14:48:16,622 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 14:48:16,623 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 14:48:17,142 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 14:48:17,142 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 14:48:17,145 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 15:20:54,265 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 15:20:54,268 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 15:20:54,330 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 15:20:54,331 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 15:20:55,007 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 15:20:55,007 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 15:20:55,008 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 15:45:14,133 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 15:45:14,133 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 15:45:14,141 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 15:45:14,141 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 15:45:14,426 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 15:45:14,426 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 15:45:14,427 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 16:04:19,185 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 16:04:19,187 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 16:04:19,260 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 16:04:19,260 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 16:04:19,802 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 16:04:19,803 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 16:04:19,804 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 17:39:47,487 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 17:39:47,489 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 17:39:47,500 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 17:39:47,501 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 17:39:48,042 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 17:39:48,042 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 17:39:48,042 - tgc_app - INFO - login:52 - Login successful for: sanisisi
+2026-04-17 21:50:03,567 - tgc_app - INFO - login:46 - Login attempt for: sanisisi
+2026-04-17 21:50:03,569 - tgc_app - INFO - authenticate_user:44 - Authenticating user: sanisisi
+2026-04-17 21:50:03,785 - tgc_app - DEBUG - authenticate_user:51 - Looking up by username: sanisisi
+2026-04-17 21:50:03,785 - tgc_app - DEBUG - authenticate_user:55 - User found: sanisisi
+2026-04-17 21:50:04,174 - tgc_app - DEBUG - verify_password:23 - Password verification: result=True
+2026-04-17 21:50:04,174 - tgc_app - INFO - authenticate_user:59 - Authentication successful for user: sanisisi
+2026-04-17 21:50:04,175 - tgc_app - INFO - login:52 - Login successful for: sanisisi
