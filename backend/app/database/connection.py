@@ -1,10 +1,11 @@
 import os
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+
+from app.env import load_environment
 from app.models import Base
 
-load_dotenv()
+load_environment()
 
 def resolve_database_url():
     target = os.getenv("DATABASE_TARGET", "").strip().upper()
@@ -17,12 +18,21 @@ def resolve_database_url():
     if target == "PRO" and pro_url:
         return pro_url
 
-    return default_url or pro_url or pre_url or "postgresql://user:password@localhost/tgc_db"
+    resolved_url = default_url or pro_url or pre_url
+    if resolved_url:
+        return resolved_url
+
+    if os.getenv("VERCEL") == "1":
+        raise RuntimeError(
+            "DATABASE_URL, DATABASE_URL_PRE, or DATABASE_URL_PRO must be set for Vercel deployments."
+        )
+
+    return "postgresql://user:password@localhost/tgc_db"
 
 
 DATABASE_URL = resolve_database_url()
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def ensure_card_columns():

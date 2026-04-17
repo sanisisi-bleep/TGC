@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from app.database.connection import get_db
+from app.logger import logger
 from app.services.auth_service import get_current_user
 from app.services.card_service import CardService
 from app.models import User, UserCollection, Card
@@ -35,7 +36,12 @@ def add_to_collection(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    print(f"DEBUG: add_to_collection called with item: {item}, user: {current_user.username}")
+    logger.debug(
+        "add_to_collection user=%s card_id=%s quantity=%s",
+        current_user.username,
+        item.card_id,
+        item.quantity,
+    )
 
     card = db.query(Card).filter(Card.id == item.card_id).first()
     if not card:

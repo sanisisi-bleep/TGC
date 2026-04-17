@@ -35,8 +35,24 @@ function Decks({ activeTcgSlug, activeTgc }) {
       return;
     }
 
-    fetchDecks();
-  }, [activeTcgSlug, activeTgc]);
+    const loadDecks = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/decks`, {
+          params: { tgc_id: activeTgc.id },
+        });
+        setDecks(Array.isArray(res.data) ? res.data : []);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          navigate('/');
+          return;
+        }
+
+        console.error('Error al cargar los mazos:', error);
+      }
+    };
+
+    loadDecks();
+  }, [activeTgc?.id, navigate]);
 
   useEffect(() => {
     const fetchPreferences = async () => {
@@ -60,7 +76,26 @@ function Decks({ activeTcgSlug, activeTgc }) {
   useEffect(() => {
     const deckId = location.state?.openDeckId;
     if (deckId) {
-      viewDeckDetails(deckId);
+      const openSelectedDeck = async () => {
+        setLoadingDetails(true);
+
+        try {
+          const res = await axios.get(`${API_BASE}/decks/${deckId}`);
+          setSelectedDeck(res.data);
+          setDraftDeckName(res.data?.name || '');
+        } catch (error) {
+          if (error.response?.status === 401) {
+            navigate('/');
+            return;
+          }
+
+          console.error('Error al cargar el detalle del mazo:', error);
+        } finally {
+          setLoadingDetails(false);
+        }
+      };
+
+      openSelectedDeck();
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.pathname, location.state, navigate]);

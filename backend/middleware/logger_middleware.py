@@ -1,33 +1,50 @@
+import os
+import time
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-import logging
-import time
-import json
 
-# Configurar logging
-logging.basicConfig(
-    filename='middleware.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+from app.logger import logger
+
+
+SENSITIVE_HEADERS = {"authorization", "cookie", "set-cookie"}
+
+
+def _is_enabled(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _sanitize_headers(headers):
+    return {
+        key: ("<redacted>" if key.lower() in SENSITIVE_HEADERS else value)
+        for key, value in headers.items()
+    }
+
+
+def _body_preview(body: bytes, limit: int = 2048) -> str:
+    preview = body.decode("utf-8", errors="ignore")
+    if len(preview) > limit:
+        return f"{preview[:limit]}...(truncated)"
+    return preview
+
 
 class LoggerMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         start_time = time.time()
 
-        # Log de la petición
-        logging.info(f"REQUEST: {request.method} {request.url}")
-        logging.info(f"Headers: {dict(request.headers)}")
+        logger.info("REQUEST %s %s", request.method, request.url.path)
+        if _is_enabled("LOG_REQUEST_HEADERS"):
+            logger.debug("Request headers: %s", _sanitize_headers(dict(request.headers)))
 
-        body = b''
+        body = b""
         if request.method in {"POST", "PUT", "PATCH"}:
             try:
                 body = await request.body()
-                logging.info(f"Body: {body}")
+                if _is_enabled("LOG_REQUEST_BODIES") and not request.url.path.startswith("/auth"):
+                    logger.debug("Request body: %s", _body_preview(body))
             except Exception as exc:
-                logging.error(f"Error reading request body: {exc}")
+                logger.warning("Error reading request body: %s", exc)
 
-        # Preserve request body for downstream consumers
         async def receive():
             return {"type": "http.request", "body": body, "more_body": False}
 
@@ -35,18 +52,13 @@ class LoggerMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
 
-        # Log de la respuesta
         process_time = time.time() - start_time
-        logging.info(f"RESPONSE: {response.status_code} in {process_time:.4f}s")
-        logging.info(f"Response Headers: {dict(response.headers)}")
-
-        try:
-            if hasattr(response, "body"):
-                response_body = response.body
-                if isinstance(response_body, (bytes, bytearray)):
-                    response_body = response_body.decode("utf-8", errors="ignore")
-                logging.info(f"Response Body: {response_body}")
-        except Exception as exc:
-            logging.error(f"Error reading response body: {exc}")
+        logger.info(
+            "RESPONSE %s %s status=%s duration=%.4fs",
+            request.method,
+            request.url.path,
+            response.status_code,
+            process_time,
+        )
 
         return response

@@ -1,16 +1,33 @@
 import os
 from datetime import datetime, timedelta
+
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
+
 from app.database.connection import get_db
+from app.env import load_environment
 from app.models import User
 from app.database.repositories.user_repository import UserRepository
 from app.logger import logger
 
-SECRET_KEY = os.getenv("SECRET_KEY", "kWmQ0x6vQd8TQJ9gM3m0Rz8lQ2n7vF4lB1zYcUoR9pA")
+load_environment()
+
+
+def resolve_secret_key():
+    secret_key = os.getenv("SECRET_KEY")
+    if secret_key:
+        return secret_key
+
+    if os.getenv("VERCEL") == "1":
+        raise RuntimeError("SECRET_KEY must be set for Vercel deployments.")
+
+    return "dev-only-secret-key-change-me"
+
+
+SECRET_KEY = resolve_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
@@ -36,7 +53,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt

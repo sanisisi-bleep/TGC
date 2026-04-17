@@ -24,9 +24,41 @@ function Collection({ activeTcgSlug, activeTgc }) {
       return;
     }
 
-    fetchCollection();
-    fetchDecks();
-  }, [activeTcgSlug, activeTgc]);
+    const loadCollectionPage = async () => {
+      try {
+        const [collectionRes, decksRes] = await Promise.all([
+          axios.get(`${API_BASE}/collection`, {
+            params: { tgc_id: activeTgc.id },
+          }),
+          axios.get(`${API_BASE}/decks`, {
+            params: { tgc_id: activeTgc.id },
+          }),
+        ]);
+
+        const items = Array.isArray(collectionRes.data) ? collectionRes.data : [];
+        setCollection(items);
+        setDecks(Array.isArray(decksRes.data) ? decksRes.data : []);
+        setQuantityInputs((current) => {
+          const next = { ...current };
+          items.forEach((item) => {
+            if (item?.card?.id && !next[item.card.id]) {
+              next[item.card.id] = '1';
+            }
+          });
+          return next;
+        });
+      } catch (error) {
+        if (error.response?.status === 401) {
+          navigate('/');
+          return;
+        }
+
+        console.error('Error al cargar la vista de coleccion:', error);
+      }
+    };
+
+    loadCollectionPage();
+  }, [activeTgc?.id, navigate]);
 
   const fetchCollection = async () => {
     try {
@@ -51,22 +83,6 @@ function Collection({ activeTcgSlug, activeTgc }) {
       }
 
       console.error('Error al cargar la coleccion:', error);
-    }
-  };
-
-  const fetchDecks = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}/decks`, {
-        params: { tgc_id: activeTgc.id },
-      });
-      setDecks(Array.isArray(res.data) ? res.data : []);
-    } catch (error) {
-      if (error.response?.status === 401) {
-        navigate('/');
-        return;
-      }
-
-      console.error('Error al cargar los mazos:', error);
     }
   };
 
