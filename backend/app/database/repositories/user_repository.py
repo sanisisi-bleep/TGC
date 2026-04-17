@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models import User
 from .base_repository import BaseRepository
@@ -7,7 +8,9 @@ class UserRepository(BaseRepository[User]):
         super().__init__(session, User)
 
     def get_by_username(self, username: str) -> User:
-        return self.session.query(User).filter(User.username == username).first()
+        normalized_username = (username or "").strip().lower()
+        return self.session.query(User).filter(func.lower(User.username) == normalized_username).first()
 
     def get_by_email(self, email: str) -> User:
-        return self.session.query(User).filter(User.email == email).first()
+        normalized_email = (email or "").strip().lower()
+        return self.session.query(User).filter(func.lower(User.email) == normalized_email).first()

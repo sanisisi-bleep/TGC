@@ -43,6 +43,14 @@ class CardService:
         normalized = (value or "").strip()
         return normalized or None
 
+    def _escape_like_pattern(self, value: str) -> str:
+        return (
+            value
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+
     def _build_cards_query(
         self,
         tgc_id: Optional[int] = None,
@@ -59,11 +67,11 @@ class CardService:
 
         normalized_search = self._normalize_filter_value(search)
         if normalized_search:
-            pattern = f"%{normalized_search}%"
+            pattern = f"%{self._escape_like_pattern(normalized_search)}%"
             query = query.filter(
                 or_(
-                    Card.name.ilike(pattern),
-                    Card.source_card_id.ilike(pattern),
+                    Card.name.ilike(pattern, escape="\\"),
+                    Card.source_card_id.ilike(pattern, escape="\\"),
                 )
             )
 

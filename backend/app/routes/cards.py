@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database.connection import get_db
 from app.services.card_service import CardService
-from app.services.auth_service import get_current_user
+from app.services.auth_service import get_current_user, require_admin_user
 from app.models import User
 
 router = APIRouter(prefix="/cards", tags=["cards"])
@@ -29,11 +29,11 @@ class CardCreate(BaseModel):
 @router.get("")
 def get_cards(
     tgc_id: Optional[int] = None,
-    search: Optional[str] = None,
-    card_type: Optional[str] = None,
-    color: Optional[str] = None,
-    rarity: Optional[str] = None,
-    set_name: Optional[str] = None,
+    search: Optional[str] = Query(None, max_length=100),
+    card_type: Optional[str] = Query(None, max_length=50),
+    color: Optional[str] = Query(None, max_length=20),
+    rarity: Optional[str] = Query(None, max_length=20),
+    set_name: Optional[str] = Query(None, max_length=255),
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -56,7 +56,11 @@ def get_card_facets(tgc_id: Optional[int] = None, db: Session = Depends(get_db))
     return service.get_card_facets(tgc_id)
 
 @router.post("")
-def create_card(card: CardCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_card(
+    card: CardCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_user),
+):
     service = CardService(db)
     return service.create_card(**card.dict())
 

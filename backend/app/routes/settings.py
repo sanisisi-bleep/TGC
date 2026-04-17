@@ -5,7 +5,7 @@ from sqlalchemy import delete
 
 from app.database.connection import get_db
 from app.models import Tgc, User, UserCollection, Deck, DeckCard
-from app.services.auth_service import get_current_user, get_password_hash, verify_password
+from app.services.auth_service import get_current_user, get_password_hash, require_admin_user, verify_password
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -60,12 +60,6 @@ def _ensure_tgc_exists(db: Session, tgc_id: int | None):
     if not exists:
         raise HTTPException(status_code=400, detail="TCG not found")
 
-
-def _ensure_admin(current_user):
-    if (current_user.role or "player") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-
-
 @router.get("/me")
 def get_my_settings(current_user=Depends(get_current_user)):
     return _serialize_user(current_user)
@@ -114,10 +108,8 @@ def update_password(
 @router.get("/users")
 def list_users(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_admin_user),
 ):
-    _ensure_admin(current_user)
-
     users = db.query(User).order_by(User.username.asc()).all()
     return [_serialize_user(user) for user in users]
 
@@ -127,10 +119,8 @@ def update_user_role(
     user_id: int,
     payload: AdminRoleUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_admin_user),
 ):
-    _ensure_admin(current_user)
-
     role = (payload.role or "").strip().lower()
     if role not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
