@@ -44,6 +44,12 @@ def ensure_card_columns():
         "ALTER TABLE cards ADD COLUMN IF NOT EXISTS link TEXT",
         "ALTER TABLE cards ADD COLUMN IF NOT EXISTS zones TEXT",
         "ALTER TABLE cards ADD COLUMN IF NOT EXISTS artist VARCHAR(255)",
+        "ALTER TABLE cards DROP CONSTRAINT IF EXISTS idx_cards_tgc_source_card_id",
+        "DROP INDEX IF EXISTS idx_cards_tgc_source_card_id",
+        (
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_cards_tgc_source_card_version "
+            "ON cards(tgc_id, source_card_id, version)"
+        ),
     ]
 
     with engine.begin() as connection:

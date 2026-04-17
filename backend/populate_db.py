@@ -25,7 +25,7 @@ os.environ["DATABASE_TARGET"] = POPULATE_DATABASE_TARGET
 from app.database.connection import SessionLocal, init_db
 
 #one-piece, gundam
-TCG_SLUG = os.getenv("TCG_SLUG", "one-piece").strip().lower()
+TCG_SLUG = os.getenv("TCG_SLUG", "gundam").strip().lower()
 MAX_RETRIES = int(os.getenv("POPULATE_RETRIES", "2"))
 REQUEST_TIMEOUT = int(os.getenv("POPULATE_REQUEST_TIMEOUT", "20"))
 CARDS_PAGE_LIMIT = max(1, int(os.getenv("CARDS_PAGE_LIMIT", "100")))
@@ -322,6 +322,109 @@ def build_card_data(api_card):
     return build_gundam_card_data(api_card)
 
 
+def normalize_card_identity(source_card_id, version):
+    return clean_text(source_card_id), clean_text(version).upper()
+
+
+def build_card_identity(card_data):
+    return normalize_card_identity(card_data.get("source_card_id"), card_data.get("version"))
+
+
+def score_card_data(card_data):
+    values = [
+        card_data.get("name"),
+        card_data.get("card_type"),
+        card_data.get("color"),
+        card_data.get("rarity"),
+        card_data.get("set_name"),
+        card_data.get("version"),
+        card_data.get("traits"),
+        card_data.get("link"),
+        card_data.get("zones"),
+        card_data.get("abilities"),
+        card_data.get("description"),
+        card_data.get("image_url"),
+    ]
+    score = sum(len(value.strip()) for value in values if isinstance(value, str) and value.strip())
+
+    for numeric_field in ("lv", "cost", "ap", "hp", "block"):
+        if card_data.get(numeric_field) is not None:
+            score += 5
+
+    detail_payload = card_data.get("detail_payload") or {}
+    for value in detail_payload.values():
+        if isinstance(value, str) and value.strip():
+            score += len(value.strip())
+        elif value is not None:
+            score += 5
+
+    return score
+
+
+def merge_card_data(primary, secondary):
+    merged = dict(secondary)
+    merged.update(primary)
+
+    for key in (
+        "name",
+        "card_type",
+        "color",
+        "rarity",
+        "set_name",
+        "version",
+        "traits",
+        "link",
+        "zones",
+        "artist",
+        "abilities",
+        "description",
+        "image_url",
+    ):
+        if clean_text(merged.get(key)):
+            continue
+        merged[key] = secondary.get(key) or primary.get(key)
+
+    for key in ("lv", "cost", "ap", "hp", "block"):
+        if merged.get(key) is None:
+            merged[key] = secondary.get(key) if secondary.get(key) is not None else primary.get(key)
+
+    primary_detail = primary.get("detail_payload") or {}
+    secondary_detail = secondary.get("detail_payload") or {}
+    merged_detail = dict(secondary_detail)
+    merged_detail.update(primary_detail)
+
+    for key in set(primary_detail) | set(secondary_detail):
+        primary_value = primary_detail.get(key)
+        secondary_value = secondary_detail.get(key)
+        if primary_value not in (None, ""):
+            merged_detail[key] = primary_value
+        else:
+            merged_detail[key] = secondary_value
+
+    merged["detail_payload"] = merged_detail
+    return merged
+
+
+def deduplicate_scraped_cards(scraped_cards):
+    deduplicated = {}
+    duplicate_count = 0
+
+    for card_data in scraped_cards:
+        identity = build_card_identity(card_data)
+        existing = deduplicated.get(identity)
+
+        if existing is None:
+            deduplicated[identity] = card_data
+            continue
+
+        duplicate_count += 1
+        preferred = card_data if score_card_data(card_data) >= score_card_data(existing) else existing
+        fallback = existing if preferred is card_data else card_data
+        deduplicated[identity] = merge_card_data(preferred, fallback)
+
+    return list(deduplicated.values()), duplicate_count
+
+
 def fetch_cards_page_with_retry(session, config, page):
     last_error = None
 
@@ -391,32 +494,33 @@ def scrape_cards_paginated(config):
 
 
 def upsert_cards(db, tgc_id, scraped_cards):
+    normalized_cards, duplicate_count = deduplicate_scraped_cards(scraped_cards)
     existing_cards = (
-        db.query(Card.id, Card.source_card_id, Card.image_url, Card.version, Card.name)
+        db.query(Card.id, Card.source_card_id, Card.version, Card.image_url, Card.name)
         .filter(Card.tgc_id == tgc_id)
         .all()
     )
 
-    existing_by_source = {
-        source_card_id: card_id
-        for card_id, source_card_id, _, _, _ in existing_cards
-        if source_card_id
-    }
-    existing_by_image = {
-        image_url: card_id
-        for card_id, _, image_url, _, _ in existing_cards
-        if image_url
-    }
     existing_by_identity = {
+        normalize_card_identity(source_card_id, version): card_id
+        for card_id, source_card_id, version, _, _ in existing_cards
+        if clean_text(source_card_id) and clean_text(version)
+    }
+    existing_without_source_by_image = {
+        image_url: card_id
+        for card_id, source_card_id, _, image_url, _ in existing_cards
+        if image_url and not clean_text(source_card_id)
+    }
+    existing_without_source_by_name = {
         (version, name): card_id
-        for card_id, _, _, version, name in existing_cards
-        if version and name
+        for card_id, source_card_id, version, _, name in existing_cards
+        if version and name and not clean_text(source_card_id)
     }
 
     update_rows = []
     insert_rows = []
 
-    for card_data in scraped_cards:
+    for card_data in normalized_cards:
         payload = {
             "tgc_id": tgc_id,
             "source_card_id": card_data["source_card_id"],
@@ -440,11 +544,14 @@ def upsert_cards(db, tgc_id, scraped_cards):
             "image_url": card_data["image_url"],
         }
 
-        existing_id = (
-            existing_by_source.get(card_data["source_card_id"])
-            or existing_by_image.get(card_data["image_url"])
-            or existing_by_identity.get((card_data["version"], card_data["name"]))
-        )
+        identity = build_card_identity(card_data)
+        existing_id = existing_by_identity.get(identity)
+
+        if existing_id is None and not clean_text(card_data["source_card_id"]):
+            existing_id = (
+                existing_without_source_by_image.get(card_data["image_url"])
+                or existing_without_source_by_name.get((card_data["version"], card_data["name"]))
+            )
 
         if existing_id:
             update_rows.append({"id": existing_id, **payload})
@@ -459,42 +566,48 @@ def upsert_cards(db, tgc_id, scraped_cards):
 
     db.commit()
 
-    sync_detail_tables(db, tgc_id, scraped_cards)
+    sync_detail_tables(db, tgc_id, normalized_cards)
 
     imported_keys = {
-        (card["source_card_id"], card["version"], card["name"])
-        for card in scraped_cards
+        build_card_identity(card)
+        for card in normalized_cards
     }
 
     stale_cards = [
         (source_card_id, version, name)
-        for _, source_card_id, _, version, name in existing_cards
-        if version and name and (source_card_id, version, name) not in imported_keys
+        for _, source_card_id, version, _, name in existing_cards
+        if clean_text(source_card_id) and clean_text(version)
+        and normalize_card_identity(source_card_id, version) not in imported_keys
     ]
 
     return {
         "updated": len(update_rows),
         "inserted": len(insert_rows),
         "stale": len(stale_cards),
+        "deduplicated": duplicate_count,
     }
 
 
 def sync_detail_tables(db, tgc_id, scraped_cards):
     card_rows = (
-        db.query(Card.id, Card.source_card_id)
+        db.query(Card.id, Card.source_card_id, Card.version)
         .filter(Card.tgc_id == tgc_id)
         .all()
     )
-    card_id_by_source = {source_card_id: card_id for card_id, source_card_id in card_rows}
+    card_id_by_identity = {
+        normalize_card_identity(source_card_id, version): card_id
+        for card_id, source_card_id, version in card_rows
+        if clean_text(source_card_id) and clean_text(version)
+    }
 
     if TCG_SLUG == "one-piece":
         existing_details = {
             detail.card_id: detail
-            for detail in db.query(OnePieceCard).filter(OnePieceCard.card_id.in_(card_id_by_source.values())).all()
+            for detail in db.query(OnePieceCard).filter(OnePieceCard.card_id.in_(card_id_by_identity.values())).all()
         }
 
         for card_data in scraped_cards:
-            card_id = card_id_by_source.get(card_data["source_card_id"])
+            card_id = card_id_by_identity.get(build_card_identity(card_data))
             if not card_id:
                 continue
 
@@ -527,11 +640,11 @@ def sync_detail_tables(db, tgc_id, scraped_cards):
     else:
         existing_details = {
             detail.card_id: detail
-            for detail in db.query(GundamCard).filter(GundamCard.card_id.in_(card_id_by_source.values())).all()
+            for detail in db.query(GundamCard).filter(GundamCard.card_id.in_(card_id_by_identity.values())).all()
         }
 
         for card_data in scraped_cards:
-            card_id = card_id_by_source.get(card_data["source_card_id"])
+            card_id = card_id_by_identity.get(build_card_identity(card_data))
             if not card_id:
                 continue
 
@@ -589,6 +702,7 @@ def main():
         print(f"- Inserted: {result['inserted']}")
         print(f"- Updated: {result['updated']}")
         print(f"- Existing not seen in this run: {result['stale']}")
+        print(f"- Deduplicated exact repeats: {result['deduplicated']}")
         print(f"- Failed page fetches: {len(failures)}")
 
         if failures:
