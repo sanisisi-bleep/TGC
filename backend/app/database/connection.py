@@ -35,6 +35,12 @@ DATABASE_URL = resolve_database_url()
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
+def _run_schema_statements(statements):
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
 def ensure_card_columns():
     # Lightweight schema sync for new card metadata columns on existing PostgreSQL databases.
     statements = [
@@ -70,9 +76,7 @@ def ensure_card_columns():
         ),
     ]
 
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+    _run_schema_statements(statements)
 
 
 def ensure_game_detail_columns():
@@ -90,9 +94,7 @@ def ensure_game_detail_columns():
         "ALTER TABLE one_piece_cards ADD COLUMN IF NOT EXISTS ability TEXT",
     ]
 
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+    _run_schema_statements(statements)
 
 
 def ensure_deck_columns():
@@ -107,9 +109,7 @@ def ensure_deck_columns():
         "CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_card_id ON deck_cards(deck_id, card_id)",
     ]
 
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+    _run_schema_statements(statements)
 
 
 def ensure_user_columns():
@@ -126,9 +126,7 @@ def ensure_user_columns():
         "UPDATE users SET advanced_mode = FALSE WHERE advanced_mode IS NULL",
     ]
 
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+    _run_schema_statements(statements)
 
 
 def ensure_collection_indexes():
@@ -138,9 +136,7 @@ def ensure_collection_indexes():
         "CREATE INDEX IF NOT EXISTS idx_user_collections_card_id ON user_collections(card_id)",
     ]
 
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+    _run_schema_statements(statements)
 
 def init_db():
     Base.metadata.create_all(bind=engine)

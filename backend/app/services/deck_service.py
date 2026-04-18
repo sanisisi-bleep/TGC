@@ -12,6 +12,62 @@ class DeckService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _get_user_deck_or_error(self, deck_id: int, user_id: int) -> Deck:
+        deck = (
+            self.db.query(Deck)
+            .filter(Deck.id == deck_id, Deck.user_id == user_id)
+            .first()
+        )
+        if not deck:
+            raise ValueError("Deck not found")
+        return deck
+
+    def _get_deck_card_or_error(self, deck_id: int, card_id: int) -> DeckCard:
+        deck_card = (
+            self.db.query(DeckCard)
+            .filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id)
+            .first()
+        )
+        if not deck_card:
+            raise ValueError("Card not found in deck")
+        return deck_card
+
+    def _get_rules_for_deck(self, deck: Deck):
+        deck_tgc = self._resolve_deck_tgc(deck)
+        rules = get_tcg_rules(deck_tgc.name if deck_tgc else None)
+        return deck_tgc, rules
+
+    def _validate_quantity_rules(self, deck_tgc, rules: dict, next_quantity: int, next_total: int):
+        if next_quantity > rules["max_copies_per_card"]:
+            raise ValueError(
+                f"You can only have up to {rules['max_copies_per_card']} copies of this card in this deck"
+            )
+
+        if next_total > rules["deck_max_cards"]:
+            raise ValueError(
+                f"{deck_tgc.name if deck_tgc else 'This TCG'} decks cannot exceed {rules['deck_max_cards']} cards"
+            )
+
+    def _clamp_assigned_quantity(self, deck_card: DeckCard):
+        if deck_card.assigned_quantity is not None:
+            deck_card.assigned_quantity = min(deck_card.assigned_quantity, deck_card.quantity)
+
+    def _serialize_shared_deck_card(self, deck_card: DeckCard, card: Card):
+        return {
+            "id": card.id,
+            "source_card_id": card.source_card_id,
+            "name": card.name,
+            "image_url": normalize_card_image_url(card.image_url),
+            "card_type": card.card_type,
+            "lv": card.lv,
+            "cost": card.cost,
+            "color": card.color,
+            "rarity": card.rarity,
+            "set_name": card.set_name,
+            "version": card.version,
+            "quantity": deck_card.quantity,
+        }
+
     def _get_tgc_by_id(self, tgc_id: Optional[int]):
         if tgc_id is None:
             return None
@@ -253,9 +309,7 @@ class DeckService:
         return deck
 
     def rename_deck(self, deck_id: int, user_id: int, name: str):
-        deck = self.db.query(Deck).filter(Deck.id == deck_id, Deck.user_id == user_id).first()
-        if not deck:
-            raise ValueError("Deck not found")
+        deck = self._get_user_deck_or_error(deck_id, user_id)
 
         cleaned_name = (name or "").strip()
         if not cleaned_name:
@@ -267,9 +321,7 @@ class DeckService:
         return deck
 
     def delete_deck(self, deck_id: int, user_id: int):
-        deck = self.db.query(Deck).filter(Deck.id == deck_id, Deck.user_id == user_id).first()
-        if not deck:
-            raise ValueError("Deck not found")
+        deck = self._get_user_deck_or_error(deck_id, user_id)
 
         self.db.query(DeckCard).filter(DeckCard.deck_id == deck.id).delete(synchronize_session=False)
         self.db.delete(deck)
@@ -277,9 +329,7 @@ class DeckService:
         return deck
 
     def clone_deck(self, deck_id: int, user_id: int):
-        source_deck = self.db.query(Deck).filter(Deck.id == deck_id, Deck.user_id == user_id).first()
-        if not source_deck:
-            raise ValueError("Deck not found")
+        source_deck = self._get_user_deck_or_error(deck_id, user_id)
 
         cloned_deck = Deck(
             user_id=user_id,
@@ -305,9 +355,7 @@ class DeckService:
         return cloned_deck
 
     def ensure_share_token(self, deck_id: int, user_id: int):
-        deck = self.db.query(Deck).filter(Deck.id == deck_id, Deck.user_id == user_id).first()
-        if not deck:
-            raise ValueError("Deck not found")
+        deck = self._get_user_deck_or_error(deck_id, user_id)
 
         if not deck.share_token:
             deck.share_token = self._generate_share_token()
@@ -346,31 +394,14 @@ class DeckService:
             "max_copies_per_card": rules["max_copies_per_card"],
             "is_complete": total_cards >= rules["deck_min_cards"] and total_cards <= rules["deck_max_cards"],
             "cards": [
-                {
-                    "id": card.id,
-                    "source_card_id": card.source_card_id,
-                    "name": card.name,
-                    "image_url": normalize_card_image_url(card.image_url),
-                    "card_type": card.card_type,
-                    "lv": card.lv,
-                    "cost": card.cost,
-                    "color": card.color,
-                    "rarity": card.rarity,
-                    "set_name": card.set_name,
-                    "version": card.version,
-                    "quantity": deck_card.quantity,
-                }
+                self._serialize_shared_deck_card(deck_card, card)
                 for deck_card, card in deck_cards
             ],
         }
 
     def add_card_to_deck(self, deck_id: int, card_id: int, quantity: int, user_id: int):
-        # Check if user owns the deck
-        deck = self.db.query(Deck).filter(Deck.id == deck_id, Deck.user_id == user_id).first()
-        if not deck:
-            raise ValueError("Deck not found")
-        deck_tgc = self._resolve_deck_tgc(deck)
-        rules = get_tcg_rules(deck_tgc.name if deck_tgc else None)
+        deck = self._get_user_deck_or_error(deck_id, user_id)
+        deck_tgc, rules = self._get_rules_for_deck(deck)
 
         if quantity <= 0:
             raise ValueError("Quantity must be greater than zero")
@@ -388,18 +419,11 @@ class DeckService:
         total_cards_in_deck = self._get_deck_total_quantity(deck_id)
         next_total = total_cards_in_deck - current_quantity + next_quantity
 
-        if next_quantity > rules["max_copies_per_card"]:
-            raise ValueError(
-                f"You can only have up to {rules['max_copies_per_card']} copies of this card in this deck"
-            )
-
-        if next_total > rules["deck_max_cards"]:
-            raise ValueError(f"{deck_tgc.name if deck_tgc else 'This TCG'} decks cannot exceed {rules['deck_max_cards']} cards")
+        self._validate_quantity_rules(deck_tgc, rules, next_quantity, next_total)
 
         if deck_card:
             deck_card.quantity = next_quantity
-            if deck_card.assigned_quantity is not None:
-                deck_card.assigned_quantity = min(deck_card.assigned_quantity, next_quantity)
+            self._clamp_assigned_quantity(deck_card)
         else:
             deck_card = DeckCard(deck_id=deck_id, card_id=card_id, quantity=quantity)
             self.db.add(deck_card)
@@ -407,31 +431,15 @@ class DeckService:
         return deck_card
 
     def adjust_deck_card_quantity(self, deck_id: int, card_id: int, delta: int, user_id: int):
-        deck = self.db.query(Deck).filter(Deck.id == deck_id, Deck.user_id == user_id).first()
-        if not deck:
-            raise ValueError("Deck not found")
-        deck_tgc = self._resolve_deck_tgc(deck)
-        rules = get_tcg_rules(deck_tgc.name if deck_tgc else None)
-
-        deck_card = (
-            self.db.query(DeckCard)
-            .filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id)
-            .first()
-        )
-        if not deck_card:
-            raise ValueError("Card not found in deck")
+        deck = self._get_user_deck_or_error(deck_id, user_id)
+        deck_tgc, rules = self._get_rules_for_deck(deck)
+        deck_card = self._get_deck_card_or_error(deck_id, card_id)
 
         next_quantity = deck_card.quantity + delta
         total_cards_in_deck = self._get_deck_total_quantity(deck_id)
         next_total = total_cards_in_deck - deck_card.quantity + max(next_quantity, 0)
 
-        if next_quantity > rules["max_copies_per_card"]:
-            raise ValueError(
-                f"You can only have up to {rules['max_copies_per_card']} copies of this card in this deck"
-            )
-
-        if next_total > rules["deck_max_cards"]:
-            raise ValueError(f"{deck_tgc.name if deck_tgc else 'This TCG'} decks cannot exceed {rules['deck_max_cards']} cards")
+        self._validate_quantity_rules(deck_tgc, rules, next_quantity, next_total)
 
         if next_quantity <= 0:
             self.db.delete(deck_card)
@@ -439,24 +447,14 @@ class DeckService:
             return None
 
         deck_card.quantity = next_quantity
-        if deck_card.assigned_quantity is not None:
-            deck_card.assigned_quantity = min(deck_card.assigned_quantity, next_quantity)
+        self._clamp_assigned_quantity(deck_card)
         self.db.commit()
         self.db.refresh(deck_card)
         return deck_card
 
     def adjust_deck_card_assignment(self, deck_id: int, card_id: int, delta: int, user_id: int):
-        deck = self.db.query(Deck).filter(Deck.id == deck_id, Deck.user_id == user_id).first()
-        if not deck:
-            raise ValueError("Deck not found")
-
-        deck_card = (
-            self.db.query(DeckCard)
-            .filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id)
-            .first()
-        )
-        if not deck_card:
-            raise ValueError("Card not found in deck")
+        self._get_user_deck_or_error(deck_id, user_id)
+        deck_card = self._get_deck_card_or_error(deck_id, card_id)
 
         owned_quantity = self._get_owned_quantity(user_id, card_id)
         max_coverable_quantity = min(deck_card.quantity, owned_quantity)

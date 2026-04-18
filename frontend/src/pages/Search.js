@@ -1,13 +1,33 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
+import SearchCardDetailModal from '../components/search/SearchCardDetailModal';
+import SearchCardTile from '../components/search/SearchCardTile';
+import SearchDeckPickerModal from '../components/search/SearchDeckPickerModal';
+import SearchFiltersPanel from '../components/search/SearchFiltersPanel';
+import SearchResultsToolbar from '../components/search/SearchResultsToolbar';
 import { getGameConfig } from '../tcgConfig';
 import { useToast } from '../context/ToastContext';
 import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
+import {
+  readCacheMap,
+  readStoredEnumValue,
+  setLimitedCacheEntry,
+  writeCacheMap,
+  writeStoredValue,
+} from '../utils/searchCache';
 
 const SEARCH_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const DEFAULT_PAGE_SIZE = 100;
+const SEARCH_CARD_VIEW_MODES = ['detail', 'compact'];
 const SEARCH_INPUT_DELAY_MS = 280;
+const SEARCH_CACHE_STORAGE_KEYS = {
+  cards: 'tgc-search-cards-cache-v1',
+  facets: 'tgc-search-facets-cache-v1',
+  decks: 'tgc-search-decks-cache-v1',
+  pageSize: 'tgc-search-page-size-v1',
+  cardViewMode: 'tgc-search-card-view-mode-v1',
+};
 const createEmptyResults = (limit = DEFAULT_PAGE_SIZE) => ({
   items: [],
   page: 1,
@@ -123,16 +143,25 @@ function Search({ activeTcgSlug, activeTgc }) {
   const [newDeckName, setNewDeckName] = useState('');
   const [submittingDeckAction, setSubmittingDeckAction] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [pagination, setPagination] = useState(() => createEmptyResults(DEFAULT_PAGE_SIZE));
+  const [pageSize, setPageSize] = useState(() => readStoredEnumValue(
+    SEARCH_CACHE_STORAGE_KEYS.pageSize,
+    SEARCH_PAGE_SIZE_OPTIONS,
+    DEFAULT_PAGE_SIZE
+  ));
+  const [cardViewMode, setCardViewMode] = useState(() => readStoredEnumValue(
+    SEARCH_CACHE_STORAGE_KEYS.cardViewMode,
+    SEARCH_CARD_VIEW_MODES,
+    'detail'
+  ));
+  const [pagination, setPagination] = useState(() => createEmptyResults(pageSize));
   const [facets, setFacets] = useState(EMPTY_FACETS);
   const [loadingCards, setLoadingCards] = useState(true);
   const [hasLoadedCards, setHasLoadedCards] = useState(false);
   const [hasLoadedFacets, setHasLoadedFacets] = useState(false);
   const [loadingDecks, setLoadingDecks] = useState(false);
-  const cardsCacheRef = useRef(new Map());
-  const facetsCacheRef = useRef(new Map());
-  const decksCacheRef = useRef(new Map());
+  const cardsCacheRef = useRef(readCacheMap(SEARCH_CACHE_STORAGE_KEYS.cards));
+  const facetsCacheRef = useRef(readCacheMap(SEARCH_CACHE_STORAGE_KEYS.facets));
+  const decksCacheRef = useRef(readCacheMap(SEARCH_CACHE_STORAGE_KEYS.decks));
 
   const cardsRequestParams = useMemo(
     () => buildCardsRequestParams({
@@ -149,6 +178,29 @@ function Search({ activeTcgSlug, activeTgc }) {
     () => JSON.stringify(cardsRequestParams ?? {}),
     [cardsRequestParams]
   );
+
+  const persistCardsCache = useCallback((cacheKey, payload) => {
+    setLimitedCacheEntry(cardsCacheRef.current, cacheKey, payload, 24);
+    writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.cards, cardsCacheRef.current);
+  }, []);
+
+  const persistFacetsCache = useCallback((cacheKey, payload) => {
+    setLimitedCacheEntry(facetsCacheRef.current, cacheKey, payload, 12);
+    writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.facets, facetsCacheRef.current);
+  }, []);
+
+  const persistDecksCache = useCallback((cacheKey, payload) => {
+    setLimitedCacheEntry(decksCacheRef.current, cacheKey, payload, 12);
+    writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.decks, decksCacheRef.current);
+  }, []);
+
+  useEffect(() => {
+    writeStoredValue(SEARCH_CACHE_STORAGE_KEYS.pageSize, pageSize);
+  }, [pageSize]);
+
+  useEffect(() => {
+    writeStoredValue(SEARCH_CACHE_STORAGE_KEYS.cardViewMode, cardViewMode);
+  }, [cardViewMode]);
 
   useEffect(() => {
     setSearchTerm('');
@@ -211,7 +263,7 @@ function Search({ activeTcgSlug, activeTgc }) {
           },
         });
 
-        cardsCacheRef.current.set(
+        persistCardsCache(
           nextCacheKey,
           normalizeResultsPayload(prefetchResponse.data, pageSize)
         );
@@ -235,7 +287,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         });
 
         const nextPagination = normalizeResultsPayload(res.data, pageSize);
-        cardsCacheRef.current.set(cardsCacheKey, nextPagination);
+        persistCardsCache(cardsCacheKey, nextPagination);
 
         setCards(nextPagination.items);
         setPagination(nextPagination);
@@ -272,7 +324,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     return () => {
       controller.abort();
     };
-  }, [cardsCacheKey, cardsRequestParams, hasLoadedCards, page, pageSize]);
+  }, [cardsCacheKey, cardsRequestParams, hasLoadedCards, page, pageSize, persistCardsCache]);
 
   useEffect(() => {
     if (!activeTgc?.id) {
@@ -309,7 +361,7 @@ function Search({ activeTcgSlug, activeTgc }) {
           set_names: Array.isArray(payload.set_names) ? payload.set_names : [],
         };
 
-        facetsCacheRef.current.set(facetsCacheKey, nextFacets);
+        persistFacetsCache(facetsCacheKey, nextFacets);
         setFacets(nextFacets);
       } catch (error) {
         if (isRequestCanceled(error)) {
@@ -330,7 +382,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     return () => {
       controller.abort();
     };
-  }, [activeTgc?.id]);
+  }, [activeTgc?.id, persistFacetsCache]);
 
   const loadDecksForPicker = async (forceRefresh = false) => {
     if (!activeTgc?.id) {
@@ -353,7 +405,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         params: { tgc_id: activeTgc.id },
       });
       const deckList = Array.isArray(res.data) ? res.data : [];
-      decksCacheRef.current.set(decksCacheKey, deckList);
+      persistDecksCache(decksCacheKey, deckList);
       setDecks(deckList);
       return deckList;
     } catch (error) {
@@ -589,167 +641,44 @@ function Search({ activeTcgSlug, activeTgc }) {
         </div>
       </section>
 
-      <div className="search-controls">
-        <input
-          type="text"
-          placeholder="Buscar por nombre o codigo..."
-          value={searchTerm}
-          onChange={(e) => handleSearchChange(e.target.value)}
-        />
+      <SearchFiltersPanel
+        searchTerm={searchTerm}
+        filters={filters}
+        availableTypeOptions={availableTypeOptions}
+        availableColorOptions={availableColorOptions}
+        availableRarityOptions={availableRarityOptions}
+        uniqueExpansions={uniqueExpansions}
+        onSearchChange={handleSearchChange}
+        onFilterChange={handleFilterChange}
+      />
 
-        <select
-          value={filters.type}
-          onChange={(e) => handleFilterChange('type', e.target.value)}
-        >
-          <option value="">Todos los tipos</option>
-          {availableTypeOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={filters.color}
-          onChange={(e) => handleFilterChange('color', e.target.value)}
-        >
-          <option value="">Todos los colores</option>
-          {availableColorOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={filters.rarity}
-          onChange={(e) => handleFilterChange('rarity', e.target.value)}
-        >
-          <option value="">Todas las rarezas</option>
-          {availableRarityOptions.map((rarity) => (
-            <option key={rarity} value={rarity}>
-              {rarity}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={filters.expansion}
-          onChange={(e) => handleFilterChange('expansion', e.target.value)}
-        >
-          <option value="">Todas las expansiones</option>
-          {uniqueExpansions.map((exp) => (
-            <option key={exp} value={exp}>
-              {exp}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <section className="panel search-results-toolbar">
-        <div className="search-results-copy">
-          <strong>
-            Mostrando {visibleStart}-{visibleEnd} de {pagination.total}
-          </strong>
-          <span>
-            {loadingCards
-              ? 'Actualizando resultados...'
-              : `Pagina ${pagination.page} de ${pagination.total_pages || 1} con ${pagination.limit} cartas por carga.`}
-          </span>
-        </div>
-
-        <div className="search-results-actions">
-          <label className="page-size-control">
-            <span>Por pagina</span>
-            <select
-              value={pageSize}
-              onChange={(e) => handlePageSizeChange(e.target.value)}
-              disabled={loadingCards}
-            >
-              {SEARCH_PAGE_SIZE_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="pagination-controls" aria-label="Paginacion del buscador">
-            <button
-              type="button"
-              className="pagination-button"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              disabled={!pagination.has_previous || loadingCards}
-            >
-              Anterior
-            </button>
-
-            <div className="pagination-page-list">
-              {visiblePageNumbers.map((pageNumber) => (
-                <button
-                  key={pageNumber}
-                  type="button"
-                  className={`pagination-button ${pageNumber === pagination.page ? 'is-active' : ''}`}
-                  onClick={() => setPage(pageNumber)}
-                  disabled={loadingCards}
-                >
-                  {pageNumber}
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              className="pagination-button"
-              onClick={() => setPage((current) => current + 1)}
-              disabled={!pagination.has_next || loadingCards}
-            >
-              Siguiente
-            </button>
-          </div>
-        </div>
-      </section>
+      <SearchResultsToolbar
+        visibleStart={visibleStart}
+        visibleEnd={visibleEnd}
+        pagination={pagination}
+        loadingCards={loadingCards}
+        pageSize={pageSize}
+        pageSizeOptions={SEARCH_PAGE_SIZE_OPTIONS}
+        visiblePageNumbers={visiblePageNumbers}
+        cardViewMode={cardViewMode}
+        onPageSizeChange={handlePageSizeChange}
+        onPageChange={setPage}
+        onPreviousPage={() => setPage((current) => Math.max(1, current - 1))}
+        onNextPage={() => setPage((current) => current + 1)}
+        onCardViewModeChange={setCardViewMode}
+      />
 
       <div className="cards-grid">
         {cards.length > 0 ? (
           cards.map((card) => (
-            <div
+            <SearchCardTile
               key={card.id}
-              className="card-item"
-              onClick={() => setSelectedCard(card)}
-              style={{ cursor: 'pointer' }}
-            >
-              <img
-                src={card.image_url}
-                alt={card.name}
-                loading="lazy"
-                decoding="async"
-              />
-              <h3>{card.name}</h3>
-              <p>Set: {card.set_name || 'Sin set'}</p>
-              <p>Tipo: {card.card_type || 'Sin tipo'}</p>
-              <p>Rareza: {card.rarity || 'Sin rareza'}</p>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAddToCollection(card.id);
-                }}
-              >
-                Agregar a Coleccion
-              </button>
-              <button
-                type="button"
-                className="ghost-button card-secondary-action"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAddToDeck(card.id);
-                }}
-              >
-                Agregar al Mazo
-              </button>
-            </div>
+              card={card}
+              cardViewMode={cardViewMode}
+              onOpen={setSelectedCard}
+              onAddToCollection={handleAddToCollection}
+              onAddToDeck={handleAddToDeck}
+            />
           ))
         ) : (
           <div className="panel search-empty-state">
@@ -759,151 +688,26 @@ function Search({ activeTcgSlug, activeTgc }) {
         )}
       </div>
 
-      {selectedCard && (
-        <div
-          className="card-modal"
-          onClick={() => setSelectedCard(null)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            className="card-detail"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: 'white',
-              padding: '30px',
-              borderRadius: '10px',
-              maxWidth: '500px',
-              maxHeight: '90vh',
-              overflow: 'auto',
-            }}
-          >
-            <img
-              src={selectedCard.image_url}
-              alt={selectedCard.name}
-              className="large-image"
-              style={{ width: '100%', marginBottom: '20px' }}
-            />
+      <SearchCardDetailModal
+        card={selectedCard}
+        activeTcgSlug={activeTcgSlug}
+        onClose={() => setSelectedCard(null)}
+        onAddToCollection={handleAddToCollection}
+        onAddToDeck={handleAddToDeck}
+      />
 
-            <h2>{selectedCard.name}</h2>
-            <p><strong>Tipo:</strong> {selectedCard.card_type}</p>
-            <p><strong>Color:</strong> {selectedCard.color}</p>
-            <p><strong>Rareza:</strong> {selectedCard.rarity}</p>
-            <p><strong>Set:</strong> {selectedCard.set_name || 'Sin set'}</p>
-            {selectedCard.lv && <p><strong>Nivel:</strong> {selectedCard.lv}</p>}
-            {selectedCard.cost && <p><strong>Costo:</strong> {selectedCard.cost}</p>}
-            {selectedCard.ap && (
-              <p>
-                <strong>{activeTcgSlug === 'one-piece' ? 'Poder' : 'AP'}:</strong> {selectedCard.ap}
-              </p>
-            )}
-            {selectedCard.hp && <p><strong>HP:</strong> {selectedCard.hp}</p>}
-            {selectedCard.abilities && (
-              <p><strong>{activeTcgSlug === 'one-piece' ? 'Texto' : 'Habilidades'}:</strong> {selectedCard.abilities}</p>
-            )}
-            {selectedCard.description && (
-              <p><strong>Descripcion:</strong> {selectedCard.description}</p>
-            )}
-
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => handleAddToCollection(selectedCard.id)}
-              style={{ marginTop: '20px', marginRight: '10px', padding: '10px 20px' }}
-            >
-              Agregar a Coleccion
-            </button>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => handleAddToDeck(selectedCard.id)}
-              style={{ marginTop: '20px', marginRight: '10px', padding: '10px 20px' }}
-            >
-              Agregar al Mazo
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedCard(null)}
-              style={{ marginTop: '20px', padding: '10px 20px' }}
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
-      )}
-
-      {deckPickerCard && (
-        <div className="card-modal" onClick={() => !submittingDeckAction && setDeckPickerCard(null)}>
-          <div className="deck-picker-modal panel" onClick={(e) => e.stopPropagation()}>
-            <div className="settings-panel-header">
-              <h2>Anadir a mazo</h2>
-              <p>Elige un mazo existente o crea uno nuevo para {deckPickerCard.name}.</p>
-            </div>
-
-            <div className="deck-picker-section">
-              <span className="collection-panel-label">Mazos existentes</span>
-              <div className="deck-picker-list">
-                {loadingDecks ? (
-                  <p className="collection-empty-text">Cargando mazos...</p>
-                ) : decks.length > 0 ? (
-                  decks.map((deck) => (
-                    <button
-                      key={deck.id}
-                      type="button"
-                      className="deck-picker-option"
-                      onClick={() => addCardToExistingDeck(deck.id)}
-                      disabled={submittingDeckAction}
-                    >
-                      <strong>{deck.name}</strong>
-                      <span>Anadir 1 copia a este mazo</span>
-                    </button>
-                  ))
-                ) : (
-                  <p className="collection-empty-text">Todavia no tienes mazos de {activeGame.shortName}.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="deck-picker-section">
-              <span className="collection-panel-label">Crear mazo nuevo</span>
-              <div className="deck-picker-create">
-                <input
-                  type="text"
-                  value={newDeckName}
-                  onChange={(e) => setNewDeckName(e.target.value)}
-                  placeholder={`Nuevo mazo de ${activeGame.shortName}`}
-                  maxLength={100}
-                  disabled={submittingDeckAction}
-                />
-                <button type="button" onClick={createDeckAndAddCard} disabled={submittingDeckAction}>
-                  {submittingDeckAction ? 'Procesando...' : 'Crear y anadir'}
-                </button>
-              </div>
-            </div>
-
-            <div className="settings-actions">
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => setDeckPickerCard(null)}
-                disabled={submittingDeckAction}
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SearchDeckPickerModal
+        deckPickerCard={deckPickerCard}
+        activeGame={activeGame}
+        loadingDecks={loadingDecks}
+        decks={decks}
+        newDeckName={newDeckName}
+        submittingDeckAction={submittingDeckAction}
+        onClose={() => setDeckPickerCard(null)}
+        onNewDeckNameChange={setNewDeckName}
+        onAddCardToExistingDeck={addCardToExistingDeck}
+        onCreateDeckAndAddCard={createDeckAndAddCard}
+      />
     </div>
   );
 }
