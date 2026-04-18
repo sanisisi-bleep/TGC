@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../context/ToastContext';
 import API_BASE from '../apiBase';
+import { getApiErrorMessage } from '../utils/apiMessages';
 
 const ROLE_OPTIONS = [
   { value: 'player', label: 'Jugador' },
@@ -13,6 +15,7 @@ const ROLE_OPTIONS = [
 
 function Settings() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [profile, setProfile] = useState({
     username: '',
     email: '',
@@ -60,14 +63,22 @@ function Settings() {
           setUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
         }
       } catch (error) {
-        alert(error.response?.data?.detail || 'No se pudo cargar la configuracion');
+        if (error.response?.status === 401) {
+          navigate('/');
+          return;
+        }
+
+        showToast({
+          type: 'error',
+          message: getApiErrorMessage(error, 'No se pudo cargar la configuracion.'),
+        });
       } finally {
         setLoading(false);
       }
     };
 
     loadSettings();
-  }, []);
+  }, [navigate, showToast]);
 
   const updateField = (field, value) => {
     setProfile((current) => ({
@@ -100,9 +111,17 @@ function Settings() {
         favorite_tgc_id: data.favorite_tgc_id || '',
         default_tgc_id: data.default_tgc_id || '',
       }));
-      alert('Configuracion guardada');
+      showToast({ type: 'success', message: 'Configuracion guardada.' });
     } catch (error) {
-      alert(error.response?.data?.detail || 'No se pudo guardar la configuracion');
+      if (error.response?.status === 401) {
+        navigate('/');
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo guardar la configuracion.'),
+      });
     } finally {
       setSavingProfile(false);
     }
@@ -119,9 +138,17 @@ function Settings() {
       });
       setOldPassword('');
       setNewPassword('');
-      alert('Contrasena actualizada');
+      showToast({ type: 'success', message: 'Contrasena actualizada.' });
     } catch (error) {
-      alert(error.response?.data?.detail || 'No se pudo cambiar la contrasena');
+      if (error.response?.status === 401) {
+        navigate('/');
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo cambiar la contrasena.'),
+      });
     } finally {
       setSavingPassword(false);
     }
@@ -136,8 +163,17 @@ function Settings() {
       setUsers((current) =>
         current.map((user) => (user.id === userId ? updatedUser : user))
       );
+      showToast({ type: 'success', message: 'Rol actualizado.' });
     } catch (error) {
-      alert(error.response?.data?.detail || 'No se pudo actualizar el rol');
+      if (error.response?.status === 401) {
+        navigate('/');
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo actualizar el rol.'),
+      });
     } finally {
       setUpdatingRoleUserId(null);
     }
@@ -153,7 +189,7 @@ function Settings() {
     }
 
     if (!deletePassword) {
-      alert('Introduce tu contrasena para borrar la cuenta');
+      showToast({ type: 'error', message: 'Introduce tu contrasena para borrar la cuenta.' });
       return;
     }
 
@@ -165,11 +201,18 @@ function Settings() {
       });
       localStorage.removeItem('token');
       delete axios.defaults.headers.common.Authorization;
-      alert('Cuenta borrada correctamente');
       navigate('/');
       window.location.reload();
     } catch (error) {
-      alert(error.response?.data?.detail || 'No se pudo borrar la cuenta');
+      if (error.response?.status === 401) {
+        navigate('/');
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo borrar la cuenta.'),
+      });
     } finally {
       setDeletingAccount(false);
     }
@@ -323,7 +366,7 @@ function Settings() {
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                minLength={6}
+                minLength={8}
                 required
               />
             </label>

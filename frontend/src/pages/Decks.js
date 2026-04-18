@@ -1,13 +1,191 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useToast } from '../context/ToastContext';
 import { getGameConfig } from '../tcgConfig';
 import API_BASE from '../apiBase';
+import { getApiErrorMessage } from '../utils/apiMessages';
 
 const MAX_COPIES_PER_CARD = 4;
 
+const safeFilename = (value) => (
+  (value || 'mazo')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'mazo'
+);
+
+const buildDeckExportPayload = (deck) => ({
+  format: 'tgc-deck-v1',
+  exported_at: new Date().toISOString(),
+  deck: {
+    name: deck.name,
+    tgc_id: deck.tgc_id,
+    tgc_name: deck.tgc_name,
+    total_cards: deck.total_cards,
+    cards: (deck.cards || []).map((card) => ({
+      card_id: card.id,
+      source_card_id: card.source_card_id,
+      version: card.version,
+      name: card.name,
+      set_name: card.set_name,
+      quantity: card.quantity,
+    })),
+  },
+});
+
+const buildDeckListText = (deck) => (
+  (deck?.cards || [])
+    .filter((card) => (Number(card.quantity) || 0) > 0)
+    .map((card) => `${Number(card.quantity)}x${card.source_card_id || `CARD-${card.id}`}`)
+    .join('\n')
+);
+
+const downloadJson = (filename, payload) => {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const objectUrl = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(objectUrl);
+};
+
+const downloadText = (filename, text) => {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const objectUrl = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(objectUrl);
+};
+
+const buildDeckStats = (deck) => {
+  if (!deck?.cards?.length) {
+    return null;
+  }
+
+  const typeMap = new Map();
+  const colorMap = new Map();
+  const rarityMap = new Map();
+  const setMap = new Map();
+  const curveMap = new Map();
+  let coveredCopies = 0;
+  let missingCopies = 0;
+
+  const addToMap = (map, key, amount) => {
+    map.set(key, (map.get(key) || 0) + amount);
+  };
+
+  const toSortedEntries = (map) => (
+    [...map.entries()].sort((left, right) => {
+      if (right[1] !== left[1]) {
+        return right[1] - left[1];
+      }
+
+      return left[0].localeCompare(right[0]);
+    })
+  );
+
+  deck.cards.forEach((card) => {
+    const quantity = Number(card.quantity) || 0;
+    if (quantity <= 0) {
+      return;
+    }
+
+    addToMap(typeMap, card.card_type || 'Sin tipo', quantity);
+    addToMap(colorMap, card.color || 'Sin color', quantity);
+    addToMap(rarityMap, card.rarity || 'Sin rareza', quantity);
+    addToMap(setMap, card.set_name || 'Sin set', quantity);
+
+    const rawCurveValue = Number.isFinite(card.cost) ? card.cost : card.lv;
+    const normalizedCurveValue = Number.isFinite(rawCurveValue)
+      ? rawCurveValue
+      : Number(rawCurveValue);
+    const curveKey = Number.isFinite(normalizedCurveValue)
+      ? (normalizedCurveValue >= 6 ? '6+' : String(normalizedCurveValue))
+      : '?';
+    addToMap(curveMap, curveKey, quantity);
+
+    coveredCopies += Number(card.fulfilled_quantity) || 0;
+    missingCopies += Number(card.missing_quantity) || 0;
+  });
+
+  const curveOrder = ['0', '1', '2', '3', '4', '5', '6+', '?'];
+  const curveEntries = curveOrder
+    .map((key) => [key, curveMap.get(key) || 0])
+    .filter(([, value]) => value > 0);
+
+  return {
+    uniqueCards: deck.cards.length,
+    totalCards: deck.total_cards || 0,
+    coveredCopies,
+    missingCopies,
+    typeEntries: toSortedEntries(typeMap),
+    colorEntries: toSortedEntries(colorMap),
+    rarityEntries: toSortedEntries(rarityMap),
+    setEntries: toSortedEntries(setMap),
+    curveEntries,
+  };
+};
+
+const parseImportedDeckFile = (payload, fallbackTgcId) => {
+  const deckPayload = payload?.deck || payload;
+  const cards = Array.isArray(deckPayload?.cards) ? deckPayload.cards : [];
+
+  return {
+    name: deckPayload?.name || 'Mazo importado',
+    tgc_id: deckPayload?.tgc_id || fallbackTgcId || null,
+    cards: cards.map((card) => ({
+      card_id: card.card_id ?? null,
+      source_card_id: card.source_card_id ?? null,
+      version: card.version ?? null,
+      quantity: Number(card.quantity) || 0,
+    })),
+  };
+};
+
+const parseDeckListText = (rawContent, fallbackTgcId) => {
+  const lines = rawContent
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    throw new Error('El archivo no contiene cartas importables.');
+  }
+
+  const cards = lines.map((line, index) => {
+    const match = line.match(/^(\d+)\s*x\s*([A-Za-z0-9._-]+)$/i);
+
+    if (!match) {
+      throw new Error(`Linea ${index + 1} invalida: ${line}`);
+    }
+
+    return {
+      card_id: null,
+      source_card_id: match[2],
+      version: null,
+      quantity: Number(match[1]),
+    };
+  });
+
+  return {
+    name: 'Mazo importado',
+    tgc_id: fallbackTgcId || null,
+    cards,
+  };
+};
+
 function Decks({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
+  const { showToast } = useToast();
   const [decks, setDecks] = useState([]);
   const [newDeckName, setNewDeckName] = useState('');
   const [selectedDeck, setSelectedDeck] = useState(null);
@@ -20,6 +198,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
     selectedDeck?.advanced_mode !== undefined ? selectedDeck.advanced_mode : advancedMode
   );
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [loadingDeckList, setLoadingDeckList] = useState(true);
   const [updatingDeckCardId, setUpdatingDeckCardId] = useState(null);
   const [updatingAssignmentCardId, setUpdatingAssignmentCardId] = useState(null);
   const [editingAssignmentCardId, setEditingAssignmentCardId] = useState(null);
@@ -27,15 +206,21 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const [cloningDeckId, setCloningDeckId] = useState(null);
   const [sharingDeckId, setSharingDeckId] = useState(null);
   const [renamingDeckId, setRenamingDeckId] = useState(null);
+  const [importingDeck, setImportingDeck] = useState(false);
+  const importDeckInputRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
+  const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
 
   useEffect(() => {
     if (!activeTgc?.id) {
+      setLoadingDeckList(false);
       return;
     }
 
     const loadDecks = async () => {
+      setLoadingDeckList(true);
+
       try {
         const res = await axios.get(`${API_BASE}/decks`, {
           params: { tgc_id: activeTgc.id },
@@ -48,11 +233,17 @@ function Decks({ activeTcgSlug, activeTgc }) {
         }
 
         console.error('Error al cargar los mazos:', error);
+        showToast({
+          type: 'error',
+          message: getApiErrorMessage(error, 'No se pudo cargar la lista de mazos.'),
+        });
+      } finally {
+        setLoadingDeckList(false);
       }
     };
 
     loadDecks();
-  }, [activeTgc?.id, navigate]);
+  }, [activeTgc?.id, navigate, showToast]);
 
   useEffect(() => {
     const fetchPreferences = async () => {
@@ -90,6 +281,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
           }
 
           console.error('Error al cargar el detalle del mazo:', error);
+          showToast({
+            type: 'error',
+            message: getApiErrorMessage(error, 'No se pudo cargar el detalle del mazo.'),
+          });
         } finally {
           setLoadingDetails(false);
         }
@@ -98,7 +293,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
       openSelectedDeck();
       navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [location.pathname, location.state, navigate]);
+  }, [location.pathname, location.state, navigate, showToast]);
 
   const fetchDecks = async () => {
     try {
@@ -113,6 +308,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
       }
 
       console.error('Error al cargar los mazos:', error);
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo actualizar la lista de mazos.'),
+      });
     }
   };
 
@@ -127,6 +326,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
       } else {
         await fetchDecks();
       }
+      showToast({ type: 'success', message: 'Mazo creado.' });
     } catch (error) {
       if (error.response?.status === 401) {
         navigate('/');
@@ -134,6 +334,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
       }
 
       console.error('Error al crear el mazo:', error);
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo crear el mazo.'),
+      });
     }
   };
 
@@ -151,13 +355,17 @@ function Decks({ activeTcgSlug, activeTgc }) {
       if (selectedDeck?.id === deckId) {
         setSelectedDeck(null);
       }
+      showToast({ type: 'success', message: 'Mazo borrado.' });
     } catch (error) {
       if (error.response?.status === 401) {
         navigate('/');
         return;
       }
 
-      alert(error.response?.data?.detail || 'No se pudo borrar el mazo');
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo borrar el mazo.'),
+      });
     } finally {
       setDeletingDeckId(null);
     }
@@ -181,6 +389,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
       }
 
       console.error('Error al cargar el detalle del mazo:', error);
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo cargar el detalle del mazo.'),
+      });
     } finally {
       if (!keepCurrentView) {
         setLoadingDetails(false);
@@ -197,13 +409,17 @@ function Decks({ activeTcgSlug, activeTgc }) {
       if (response.data?.deck_id) {
         await viewDeckDetails(response.data.deck_id);
       }
+      showToast({ type: 'success', message: 'Mazo clonado.' });
     } catch (error) {
       if (error.response?.status === 401) {
         navigate('/');
         return;
       }
 
-      alert(error.response?.data?.detail || 'No se pudo clonar el mazo');
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo clonar el mazo.'),
+      });
     } finally {
       setCloningDeckId(null);
     }
@@ -226,18 +442,93 @@ function Decks({ activeTcgSlug, activeTgc }) {
           text: `Consulta este mazo compartido de ${deck.tgc_name || activeGame.shortName}`,
           url: shareUrl,
         });
+        showToast({ type: 'success', message: 'Enlace del mazo listo para compartir.' });
       } else if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(shareUrl);
-        alert('Enlace del mazo copiado al portapapeles');
+        showToast({ type: 'success', message: 'Enlace del mazo copiado al portapapeles.' });
       } else {
         window.prompt('Copia este enlace del mazo:', shareUrl);
       }
     } catch (error) {
       if (error?.name !== 'AbortError') {
-        alert(error.response?.data?.detail || 'No se pudo compartir el mazo');
+        showToast({
+          type: 'error',
+          message: getApiErrorMessage(error, 'No se pudo compartir el mazo.'),
+        });
       }
     } finally {
       setSharingDeckId(null);
+    }
+  };
+
+  const exportDeck = (deck) => {
+    if (!deck) {
+      return;
+    }
+
+    const payload = buildDeckExportPayload(deck);
+    downloadJson(`${safeFilename(deck.name)}.json`, payload);
+  };
+
+  const exportDeckList = (deck) => {
+    if (!deck) {
+      return;
+    }
+
+    const listText = buildDeckListText(deck);
+    if (!listText) {
+      showToast({ type: 'error', message: 'Este mazo no tiene cartas para exportar.' });
+      return;
+    }
+
+    downloadText(`${safeFilename(deck.name)}.txt`, listText);
+    showToast({ type: 'success', message: 'Lista del mazo exportada en formato texto.' });
+  };
+
+  const triggerDeckImport = () => {
+    importDeckInputRef.current?.click();
+  };
+
+  const handleDeckImport = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setImportingDeck(true);
+
+    try {
+      const rawContent = await file.text();
+      let payload;
+
+      try {
+        const parsedContent = JSON.parse(rawContent);
+        payload = parseImportedDeckFile(parsedContent, activeTgc?.id);
+      } catch (_jsonError) {
+        payload = parseDeckListText(rawContent, activeTgc?.id);
+      }
+
+      if (!payload.cards.length) {
+        throw new Error('El archivo no contiene cartas importables.');
+      }
+
+      const response = await axios.post(`${API_BASE}/decks/import`, payload);
+      await fetchDecks();
+
+      if (response.data?.deck_id) {
+        await viewDeckDetails(response.data.deck_id);
+      }
+      showToast({ type: 'success', message: 'Mazo importado.' });
+    } catch (error) {
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo importar el mazo.'),
+      });
+    } finally {
+      if (event.target) {
+        event.target.value = '';
+      }
+      setImportingDeck(false);
     }
   };
 
@@ -248,7 +539,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
     const trimmedName = draftDeckName.trim();
     if (!trimmedName) {
-      alert('El nombre del mazo no puede estar vacio');
+      showToast({ type: 'error', message: 'El nombre del mazo no puede estar vacio.' });
       return;
     }
 
@@ -269,8 +560,12 @@ function Decks({ activeTcgSlug, activeTgc }) {
           ? { ...deck, name: nextName }
           : deck
       )));
+      showToast({ type: 'success', message: 'Nombre del mazo actualizado.' });
     } catch (error) {
-      alert(error.response?.data?.detail || 'No se pudo cambiar el nombre del mazo');
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo cambiar el nombre del mazo.'),
+      });
     } finally {
       setRenamingDeckId(null);
     }
@@ -288,7 +583,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
         return;
       }
 
-      alert(error.response?.data?.detail || 'No se pudo actualizar la cantidad en el mazo');
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo actualizar la cantidad en el mazo.'),
+      });
     } finally {
       setUpdatingDeckCardId(null);
     }
@@ -310,7 +608,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
         return;
       }
 
-      alert(error.response?.data?.detail || 'No se pudo ajustar la cobertura del mazo');
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo ajustar la cobertura del mazo.'),
+      });
     } finally {
       setUpdatingAssignmentCardId(null);
     }
@@ -323,6 +624,20 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const closeDeckDetails = () => {
     setSelectedDeck(null);
   };
+
+  if (loadingDeckList && decks.length === 0) {
+    return (
+      <div className="decks page-shell">
+        <section className="page-hero decks-hero">
+          <div>
+            <span className="eyebrow">{activeGame.eyebrow}</span>
+            <h1>{activeGame.decksTitle}</h1>
+            <p>Cargando tus mazos de {activeGame.shortName}...</p>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="decks page-shell">
@@ -353,6 +668,26 @@ function Decks({ activeTcgSlug, activeTgc }) {
           />
           <button type="submit">Crear Mazo</button>
         </form>
+        <div className="create-deck-secondary-actions">
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={triggerDeckImport}
+            disabled={importingDeck}
+          >
+            {importingDeck ? 'Importando...' : 'Importar JSON'}
+          </button>
+          <input
+            ref={importDeckInputRef}
+            type="file"
+            accept="application/json"
+            className="deck-import-input"
+            onChange={handleDeckImport}
+          />
+          <span className="deck-import-copy">
+            Importa un mazo desde JSON o desde una lista tipo 4xST01-005.
+          </span>
+        </div>
       </section>
 
       <section className="decks-list">
@@ -469,6 +804,20 @@ function Decks({ activeTcgSlug, activeTgc }) {
                     <button
                       type="button"
                       className="ghost-button"
+                      onClick={() => exportDeckList(selectedDeck)}
+                    >
+                      Exportar Lista
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => exportDeck(selectedDeck)}
+                    >
+                      Exportar JSON
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
                       onClick={() => cloneDeck(selectedDeck.id)}
                       disabled={cloningDeckId === selectedDeck?.id}
                     >
@@ -495,6 +844,75 @@ function Decks({ activeTcgSlug, activeTgc }) {
                     </button>
                   </div>
                 </div>
+
+                {deckStats && (
+                  <section className="deck-stats-panel">
+                    <div className="deck-stats-summary">
+                      <article className="deck-stat-card">
+                        <span>Cartas distintas</span>
+                        <strong>{deckStats.uniqueCards}</strong>
+                      </article>
+                      <article className="deck-stat-card">
+                        <span>Total en mazo</span>
+                        <strong>{deckStats.totalCards}</strong>
+                      </article>
+                      <article className="deck-stat-card">
+                        <span>Copias cubiertas</span>
+                        <strong>{deckStats.coveredCopies}</strong>
+                      </article>
+                      <article className="deck-stat-card">
+                        <span>Copias faltantes</span>
+                        <strong>{deckStats.missingCopies}</strong>
+                      </article>
+                    </div>
+
+                    <div className="deck-stats-grid">
+                      <div className="deck-stat-block">
+                        <h3>Curva</h3>
+                        <div className="deck-stat-chip-list">
+                          {deckStats.curveEntries.map(([label, value]) => (
+                            <span key={label} className="deck-stat-chip">
+                              {label}: {value}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="deck-stat-block">
+                        <h3>Tipos</h3>
+                        <div className="deck-stat-chip-list">
+                          {deckStats.typeEntries.slice(0, 6).map(([label, value]) => (
+                            <span key={label} className="deck-stat-chip">
+                              {label}: {value}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="deck-stat-block">
+                        <h3>Colores</h3>
+                        <div className="deck-stat-chip-list">
+                          {deckStats.colorEntries.slice(0, 6).map(([label, value]) => (
+                            <span key={label} className="deck-stat-chip">
+                              {label}: {value}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="deck-stat-block">
+                        <h3>Sets</h3>
+                        <div className="deck-stat-chip-list">
+                          {deckStats.setEntries.slice(0, 6).map(([label, value]) => (
+                            <span key={label} className="deck-stat-chip">
+                              {label}: {value}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                )}
 
                 <div className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''}`}>
                   {(selectedDeck?.cards || []).map((card) => (
@@ -604,13 +1022,15 @@ function Decks({ activeTcgSlug, activeTgc }) {
                               onClick={() => adjustDeckCardQuantity(selectedDeck.id, card.id, 1)}
                               disabled={
                                 updatingDeckCardId === card.id ||
-                                card.quantity >= MAX_COPIES_PER_CARD
+                                card.quantity >= (selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD)
                               }
                             >
                               +
                             </button>
                           </div>
-                          <span className="deck-card-limit-note">Max {MAX_COPIES_PER_CARD}</span>
+                          <span className="deck-card-limit-note">
+                            Max {selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                          </span>
                         </div>
                       )}
                     </article>

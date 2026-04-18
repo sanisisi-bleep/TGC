@@ -194,6 +194,9 @@ select {
   top: 5.7rem;
   right: 1.5rem;
   z-index: 1200;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
   max-width: min(420px, calc(100vw - 2rem));
   padding: 0.95rem 1.1rem;
   border-radius: 18px;
@@ -210,6 +213,42 @@ select {
 
 .floating-toast.is-error {
   background: linear-gradient(135deg, #c93b2f, #8f251d);
+}
+
+.floating-toast.is-info {
+  background: linear-gradient(135deg, #1656c1, #0d3f97);
+}
+
+.floating-toast-copy {
+  display: grid;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+}
+
+.floating-toast-copy strong {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.96rem;
+}
+
+.floating-toast-copy span {
+  white-space: pre-line;
+  line-height: 1.45;
+}
+
+.floating-toast-close {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.floating-toast-close:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 @keyframes toast-in {
@@ -629,6 +668,8 @@ select {
 .auth-form input,
 .search-controls input,
 .search-controls select,
+.collection-controls input,
+.collection-controls select,
 .create-deck-form input,
 .password-form input {
   width: 100%;
@@ -644,6 +685,8 @@ select {
 .auth-form input:focus,
 .search-controls input:focus,
 .search-controls select:focus,
+.collection-controls input:focus,
+.collection-controls select:focus,
 .create-deck-form input:focus,
 .password-form input:focus {
   border-color: rgba(28, 99, 213, 0.45);
@@ -1321,6 +1364,39 @@ select {
   color: #60728a;
 }
 
+.collection-controls-panel {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.collection-controls-copy {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.collection-controls-copy strong {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.collection-controls-copy span {
+  color: var(--text-soft);
+}
+
+.collection-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.85rem;
+}
+
+.collection-controls input {
+  grid-column: span 2;
+}
+
+.collection-clear-button {
+  min-height: 42px;
+  width: 100%;
+}
+
 .decks-hero,
 .collection-hero {
   background:
@@ -1337,6 +1413,23 @@ select {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0.9rem;
+}
+
+.create-deck-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
+
+.deck-import-input {
+  display: none;
+}
+
+.deck-import-copy {
+  color: var(--text-soft);
+  font-size: 0.95rem;
 }
 
 .deck-item-header,
@@ -1441,6 +1534,82 @@ select {
 .deck-missing-chip {
   background: rgba(201, 59, 47, 0.12);
   color: #a22820;
+}
+
+.deck-stats-panel {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(244, 248, 255, 0.98), rgba(234, 241, 252, 0.9));
+  border: 1px solid rgba(22, 86, 193, 0.12);
+}
+
+.deck-stats-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.deck-stat-card {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(21, 38, 58, 0.08);
+}
+
+.deck-stat-card span {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.deck-stat-card strong {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.5rem;
+  color: var(--text);
+}
+
+.deck-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.deck-stat-block {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(21, 38, 58, 0.08);
+}
+
+.deck-stat-block h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.deck-stat-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.deck-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(22, 86, 193, 0.08);
+  border: 1px solid rgba(22, 86, 193, 0.14);
+  color: var(--primary-deep);
+  font-weight: 700;
+  font-size: 0.86rem;
 }
 
 .danger-ghost-button {
@@ -2075,6 +2244,11 @@ select {
     right: 1rem;
     left: 1rem;
     max-width: none;
+    flex-direction: column;
+  }
+
+  .floating-toast-close {
+    width: 100%;
   }
 
   .navbar {

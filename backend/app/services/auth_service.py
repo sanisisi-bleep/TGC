@@ -11,7 +11,7 @@ from app.database.connection import get_db
 from app.env import load_environment
 from app.models import User
 from app.database.repositories.user_repository import UserRepository
-from app.logger import logger
+from app.logger import logger, update_log_context
 
 load_environment()
 
@@ -94,6 +94,11 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = repo.get_by_username(username)
     if user is None:
         raise credentials_exception
+    update_log_context(
+        user_id=user.id,
+        username=user.username,
+        user_role=get_user_role(user),
+    )
     return user
 
 
@@ -103,6 +108,15 @@ def get_user_role(user: User) -> str:
 
 def require_admin_user(current_user: User = Depends(get_current_user)):
     if get_user_role(current_user) != "admin":
+        logger.warning(
+            "Admin access denied",
+            extra={
+                "event": "admin_access_denied",
+                "user_id": current_user.id,
+                "username": current_user.username,
+                "user_role": get_user_role(current_user),
+            },
+        )
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 

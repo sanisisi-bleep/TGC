@@ -12,6 +12,11 @@ class DeckService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _get_tgc_by_id(self, tgc_id: Optional[int]):
+        if tgc_id is None:
+            return None
+        return self.db.query(Tgc).filter(Tgc.id == tgc_id).first()
+
     def _get_default_tgc(self):
         tgc = self.db.query(Tgc).filter(Tgc.name == GUNDAM_TGC_NAME).first()
         if tgc:
@@ -69,6 +74,34 @@ class DeckService:
             or 0
         )
 
+    def _resolve_import_card(self, resolved_tgc_id: Optional[int], card_data: dict):
+        query = self.db.query(Card)
+
+        if resolved_tgc_id is not None:
+            query = query.filter(Card.tgc_id == resolved_tgc_id)
+
+        card_id = card_data.get("card_id")
+        if card_id is not None:
+            card = query.filter(Card.id == card_id).first()
+            if card:
+                return card
+
+        source_card_id = (card_data.get("source_card_id") or "").strip()
+        if not source_card_id:
+            raise ValueError("Each imported card must include card_id or source_card_id")
+
+        version = (card_data.get("version") or "").strip()
+        source_query = query.filter(Card.source_card_id == source_card_id)
+
+        if version:
+            source_query = source_query.filter(func.coalesce(Card.version, "") == version)
+
+        card = source_query.first()
+        if not card:
+            raise ValueError(f"Card not found for import: {source_card_id}")
+
+        return card
+
     def _resolve_covered_quantity(self, deck_card: DeckCard, owned_quantity: int, advanced_mode: bool) -> int:
         if not advanced_mode or deck_card.assigned_quantity is None:
             return min(deck_card.quantity, owned_quantity)
@@ -121,12 +154,16 @@ class DeckService:
             serialized_cards.append(
                 {
                     "id": card.id,
+                    "source_card_id": card.source_card_id,
                     "name": card.name,
                     "image_url": normalize_card_image_url(card.image_url),
                     "card_type": card.card_type,
+                    "lv": card.lv,
+                    "cost": card.cost,
                     "color": card.color,
                     "rarity": card.rarity,
                     "set_name": card.set_name,
+                    "version": card.version,
                     "quantity": deck_card.quantity,
                     "assigned_quantity": deck_card.assigned_quantity,
                     "owned_quantity": owned_quantity,
@@ -145,6 +182,7 @@ class DeckService:
             "total_cards": total_cards,
             "min_cards": rules["deck_min_cards"],
             "max_cards": rules["deck_max_cards"],
+            "max_copies_per_card": rules["max_copies_per_card"],
             "remaining_cards": max(rules["deck_max_cards"] - total_cards, 0),
             "is_complete": total_cards >= rules["deck_min_cards"] and total_cards <= rules["deck_max_cards"],
             "missing_copies": missing_copies,
@@ -160,6 +198,56 @@ class DeckService:
 
         deck = Deck(user_id=user_id, tgc_id=resolved_tgc_id, name=name)
         self.db.add(deck)
+        self.db.commit()
+        self.db.refresh(deck)
+        return deck
+
+    def import_deck(self, user_id: int, name: Optional[str], tgc_id: Optional[int], cards: List[dict]):
+        if not cards:
+            raise ValueError("Imported deck must include at least one card")
+
+        target_tgc = self._get_tgc_by_id(tgc_id) if tgc_id is not None else self._get_default_tgc()
+        if tgc_id is not None and target_tgc is None:
+            raise ValueError("Target TCG not found for imported deck")
+        resolved_tgc_id = target_tgc.id if target_tgc else None
+        rules = get_tcg_rules(target_tgc.name if target_tgc else None)
+
+        aggregated_cards = {}
+        total_cards = 0
+
+        for raw_card in cards:
+            quantity = int(raw_card.get("quantity") or 0)
+            if quantity <= 0:
+                raise ValueError("Imported card quantity must be greater than zero")
+
+            card = self._resolve_import_card(resolved_tgc_id, raw_card)
+            total_cards += quantity
+
+            if total_cards > rules["deck_max_cards"]:
+                raise ValueError(
+                    f"{target_tgc.name if target_tgc else 'This TCG'} decks cannot exceed {rules['deck_max_cards']} cards"
+                )
+
+            aggregated_cards[card.id] = aggregated_cards.get(card.id, 0) + quantity
+            if aggregated_cards[card.id] > rules["max_copies_per_card"]:
+                raise ValueError(
+                    f"You can only have up to {rules['max_copies_per_card']} copies of this card in this deck"
+                )
+
+        deck_name = (name or "").strip() or "Mazo importado"
+        deck = Deck(user_id=user_id, tgc_id=resolved_tgc_id, name=deck_name[:100])
+        self.db.add(deck)
+        self.db.flush()
+
+        for card_id, quantity in aggregated_cards.items():
+            self.db.add(
+                DeckCard(
+                    deck_id=deck.id,
+                    card_id=card_id,
+                    quantity=quantity,
+                )
+            )
+
         self.db.commit()
         self.db.refresh(deck)
         return deck
@@ -255,16 +343,21 @@ class DeckService:
             "total_cards": total_cards,
             "min_cards": rules["deck_min_cards"],
             "max_cards": rules["deck_max_cards"],
+            "max_copies_per_card": rules["max_copies_per_card"],
             "is_complete": total_cards >= rules["deck_min_cards"] and total_cards <= rules["deck_max_cards"],
             "cards": [
                 {
                     "id": card.id,
+                    "source_card_id": card.source_card_id,
                     "name": card.name,
                     "image_url": normalize_card_image_url(card.image_url),
                     "card_type": card.card_type,
+                    "lv": card.lv,
+                    "cost": card.cost,
                     "color": card.color,
                     "rarity": card.rarity,
                     "set_name": card.set_name,
+                    "version": card.version,
                     "quantity": deck_card.quantity,
                 }
                 for deck_card, card in deck_cards

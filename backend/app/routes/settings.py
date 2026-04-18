@@ -96,8 +96,8 @@ def update_password(
     if not verify_password(payload.old_password, current_user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
-    if len(payload.new_password or "") < 6:
-        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+    if len(payload.new_password or "") < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
 
     current_user.password_hash = get_password_hash(payload.new_password)
     db.add(current_user)

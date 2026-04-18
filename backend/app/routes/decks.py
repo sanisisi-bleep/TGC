@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional
 from app.database.connection import get_db
 from app.services.deck_service import DeckService
 from app.services.auth_service import get_current_user
@@ -28,6 +28,19 @@ class DeckCardAdjust(BaseModel):
 class DeckCardAssignmentAdjust(BaseModel):
     delta: int
 
+
+class DeckImportCard(BaseModel):
+    card_id: Optional[int] = None
+    source_card_id: Optional[str] = None
+    version: Optional[str] = None
+    quantity: int = Field(..., gt=0)
+
+
+class DeckImportPayload(BaseModel):
+    name: Optional[str] = None
+    tgc_id: Optional[int] = None
+    cards: List[DeckImportCard] = Field(default_factory=list)
+
 @router.get("")
 def get_decks(tgc_id: Optional[int] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = DeckService(db)
@@ -53,6 +66,25 @@ def get_shared_deck(share_token: str, db: Session = Depends(get_db)):
 def create_deck(deck: DeckCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = DeckService(db)
     return service.create_deck(current_user.id, deck.name, deck.tgc_id)
+
+
+@router.post("/import")
+def import_deck(payload: DeckImportPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = DeckService(db)
+    try:
+        deck = service.import_deck(
+            current_user.id,
+            payload.name,
+            payload.tgc_id,
+            [card.dict() for card in payload.cards],
+        )
+        return {
+            "message": "Deck imported",
+            "deck_id": deck.id,
+            "name": deck.name,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.patch("/{deck_id}")
 def rename_deck(deck_id: int, payload: DeckRename, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

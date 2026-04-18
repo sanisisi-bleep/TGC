@@ -60,10 +60,16 @@ class UserLogin(BaseModel):
 
 @router.post("/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    logger.info(f"Registering user: {user.username}, email: {user.email}")
+    logger.info(
+        "Registering user",
+        extra={"event": "auth_register_attempt", "username": user.username},
+    )
     repo = UserRepository(db)
     if repo.get_by_username(user.username) or repo.get_by_email(user.email):
-        logger.warning(f"User already exists: {user.username} or {user.email}")
+        logger.warning(
+            "Registration rejected because user already exists",
+            extra={"event": "auth_register_duplicate", "username": user.username},
+        )
         raise HTTPException(status_code=400, detail="Username or email already registered")
     hashed_password = get_password_hash(user.password)
     new_user = User(
@@ -75,19 +81,42 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     )
     try:
         repo.create(new_user)
-        logger.info(f"User registered successfully: {user.username}")
+        logger.info(
+            "User registered successfully",
+            extra={
+                "event": "auth_register_success",
+                "user_id": new_user.id,
+                "username": new_user.username,
+            },
+        )
         return {"message": "User created"}
-    except Exception as e:
-        logger.error(f"Error creating user: {e}")
+    except Exception:
+        logger.exception(
+            "Error creating user",
+            extra={"event": "auth_register_failed", "username": user.username},
+        )
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/token")
 def login(user: UserLogin, db: Session = Depends(get_db)):
-    logger.info(f"Login attempt for: {user.username}")
+    logger.info(
+        "Login attempt",
+        extra={"event": "auth_login_attempt", "identifier": user.username},
+    )
     user_obj = authenticate_user(db, user.username, user.password)
     if not user_obj:
-        logger.warning(f"Login failed for: {user.username}")
+        logger.warning(
+            "Login failed",
+            extra={"event": "auth_login_failed", "identifier": user.username},
+        )
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     access_token = create_access_token(data={"sub": user_obj.username})
-    logger.info(f"Login successful for: {user.username}")
+    logger.info(
+        "Login successful",
+        extra={
+            "event": "auth_login_success",
+            "user_id": user_obj.id,
+            "username": user_obj.username,
+        },
+    )
     return {"access_token": access_token, "token_type": "bearer"}

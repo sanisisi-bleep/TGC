@@ -1,15 +1,39 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../context/ToastContext';
 import { getGameConfig } from '../tcgConfig';
 import API_BASE from '../apiBase';
+import { getApiErrorMessage } from '../utils/apiMessages';
+
+const buildOrderedOptions = (values, preferredOrder = []) => {
+  const available = [...new Set(values.filter(Boolean))];
+  const preferred = preferredOrder.filter((value) => available.includes(value));
+  const extra = available
+    .filter((value) => !preferred.includes(value))
+    .sort((a, b) => a.localeCompare(b));
+
+  return [...preferred, ...extra];
+};
+
+const normalizeText = (value) => (value || '').toString().trim().toLowerCase();
 
 function Collection({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
+  const { showToast } = useToast();
   const [collection, setCollection] = useState([]);
   const [decks, setDecks] = useState([]);
+  const [loadingCollectionPage, setLoadingCollectionPage] = useState(true);
   const [updatingCardId, setUpdatingCardId] = useState(null);
   const [quantityInputs, setQuantityInputs] = useState({});
+  const [collectionSearchTerm, setCollectionSearchTerm] = useState('');
+  const [collectionFilters, setCollectionFilters] = useState({
+    type: '',
+    color: '',
+    rarity: '',
+    set: '',
+  });
+  const [collectionSort, setCollectionSort] = useState('name-asc');
   const [collectionView, setCollectionView] = useState(
     () => localStorage.getItem('collectionViewMode') || 'detail'
   );
@@ -71,13 +95,27 @@ function Collection({ activeTcgSlug, activeTgc }) {
   }, [collectionView]);
 
   useEffect(() => {
+    setCollectionSearchTerm('');
+    setCollectionFilters({
+      type: '',
+      color: '',
+      rarity: '',
+      set: '',
+    });
+    setCollectionSort('name-asc');
+  }, [activeTcgSlug, activeTgc?.id]);
+
+  useEffect(() => {
     if (!activeTgc?.id) {
       setCollection([]);
       setDecks([]);
+      setLoadingCollectionPage(false);
       return;
     }
 
     const loadCollectionPage = async () => {
+      setLoadingCollectionPage(true);
+
       try {
         const cacheKey = String(activeTgc.id);
         const cachedCollection = collectionCacheRef.current.get(cacheKey);
@@ -127,11 +165,17 @@ function Collection({ activeTcgSlug, activeTgc }) {
         }
 
         console.error('Error al cargar la vista de coleccion:', error);
+        showToast({
+          type: 'error',
+          message: getApiErrorMessage(error, 'No se pudo cargar la coleccion.'),
+        });
+      } finally {
+        setLoadingCollectionPage(false);
       }
     };
 
     loadCollectionPage();
-  }, [activeTgc?.id, navigate, syncQuantityInputs]);
+  }, [activeTgc?.id, navigate, showToast, syncQuantityInputs]);
 
   const adjustCollectionQuantity = async (cardId, delta) => {
     setUpdatingCardId(cardId);
@@ -162,7 +206,10 @@ function Collection({ activeTcgSlug, activeTgc }) {
         return;
       }
 
-      alert(error.response?.data?.detail || 'No se pudo actualizar la cantidad en coleccion');
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo actualizar la cantidad en coleccion.'),
+      });
     } finally {
       setUpdatingCardId(null);
     }
@@ -173,7 +220,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
     const parsedValue = Number(rawValue);
 
     if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
-      alert('La cantidad debe ser un numero entero mayor que 0');
+      showToast({ type: 'error', message: 'La cantidad debe ser un numero entero mayor que 0.' });
       return;
     }
 
@@ -184,13 +231,17 @@ function Collection({ activeTcgSlug, activeTgc }) {
     try {
       await axios.post(`${API_BASE}/decks/${deckId}/cards`, { card_id: cardId, quantity: 1 });
       await loadCollection(true);
+      showToast({ type: 'success', message: 'Carta agregada al mazo.' });
     } catch (error) {
       if (error.response?.status === 401) {
         navigate('/');
         return;
       }
 
-      alert(error.response?.data?.detail || 'No se pudo agregar la carta al mazo');
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo agregar la carta al mazo.'),
+      });
       console.error('Error al agregar carta al mazo:', error);
     }
   };
@@ -203,6 +254,127 @@ function Collection({ activeTcgSlug, activeTgc }) {
     () => collection.filter((item) => item?.card),
     [collection]
   );
+
+  const availableTypeOptions = useMemo(
+    () => buildOrderedOptions(
+      safeCollection.map((item) => item.card.card_type),
+      activeGame.filters.types
+    ),
+    [activeGame.filters.types, safeCollection]
+  );
+
+  const availableColorOptions = useMemo(
+    () => buildOrderedOptions(
+      safeCollection.map((item) => item.card.color),
+      activeGame.filters.colors
+    ),
+    [activeGame.filters.colors, safeCollection]
+  );
+
+  const availableRarityOptions = useMemo(
+    () => buildOrderedOptions(safeCollection.map((item) => item.card.rarity)),
+    [safeCollection]
+  );
+
+  const availableSetOptions = useMemo(
+    () => buildOrderedOptions(safeCollection.map((item) => item.card.set_name)),
+    [safeCollection]
+  );
+
+  const visibleCollection = useMemo(() => {
+    const normalizedSearch = normalizeText(collectionSearchTerm);
+    const nextCollection = safeCollection.filter((item) => {
+      const card = item.card;
+
+      if (normalizedSearch) {
+        const matchesSearch = [
+          card.name,
+          card.source_card_id,
+          card.set_name,
+          card.card_type,
+        ].some((value) => normalizeText(value).includes(normalizedSearch));
+
+        if (!matchesSearch) {
+          return false;
+        }
+      }
+
+      if (collectionFilters.type && card.card_type !== collectionFilters.type) {
+        return false;
+      }
+      if (collectionFilters.color && card.color !== collectionFilters.color) {
+        return false;
+      }
+      if (collectionFilters.rarity && card.rarity !== collectionFilters.rarity) {
+        return false;
+      }
+      if (collectionFilters.set && card.set_name !== collectionFilters.set) {
+        return false;
+      }
+
+      return true;
+    });
+
+    const sortedCollection = [...nextCollection];
+    sortedCollection.sort((left, right) => {
+      const leftCard = left.card;
+      const rightCard = right.card;
+
+      switch (collectionSort) {
+        case 'set-asc':
+          return normalizeText(leftCard.set_name).localeCompare(normalizeText(rightCard.set_name))
+            || normalizeText(leftCard.name).localeCompare(normalizeText(rightCard.name));
+        case 'rarity-asc':
+          return normalizeText(leftCard.rarity).localeCompare(normalizeText(rightCard.rarity))
+            || normalizeText(leftCard.name).localeCompare(normalizeText(rightCard.name));
+        case 'quantity-desc':
+          return (right.total_quantity || 0) - (left.total_quantity || 0)
+            || normalizeText(leftCard.name).localeCompare(normalizeText(rightCard.name));
+        case 'available-desc':
+          return (right.available_quantity || 0) - (left.available_quantity || 0)
+            || normalizeText(leftCard.name).localeCompare(normalizeText(rightCard.name));
+        case 'name-asc':
+        default:
+          return normalizeText(leftCard.name).localeCompare(normalizeText(rightCard.name));
+      }
+    });
+
+    return sortedCollection;
+  }, [collectionFilters, collectionSearchTerm, collectionSort, safeCollection]);
+
+  const hasCollectionFilters = Boolean(
+    collectionSearchTerm.trim()
+    || collectionFilters.type
+    || collectionFilters.color
+    || collectionFilters.rarity
+    || collectionFilters.set
+    || collectionSort !== 'name-asc'
+  );
+
+  const clearCollectionFilters = () => {
+    setCollectionSearchTerm('');
+    setCollectionFilters({
+      type: '',
+      color: '',
+      rarity: '',
+      set: '',
+    });
+    setCollectionSort('name-asc');
+  };
+
+  if (loadingCollectionPage && safeCollection.length === 0) {
+    return (
+      <div className="collection page-shell">
+        <section className="page-hero collection-hero">
+          <div>
+            <span className="eyebrow">{activeGame.eyebrow}</span>
+            <h1>{activeTcgSlug === 'one-piece' ? 'Mi Tripulacion' : 'Mi Coleccion'}</h1>
+            <p>Cargando tu inventario de {activeGame.shortName}...</p>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="collection page-shell">
@@ -252,8 +424,86 @@ function Collection({ activeTcgSlug, activeTgc }) {
         </div>
       </section>
 
+      <section className="panel collection-controls-panel">
+        <div className="collection-controls-copy">
+          <strong>Filtra tu coleccion</strong>
+          <span>
+            Mostrando {visibleCollection.length} de {safeCollection.length} cartas registradas.
+          </span>
+        </div>
+
+        <div className="collection-controls">
+          <input
+            type="text"
+            placeholder="Buscar por nombre, codigo o set..."
+            value={collectionSearchTerm}
+            onChange={(e) => setCollectionSearchTerm(e.target.value)}
+          />
+
+          <select
+            value={collectionFilters.type}
+            onChange={(e) => setCollectionFilters((current) => ({ ...current, type: e.target.value }))}
+          >
+            <option value="">Todos los tipos</option>
+            {availableTypeOptions.map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
+
+          <select
+            value={collectionFilters.color}
+            onChange={(e) => setCollectionFilters((current) => ({ ...current, color: e.target.value }))}
+          >
+            <option value="">Todos los colores</option>
+            {availableColorOptions.map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
+
+          <select
+            value={collectionFilters.rarity}
+            onChange={(e) => setCollectionFilters((current) => ({ ...current, rarity: e.target.value }))}
+          >
+            <option value="">Todas las rarezas</option>
+            {availableRarityOptions.map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
+
+          <select
+            value={collectionFilters.set}
+            onChange={(e) => setCollectionFilters((current) => ({ ...current, set: e.target.value }))}
+          >
+            <option value="">Todos los sets</option>
+            {availableSetOptions.map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
+
+          <select
+            value={collectionSort}
+            onChange={(e) => setCollectionSort(e.target.value)}
+          >
+            <option value="name-asc">Orden: Nombre</option>
+            <option value="set-asc">Orden: Set</option>
+            <option value="rarity-asc">Orden: Rareza</option>
+            <option value="quantity-desc">Orden: Total copias</option>
+            <option value="available-desc">Orden: Disponibles</option>
+          </select>
+
+          <button
+            type="button"
+            className="ghost-button collection-clear-button"
+            onClick={clearCollectionFilters}
+            disabled={!hasCollectionFilters}
+          >
+            Limpiar
+          </button>
+        </div>
+      </section>
+
       <div className={`collection-list ${collectionView !== 'detail' ? 'is-grid' : ''}`}>
-        {safeCollection.map((item) => {
+        {visibleCollection.map((item) => {
           const isUpdating = updatingCardId === item.card.id;
           const isInventoryView = collectionView === 'inventory';
           const collectionSet = item.card.set_name || 'Sin set';
@@ -401,6 +651,13 @@ function Collection({ activeTcgSlug, activeTgc }) {
           <div className="empty-state panel">
             <h3>No hay cartas de {activeGame.shortName} en tu coleccion todavia</h3>
             <p>A?ade cartas desde el buscador para empezar a construir mazos.</p>
+          </div>
+        )}
+
+        {safeCollection.length > 0 && visibleCollection.length === 0 && (
+          <div className="empty-state panel">
+            <h3>No hay cartas que coincidan con esos filtros</h3>
+            <p>Prueba con otro nombre, set o quita alguno de los filtros activos.</p>
           </div>
         )}
       </div>

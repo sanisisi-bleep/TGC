@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { getGameConfig } from '../tcgConfig';
+import { useToast } from '../context/ToastContext';
 import API_BASE from '../apiBase';
+import { getApiErrorMessage } from '../utils/apiMessages';
 
 const PAGE_SIZE = 100;
 const SEARCH_INPUT_DELAY_MS = 280;
@@ -96,6 +98,7 @@ const useDebouncedValue = (value, delay) => {
 
 function Search({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
+  const { showToast } = useToast();
   const [cards, setCards] = useState([]);
   const [decks, setDecks] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -107,7 +110,6 @@ function Search({ activeTcgSlug, activeTgc }) {
     expansion: '',
   });
   const [selectedCard, setSelectedCard] = useState(null);
-  const [toast, setToast] = useState(null);
   const [deckPickerCard, setDeckPickerCard] = useState(null);
   const [newDeckName, setNewDeckName] = useState('');
   const [submittingDeckAction, setSubmittingDeckAction] = useState(false);
@@ -345,37 +347,29 @@ function Search({ activeTcgSlug, activeTgc }) {
       return deckList;
     } catch (error) {
       console.error('Error al cargar mazos para el buscador:', error);
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudieron cargar tus mazos.'),
+      });
       return [];
     } finally {
       setLoadingDecks(false);
     }
   };
 
-  useEffect(() => {
-    if (!toast) {
-      return undefined;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setToast(null);
-    }, 2400);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [toast]);
-
   const handleAddToCollection = async (cardId) => {
     try {
       const token = localStorage.getItem('token');
 
       if (!token) {
-        setToast({ type: 'error', message: 'Debes iniciar sesion para agregar cartas a tu coleccion' });
+        showToast({ type: 'error', message: 'Debes iniciar sesion para agregar cartas a tu coleccion.' });
         return;
       }
 
       const parsedCardId = Number(cardId);
 
       if (!Number.isInteger(parsedCardId) || parsedCardId <= 0) {
-        setToast({ type: 'error', message: 'Error: ID de carta invalido' });
+        showToast({ type: 'error', message: 'El ID de carta recibido no es valido.' });
         return;
       }
 
@@ -384,7 +378,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         quantity: 1,
       };
 
-      const response = await axios.post(
+      await axios.post(
         `${API_BASE}/collection`,
         requestData,
         {
@@ -396,46 +390,17 @@ function Search({ activeTcgSlug, activeTgc }) {
         }
       );
 
-      console.log('Respuesta backend:', response.data);
-      setToast({ type: 'success', message: 'Carta agregada a la coleccion' });
+      showToast({ type: 'success', message: 'Carta agregada a la coleccion.' });
     } catch (error) {
-      console.error('Error al agregar a la coleccion:', error);
-      console.error('Status:', error.response?.status);
-      console.error('Respuesta backend:', error.response?.data);
-
       if (error.response?.status === 401) {
-        setToast({ type: 'error', message: 'Sesion expirada. Por favor, inicia sesion de nuevo.' });
+        showToast({ type: 'error', message: 'Sesion expirada. Por favor, inicia sesion de nuevo.' });
         localStorage.removeItem('token');
         return;
       }
-
-      if (error.response?.status === 422) {
-        const detail = error.response?.data?.detail;
-
-        if (Array.isArray(detail)) {
-          const errorMsg = detail
-            .map((d) => {
-              const campo = d.loc ? d.loc.join(' -> ') : 'desconocido';
-              return `${campo}: ${d.msg}`;
-            })
-            .join('\n');
-
-          setToast({ type: 'error', message: `Error de validacion: ${errorMsg}` });
-          return;
-        }
-      }
-
-      let errorMsg = 'No se pudo agregar la carta a la coleccion';
-
-      if (error.response?.data?.detail) {
-        if (typeof error.response.data.detail === 'string') {
-          errorMsg = error.response.data.detail;
-        } else {
-          errorMsg = JSON.stringify(error.response.data.detail);
-        }
-      }
-
-      setToast({ type: 'error', message: errorMsg });
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo agregar la carta a la coleccion.'),
+      });
     }
   };
 
@@ -458,12 +423,12 @@ function Search({ activeTcgSlug, activeTgc }) {
         card_id: deckPickerCard.id,
         quantity: 1,
       });
-      setToast({ type: 'success', message: 'Carta agregada al mazo' });
+      showToast({ type: 'success', message: 'Carta agregada al mazo.' });
       setDeckPickerCard(null);
     } catch (error) {
-      setToast({
+      showToast({
         type: 'error',
-        message: error.response?.data?.detail || 'No se pudo agregar la carta al mazo',
+        message: getApiErrorMessage(error, 'No se pudo agregar la carta al mazo.'),
       });
     } finally {
       setSubmittingDeckAction(false);
@@ -477,7 +442,7 @@ function Search({ activeTcgSlug, activeTgc }) {
 
     const trimmedDeckName = newDeckName.trim();
     if (!trimmedDeckName) {
-      setToast({ type: 'error', message: 'Pon un nombre al mazo nuevo' });
+      showToast({ type: 'error', message: 'Pon un nombre al mazo nuevo.' });
       return;
     }
 
@@ -500,13 +465,13 @@ function Search({ activeTcgSlug, activeTgc }) {
       });
 
       await loadDecksForPicker(true);
-      setToast({ type: 'success', message: 'Mazo creado y carta agregada' });
+      showToast({ type: 'success', message: 'Mazo creado y carta agregada.' });
       setDeckPickerCard(null);
       setNewDeckName('');
     } catch (error) {
-      setToast({
+      showToast({
         type: 'error',
-        message: error.response?.data?.detail || 'No se pudo crear el mazo y agregar la carta',
+        message: getApiErrorMessage(error, 'No se pudo crear el mazo y agregar la carta.'),
       });
     } finally {
       setSubmittingDeckAction(false);
@@ -585,12 +550,6 @@ function Search({ activeTcgSlug, activeTgc }) {
 
   return (
     <div className="search page-shell">
-      {toast && (
-        <div className={`floating-toast ${toast.type === 'error' ? 'is-error' : 'is-success'}`}>
-          {toast.message}
-        </div>
-      )}
-
       <section className="page-hero search-hero">
         <div>
           <span className="eyebrow">{activeGame.eyebrow}</span>
