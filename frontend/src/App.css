@@ -800,6 +800,14 @@ select {
   gap: 1rem;
 }
 
+.search-results-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
 .search-results-copy {
   display: grid;
   gap: 0.2rem;
@@ -811,6 +819,27 @@ select {
 
 .search-results-copy span {
   color: var(--text-soft);
+}
+
+.page-size-control {
+  display: inline-grid;
+  gap: 0.35rem;
+  min-width: 120px;
+}
+
+.page-size-control span {
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.page-size-control select {
+  min-height: 42px;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid rgba(21, 38, 58, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--text);
 }
 
 .pagination-controls {
@@ -1467,10 +1496,9 @@ select {
 }
 
 .deck-detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.65rem;
+  display: grid;
+  gap: 0.8rem;
+  min-width: min(100%, 360px);
 }
 
 .deck-badge,
@@ -1492,6 +1520,71 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
+}
+
+.deck-action-group {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(21, 38, 58, 0.08);
+}
+
+.deck-action-group-label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.88rem;
+  color: var(--text-soft);
+}
+
+.deck-action-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.deck-action-button {
+  min-height: 42px;
+  padding: 0.68rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(21, 38, 58, 0.12);
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.deck-action-button:hover {
+  transform: translateY(-1px);
+}
+
+.deck-action-button.is-primary {
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 70%, #ffffff));
+  color: #ffffff;
+  border-color: rgba(22, 86, 193, 0.42);
+}
+
+.deck-action-button.is-soft {
+  background: rgba(22, 86, 193, 0.08);
+  color: var(--primary-deep);
+  border-color: rgba(22, 86, 193, 0.18);
+}
+
+.deck-action-button.is-neutral {
+  background: rgba(21, 38, 58, 0.06);
+  color: var(--text);
+  border-color: rgba(21, 38, 58, 0.12);
+}
+
+.deck-action-button.is-danger {
+  background: rgba(201, 59, 47, 0.08);
+  color: #a22820;
+  border-color: rgba(201, 59, 47, 0.18);
+}
+
+.deck-action-button:disabled {
+  opacity: 0.66;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .deck-status-row {
@@ -1622,6 +1715,49 @@ select {
 .danger-ghost-button:hover {
   background: rgba(201, 59, 47, 0.14) !important;
   border-color: rgba(201, 59, 47, 0.3) !important;
+}
+
+.deck-list-preview-modal {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 1rem;
+}
+
+.deck-list-preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.deck-list-preview-copy {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.deck-list-preview-copy strong {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.deck-list-preview-copy span {
+  color: var(--text-soft);
+}
+
+.deck-list-preview-actions {
+  justify-content: flex-end;
+}
+
+.deck-list-preview-content {
+  width: 100%;
+  min-height: 300px;
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(21, 38, 58, 0.12);
+  background: rgba(247, 250, 255, 0.92);
+  color: var(--text);
+  font: 600 0.95rem/1.55 'Space Grotesk', sans-serif;
+  resize: vertical;
 }
 
 .card-modal {
@@ -2213,6 +2349,15 @@ select {
     align-items: stretch;
   }
 
+  .search-results-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .page-size-control {
+    min-width: 0;
+  }
+
   .pagination-controls {
     justify-content: flex-start;
   }
@@ -2226,7 +2371,7 @@ select {
 
   .deck-detail-actions {
     width: 100%;
-    justify-content: flex-start;
+    min-width: 0;
   }
 
   .deck-title-edit {
@@ -2292,6 +2437,11 @@ select {
     width: 100%;
   }
 
+  .page-size-control,
+  .page-size-control select {
+    width: 100%;
+  }
+
   .pagination-button {
     flex: 1 1 auto;
   }
@@ -2336,6 +2486,17 @@ select {
   .deck-card-actions {
     display: grid;
     grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .deck-action-strip,
+  .deck-list-preview-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .deck-action-button {
     width: 100%;
   }
 

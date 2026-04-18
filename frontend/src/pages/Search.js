@@ -5,17 +5,18 @@ import { useToast } from '../context/ToastContext';
 import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
 
-const PAGE_SIZE = 100;
+const SEARCH_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+const DEFAULT_PAGE_SIZE = 100;
 const SEARCH_INPUT_DELAY_MS = 280;
-const EMPTY_RESULTS = {
+const createEmptyResults = (limit = DEFAULT_PAGE_SIZE) => ({
   items: [],
   page: 1,
-  limit: PAGE_SIZE,
+  limit,
   total: 0,
   total_pages: 0,
   has_previous: false,
   has_next: false,
-};
+});
 const EMPTY_FACETS = {
   card_types: [],
   colors: [],
@@ -33,7 +34,13 @@ const buildOrderedOptions = (values, preferredOrder = []) => {
   return [...preferred, ...extra].map((value) => ({ value, label: value }));
 };
 
-const buildCardsRequestParams = ({ tgcId, page, searchTerm, filters }) => {
+const buildCardsRequestParams = ({
+  tgcId,
+  page,
+  pageSize,
+  searchTerm,
+  filters,
+}) => {
   if (!tgcId) {
     return null;
   }
@@ -41,7 +48,7 @@ const buildCardsRequestParams = ({ tgcId, page, searchTerm, filters }) => {
   const params = {
     tgc_id: tgcId,
     page,
-    limit: PAGE_SIZE,
+    limit: pageSize,
   };
 
   const normalizedSearch = searchTerm.trim();
@@ -64,12 +71,14 @@ const buildCardsRequestParams = ({ tgcId, page, searchTerm, filters }) => {
   return params;
 };
 
-const normalizeResultsPayload = (payload) => {
-  const safePayload = payload && typeof payload === 'object' ? payload : EMPTY_RESULTS;
+const normalizeResultsPayload = (payload, fallbackLimit = DEFAULT_PAGE_SIZE) => {
+  const safePayload = payload && typeof payload === 'object'
+    ? payload
+    : createEmptyResults(fallbackLimit);
   const items = Array.isArray(safePayload.items) ? safePayload.items : [];
 
   return {
-    ...EMPTY_RESULTS,
+    ...createEmptyResults(fallbackLimit),
     ...safePayload,
     items,
   };
@@ -114,7 +123,8 @@ function Search({ activeTcgSlug, activeTgc }) {
   const [newDeckName, setNewDeckName] = useState('');
   const [submittingDeckAction, setSubmittingDeckAction] = useState(false);
   const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState(EMPTY_RESULTS);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [pagination, setPagination] = useState(() => createEmptyResults(DEFAULT_PAGE_SIZE));
   const [facets, setFacets] = useState(EMPTY_FACETS);
   const [loadingCards, setLoadingCards] = useState(true);
   const [hasLoadedCards, setHasLoadedCards] = useState(false);
@@ -128,10 +138,11 @@ function Search({ activeTcgSlug, activeTgc }) {
     () => buildCardsRequestParams({
       tgcId: activeTgc?.id,
       page,
+      pageSize,
       searchTerm: debouncedSearchTerm,
       filters,
     }),
-    [activeTgc?.id, debouncedSearchTerm, filters, page]
+    [activeTgc?.id, debouncedSearchTerm, filters, page, pageSize]
   );
 
   const cardsCacheKey = useMemo(
@@ -149,7 +160,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     });
     setPage(1);
     setCards([]);
-    setPagination(EMPTY_RESULTS);
+    setPagination((current) => createEmptyResults(current.limit || DEFAULT_PAGE_SIZE));
     setFacets(EMPTY_FACETS);
     setDecks([]);
     setSelectedCard(null);
@@ -163,7 +174,7 @@ function Search({ activeTcgSlug, activeTgc }) {
   useEffect(() => {
     if (!cardsRequestParams) {
       setCards([]);
-      setPagination(EMPTY_RESULTS);
+      setPagination(createEmptyResults(pageSize));
       setLoadingCards(false);
       setHasLoadedCards(true);
       return undefined;
@@ -202,7 +213,7 @@ function Search({ activeTcgSlug, activeTgc }) {
 
         cardsCacheRef.current.set(
           nextCacheKey,
-          normalizeResultsPayload(prefetchResponse.data)
+          normalizeResultsPayload(prefetchResponse.data, pageSize)
         );
       } catch (error) {
         if (!isRequestCanceled(error)) {
@@ -223,7 +234,7 @@ function Search({ activeTcgSlug, activeTgc }) {
           },
         });
 
-        const nextPagination = normalizeResultsPayload(res.data);
+        const nextPagination = normalizeResultsPayload(res.data, pageSize);
         cardsCacheRef.current.set(cardsCacheKey, nextPagination);
 
         setCards(nextPagination.items);
@@ -246,7 +257,7 @@ function Search({ activeTcgSlug, activeTgc }) {
 
         if (!hasLoadedCards) {
           setCards([]);
-          setPagination(EMPTY_RESULTS);
+          setPagination(createEmptyResults(pageSize));
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -261,7 +272,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     return () => {
       controller.abort();
     };
-  }, [cardsCacheKey, cardsRequestParams, hasLoadedCards, page]);
+  }, [cardsCacheKey, cardsRequestParams, hasLoadedCards, page, pageSize]);
 
   useEffect(() => {
     if (!activeTgc?.id) {
@@ -491,6 +502,18 @@ function Search({ activeTcgSlug, activeTgc }) {
     setSearchTerm(value);
   };
 
+  const handlePageSizeChange = (value) => {
+    const nextPageSize = Number(value);
+
+    if (!SEARCH_PAGE_SIZE_OPTIONS.includes(nextPageSize)) {
+      return;
+    }
+
+    setPage(1);
+    setPageSize(nextPageSize);
+    setPagination(createEmptyResults(nextPageSize));
+  };
+
   const uniqueExpansions = useMemo(() => facets.set_names, [facets.set_names]);
 
   const availableTypeOptions = useMemo(
@@ -635,38 +658,55 @@ function Search({ activeTcgSlug, activeTgc }) {
           </span>
         </div>
 
-        <div className="pagination-controls" aria-label="Paginacion del buscador">
-          <button
-            type="button"
-            className="pagination-button"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={!pagination.has_previous || loadingCards}
-          >
-            Anterior
-          </button>
+        <div className="search-results-actions">
+          <label className="page-size-control">
+            <span>Por pagina</span>
+            <select
+              value={pageSize}
+              onChange={(e) => handlePageSizeChange(e.target.value)}
+              disabled={loadingCards}
+            >
+              {SEARCH_PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <div className="pagination-page-list">
-            {visiblePageNumbers.map((pageNumber) => (
-              <button
-                key={pageNumber}
-                type="button"
-                className={`pagination-button ${pageNumber === pagination.page ? 'is-active' : ''}`}
-                onClick={() => setPage(pageNumber)}
-                disabled={loadingCards}
-              >
-                {pageNumber}
-              </button>
-            ))}
+          <div className="pagination-controls" aria-label="Paginacion del buscador">
+            <button
+              type="button"
+              className="pagination-button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={!pagination.has_previous || loadingCards}
+            >
+              Anterior
+            </button>
+
+            <div className="pagination-page-list">
+              {visiblePageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  className={`pagination-button ${pageNumber === pagination.page ? 'is-active' : ''}`}
+                  onClick={() => setPage(pageNumber)}
+                  disabled={loadingCards}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="pagination-button"
+              onClick={() => setPage((current) => current + 1)}
+              disabled={!pagination.has_next || loadingCards}
+            >
+              Siguiente
+            </button>
           </div>
-
-          <button
-            type="button"
-            className="pagination-button"
-            onClick={() => setPage((current) => current + 1)}
-            disabled={!pagination.has_next || loadingCards}
-          >
-            Siguiente
-          </button>
         </div>
       </section>
 
