@@ -6,19 +6,74 @@ import API_BASE from '../apiBase';
 
 const PUBLIC_GAME_OPTIONS = Object.values(GAME_CONFIGS);
 
+const VALIDATION_MESSAGE_MAP = {
+  'String should have at least 3 characters': 'El usuario debe tener al menos 3 caracteres.',
+  'String should have at least 5 characters': 'El email debe tener al menos 5 caracteres.',
+  'String should have at least 8 characters': 'La contrasena debe tener al menos 8 caracteres.',
+  'Username may only contain letters, numbers, dots, hyphens, and underscores': 'El usuario solo puede contener letras, numeros, puntos, guiones y guiones bajos.',
+  'Invalid email format': 'El email no tiene un formato valido.',
+  'Invalid username format': 'El usuario no tiene un formato valido.',
+};
+
+const FIELD_LABELS = {
+  username: 'Usuario',
+  email: 'Email',
+  password: 'Contrasena',
+};
+
+const translateValidationMessage = (message) => VALIDATION_MESSAGE_MAP[message] || message;
+
+const formatValidationError = (error) => {
+  const message = translateValidationMessage(error?.msg || 'Dato no valido');
+  const fieldName = Array.isArray(error?.loc) ? error.loc[error.loc.length - 1] : '';
+  const label = FIELD_LABELS[fieldName];
+
+  return label ? `${label}: ${message}` : message;
+};
+
+const getAuthErrorMessage = (error, isRegister) => {
+  const detail = error?.response?.data?.detail;
+
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail.map(formatValidationError).join(' ');
+  }
+
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail;
+  }
+
+  if (error?.response?.status === 422) {
+    return isRegister
+      ? 'Revisa los datos del registro. La contrasena debe tener al menos 8 caracteres.'
+      : 'Revisa los datos del login antes de volver a intentarlo.';
+  }
+
+  return isRegister ? 'No se pudo completar el registro.' : 'No se pudo iniciar sesion.';
+};
+
 function Home({ token, setToken, activeTcgSlug, setActiveTcgSlug, availableGames }) {
   const navigate = useNavigate();
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [registerData, setRegisterData] = useState({ username: '', email: '', password: '' });
   const [isRegister, setIsRegister] = useState(false);
+  const [authMessage, setAuthMessage] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const activeGame = getGameConfig(activeTcgSlug);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    setAuthMessage(null);
+    setIsSubmitting(true);
+
     try {
       if (isRegister) {
         await axios.post(`${API_BASE}/auth/register`, registerData);
-        alert('Registrado exitosamente');
+        setAuthMessage({
+          type: 'success',
+          text: 'Registro completado. Ya puedes iniciar sesion con tu usuario.',
+        });
+        setRegisterData({ username: '', email: '', password: '' });
         setIsRegister(false);
       } else {
         const res = await axios.post(`${API_BASE}/auth/token`, loginData);
@@ -26,7 +81,12 @@ function Home({ token, setToken, activeTcgSlug, setActiveTcgSlug, availableGames
         localStorage.setItem('token', res.data.access_token);
       }
     } catch (err) {
-      alert(isRegister ? 'Error en registro' : 'Error en login');
+      setAuthMessage({
+        type: 'error',
+        text: getAuthErrorMessage(err, isRegister),
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -136,24 +196,117 @@ function Home({ token, setToken, activeTcgSlug, setActiveTcgSlug, availableGames
             </div>
 
             <div className="auth-toggle">
-              <button onClick={() => setIsRegister(false)} className={!isRegister ? 'active' : ''}>Iniciar Sesion</button>
-              <button onClick={() => setIsRegister(true)} className={isRegister ? 'active' : ''}>Registrarse</button>
+              <button
+                onClick={() => {
+                  setIsRegister(false);
+                  setAuthMessage(null);
+                }}
+                className={!isRegister ? 'active' : ''}
+                type="button"
+              >
+                Iniciar Sesion
+              </button>
+              <button
+                onClick={() => {
+                  setIsRegister(true);
+                  setAuthMessage(null);
+                }}
+                className={isRegister ? 'active' : ''}
+                type="button"
+              >
+                Registrarse
+              </button>
             </div>
 
             <form onSubmit={handleSubmit} className="auth-form">
+              {authMessage && (
+                <div
+                  className={`auth-feedback ${authMessage.type === 'error' ? 'is-error' : 'is-success'}`}
+                  role="alert"
+                  aria-live="polite"
+                >
+                  {authMessage.text}
+                </div>
+              )}
+
               {isRegister ? (
                 <>
-                  <input type="text" placeholder="Usuario" onChange={(e) => setRegisterData({ ...registerData, username: e.target.value })} required />
-                  <input type="email" placeholder="Email" onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })} required />
-                  <input type="password" placeholder="Contrasena" onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })} required />
+                  <input
+                    type="text"
+                    placeholder="Usuario"
+                    value={registerData.username}
+                    minLength={3}
+                    maxLength={50}
+                    autoComplete="username"
+                    onChange={(e) => {
+                      setAuthMessage(null);
+                      setRegisterData({ ...registerData, username: e.target.value });
+                    }}
+                    required
+                  />
+                  <p className="auth-helper-text">Usa letras, numeros, puntos, guiones o guion bajo.</p>
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={registerData.email}
+                    maxLength={100}
+                    autoComplete="email"
+                    onChange={(e) => {
+                      setAuthMessage(null);
+                      setRegisterData({ ...registerData, email: e.target.value });
+                    }}
+                    required
+                  />
+                  <input
+                    type="password"
+                    placeholder="Contrasena"
+                    value={registerData.password}
+                    minLength={8}
+                    maxLength={72}
+                    autoComplete="new-password"
+                    onChange={(e) => {
+                      setAuthMessage(null);
+                      setRegisterData({ ...registerData, password: e.target.value });
+                    }}
+                    required
+                  />
+                  <p className="auth-helper-text">La contrasena debe tener entre 8 y 72 caracteres.</p>
                 </>
               ) : (
                 <>
-                  <input type="text" placeholder="Usuario" onChange={(e) => setLoginData({ ...loginData, username: e.target.value })} required />
-                  <input type="password" placeholder="Contrasena" onChange={(e) => setLoginData({ ...loginData, password: e.target.value })} required />
+                  <input
+                    type="text"
+                    placeholder="Usuario o email"
+                    value={loginData.username}
+                    maxLength={100}
+                    autoComplete="username"
+                    onChange={(e) => {
+                      setAuthMessage(null);
+                      setLoginData({ ...loginData, username: e.target.value });
+                    }}
+                    required
+                  />
+                  <input
+                    type="password"
+                    placeholder="Contrasena"
+                    value={loginData.password}
+                    maxLength={72}
+                    autoComplete="current-password"
+                    onChange={(e) => {
+                      setAuthMessage(null);
+                      setLoginData({ ...loginData, password: e.target.value });
+                    }}
+                    required
+                  />
                 </>
               )}
-              <button type="submit">{isRegister ? 'Registrarse' : 'Iniciar Sesion'}</button>
+              <button type="submit" disabled={isSubmitting}>
+                {isSubmitting
+                  ? 'Procesando...'
+                  : isRegister
+                    ? 'Registrarse'
+                    : 'Iniciar Sesion'}
+              </button>
             </form>
           </div>
         </aside>

@@ -1,4 +1,5 @@
 import math
+import re
 from typing import List, Optional
 
 from sqlalchemy import func, or_
@@ -20,15 +21,15 @@ class CardService:
             "tgc_id": card.tgc_id,
             "source_card_id": card.source_card_id,
             "name": card.name,
-            "card_type": card.card_type,
+            "card_type": self._normalize_card_value(card.card_type),
             "lv": card.lv,
             "cost": card.cost,
             "ap": card.ap,
             "hp": card.hp,
-            "color": card.color,
-            "rarity": card.rarity,
-            "set_name": card.set_name,
-            "version": card.version,
+            "color": self._normalize_card_value(card.color),
+            "rarity": self._normalize_card_value(card.rarity),
+            "set_name": self._normalize_card_value(card.set_name),
+            "version": self._normalize_card_value(card.version),
             "block": card.block,
             "traits": card.traits,
             "link": card.link,
@@ -39,8 +40,15 @@ class CardService:
             "image_url": normalize_card_image_url(card.image_url),
         }
 
+    def _normalize_card_value(self, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+
+        normalized = re.sub(r"\s+", " ", value).strip()
+        return normalized or None
+
     def _normalize_filter_value(self, value: Optional[str]) -> Optional[str]:
-        normalized = (value or "").strip()
+        normalized = self._normalize_card_value(value)
         return normalized or None
 
     def _escape_like_pattern(self, value: str) -> str:
@@ -50,6 +58,23 @@ class CardService:
             .replace("%", "\\%")
             .replace("_", "\\_")
         )
+
+    def _apply_normalized_exact_filter(self, query, column, value: Optional[str], tgc_id: Optional[int] = None):
+        normalized_value = self._normalize_filter_value(value)
+        if not normalized_value:
+            return query
+
+        matching_variants = sorted({
+            raw_value.lower()
+            for raw_value in self._get_distinct_card_values(column, tgc_id)
+            if self._normalize_card_value(raw_value)
+            and self._normalize_card_value(raw_value).lower() == normalized_value.lower()
+        })
+
+        if matching_variants:
+            return query.filter(func.lower(column).in_(matching_variants))
+
+        return query.filter(func.lower(func.trim(column)) == normalized_value.lower())
 
     def _build_cards_query(
         self,
@@ -75,21 +100,10 @@ class CardService:
                 )
             )
 
-        normalized_type = self._normalize_filter_value(card_type)
-        if normalized_type:
-            query = query.filter(func.lower(Card.card_type) == normalized_type.lower())
-
-        normalized_color = self._normalize_filter_value(color)
-        if normalized_color:
-            query = query.filter(func.lower(Card.color) == normalized_color.lower())
-
-        normalized_rarity = self._normalize_filter_value(rarity)
-        if normalized_rarity:
-            query = query.filter(func.lower(Card.rarity) == normalized_rarity.lower())
-
-        normalized_set = self._normalize_filter_value(set_name)
-        if normalized_set:
-            query = query.filter(func.lower(Card.set_name) == normalized_set.lower())
+        query = self._apply_normalized_exact_filter(query, Card.card_type, card_type, tgc_id)
+        query = self._apply_normalized_exact_filter(query, Card.color, color, tgc_id)
+        query = self._apply_normalized_exact_filter(query, Card.rarity, rarity, tgc_id)
+        query = self._apply_normalized_exact_filter(query, Card.set_name, set_name, tgc_id)
 
         return query
 
@@ -150,12 +164,24 @@ class CardService:
         rows = query.distinct().order_by(func.lower(column).asc()).all()
         return [value for value, in rows if value]
 
+    def _get_normalized_distinct_card_values(self, column, tgc_id: Optional[int] = None):
+        normalized_values = {}
+
+        for raw_value in self._get_distinct_card_values(column, tgc_id):
+            normalized_value = self._normalize_card_value(raw_value)
+            if not normalized_value:
+                continue
+
+            normalized_values.setdefault(normalized_value.lower(), normalized_value)
+
+        return sorted(normalized_values.values(), key=lambda value: value.lower())
+
     def get_card_facets(self, tgc_id: Optional[int] = None):
         return {
-            "card_types": self._get_distinct_card_values(Card.card_type, tgc_id),
-            "colors": self._get_distinct_card_values(Card.color, tgc_id),
-            "rarities": self._get_distinct_card_values(Card.rarity, tgc_id),
-            "set_names": self._get_distinct_card_values(Card.set_name, tgc_id),
+            "card_types": self._get_normalized_distinct_card_values(Card.card_type, tgc_id),
+            "colors": self._get_normalized_distinct_card_values(Card.color, tgc_id),
+            "rarities": self._get_normalized_distinct_card_values(Card.rarity, tgc_id),
+            "set_names": self._get_normalized_distinct_card_values(Card.set_name, tgc_id),
         }
 
     def create_card(self, tgc_id: int, name: str, card_type: str = None, lv: int = None, cost: int = None, ap: int = None, hp: int = None, color: str = None, rarity: str = None, set_name: str = None, version: str = None, abilities: str = None, description: str = None, image_url: str = None) -> Card:

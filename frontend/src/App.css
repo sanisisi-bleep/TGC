@@ -691,6 +691,42 @@ select {
   transform: translateY(-2px);
 }
 
+.auth-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.auth-feedback {
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.auth-feedback.is-error {
+  background: rgba(201, 59, 47, 0.12);
+  border: 1px solid rgba(201, 59, 47, 0.2);
+  color: #8f251d;
+}
+
+.auth-feedback.is-success {
+  background: rgba(30, 155, 87, 0.12);
+  border: 1px solid rgba(30, 155, 87, 0.18);
+  color: #146d3c;
+}
+
+.auth-helper-text {
+  margin: -0.2rem 0 0.15rem;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.auth-form button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+  transform: none;
+}
+
 .search,
 .collection,
 .decks,

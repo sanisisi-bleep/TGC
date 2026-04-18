@@ -189,6 +189,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
         {safeCollection.map((item) => {
           const isUpdating = updatingCardId === item.card.id;
           const isInventoryView = collectionView === 'inventory';
+          const collectionSet = item.card.set_name || 'Sin set';
 
           return (
             <article
@@ -279,6 +280,8 @@ function Collection({ activeTcgSlug, activeTgc }) {
                   <p className="collection-meta">
                     {[item.card.card_type || 'Sin tipo', item.card.color || 'Sin color', item.card.rarity || 'Sin rareza'].join(' · ')}
                   </p>
+
+                  <p className="collection-meta">Set: {collectionSet}</p>
 
                   <div className="collection-decks">
                     <strong>En mazos</strong>

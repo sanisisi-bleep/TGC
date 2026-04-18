@@ -611,6 +611,7 @@ function Search({ activeTcgSlug, activeTgc }) {
             >
               <img src={card.image_url} alt={card.name} />
               <h3>{card.name}</h3>
+              <p>Set: {card.set_name || 'Sin set'}</p>
               <p>Tipo: {card.card_type || 'Sin tipo'}</p>
               <p>Rareza: {card.rarity || 'Sin rareza'}</p>
 
@@ -683,7 +684,7 @@ function Search({ activeTcgSlug, activeTgc }) {
             <p><strong>Tipo:</strong> {selectedCard.card_type}</p>
             <p><strong>Color:</strong> {selectedCard.color}</p>
             <p><strong>Rareza:</strong> {selectedCard.rarity}</p>
-            <p><strong>Set:</strong> {selectedCard.set_name}</p>
+            <p><strong>Set:</strong> {selectedCard.set_name || 'Sin set'}</p>
             {selectedCard.lv && <p><strong>Nivel:</strong> {selectedCard.lv}</p>}
             {selectedCard.cost && <p><strong>Costo:</strong> {selectedCard.cost}</p>}
             {selectedCard.ap && (
