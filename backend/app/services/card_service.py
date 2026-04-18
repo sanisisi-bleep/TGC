@@ -1,5 +1,6 @@
 import math
 import re
+from collections import defaultdict
 from typing import List, Optional
 
 from sqlalchemy import func, or_
@@ -211,29 +212,42 @@ class CardService:
 
         collections = query.all()
         advanced_mode = self._is_advanced_mode_enabled(user_id)
-        result = []
-        for col in collections:
+        collection_card_ids = [col.card_id for col in collections]
+        default_tgc_id = self._get_default_tgc_id() if tgc_id is not None else None
+        deck_rows_by_card_id = defaultdict(list)
+
+        if collection_card_ids:
             deck_query = (
-                self.db.query(Deck, DeckCard)
+                self.db.query(
+                    Deck.id.label("deck_id"),
+                    Deck.name.label("deck_name"),
+                    DeckCard.card_id.label("card_id"),
+                    DeckCard.quantity.label("quantity"),
+                    DeckCard.assigned_quantity.label("assigned_quantity"),
+                )
                 .join(DeckCard, Deck.id == DeckCard.deck_id)
-                .filter(DeckCard.card_id == col.card_id, Deck.user_id == user_id)
+                .filter(Deck.user_id == user_id, DeckCard.card_id.in_(collection_card_ids))
             )
 
             if tgc_id is not None:
-                default_tgc_id = self._get_default_tgc_id()
                 if default_tgc_id and tgc_id == default_tgc_id:
                     deck_query = deck_query.filter(or_(Deck.tgc_id == tgc_id, Deck.tgc_id.is_(None)))
                 else:
                     deck_query = deck_query.filter(Deck.tgc_id == tgc_id)
 
-            deck_rows = deck_query.all()
+            for deck_row in deck_query.all():
+                deck_rows_by_card_id[deck_row.card_id].append(deck_row)
+
+        result = []
+        for col in collections:
+            deck_rows = deck_rows_by_card_id.get(col.card_id, [])
             used_in_decks = sum(
                 (
-                    deck_card.assigned_quantity
-                    if advanced_mode and deck_card.assigned_quantity is not None
-                    else deck_card.quantity
+                    deck_row.assigned_quantity
+                    if advanced_mode and deck_row.assigned_quantity is not None
+                    else deck_row.quantity
                 )
-                for _, deck_card in deck_rows
+                for deck_row in deck_rows
             )
             result.append({
                 "card": self.serialize_card(col.card),
@@ -241,11 +255,11 @@ class CardService:
                 "available_quantity": max(col.quantity - used_in_decks, 0),
                 "decks": [
                     {
-                        "id": d.id,
-                        "name": d.name,
-                        "quantity": deck_card.quantity,
+                        "id": deck_row.deck_id,
+                        "name": deck_row.deck_name,
+                        "quantity": deck_row.quantity,
                     }
-                    for d, deck_card in deck_rows
+                    for deck_row in deck_rows
                 ],
             })
         return result

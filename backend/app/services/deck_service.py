@@ -1,6 +1,6 @@
 import secrets
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from app.models import Deck, DeckCard, UserCollection, Card, Tgc, User
 from typing import List, Optional
@@ -50,6 +50,25 @@ class DeckService:
             .scalar()
         )
 
+    def _get_owned_quantities_map(self, user_id: int, card_ids: List[int]) -> dict[int, int]:
+        if not card_ids:
+            return {}
+
+        rows = (
+            self.db.query(UserCollection.card_id, UserCollection.quantity)
+            .filter(UserCollection.user_id == user_id, UserCollection.card_id.in_(card_ids))
+            .all()
+        )
+        return {card_id: quantity for card_id, quantity in rows}
+
+    def _get_deck_total_quantity(self, deck_id: int) -> int:
+        return (
+            self.db.query(func.coalesce(func.sum(DeckCard.quantity), 0))
+            .filter(DeckCard.deck_id == deck_id)
+            .scalar()
+            or 0
+        )
+
     def _resolve_covered_quantity(self, deck_card: DeckCard, owned_quantity: int, advanced_mode: bool) -> int:
         if not advanced_mode or deck_card.assigned_quantity is None:
             return min(deck_card.quantity, owned_quantity)
@@ -85,12 +104,16 @@ class DeckService:
         )
 
         advanced_mode = self._is_advanced_mode_enabled(user_id)
+        owned_quantities = self._get_owned_quantities_map(
+            user_id,
+            [card.id for _, card in deck_cards],
+        )
         total_cards = sum(deck_card.quantity for deck_card, _ in deck_cards)
         serialized_cards = []
         missing_copies = 0
 
         for deck_card, card in deck_cards:
-            owned_quantity = self._get_owned_quantity(user_id, card.id)
+            owned_quantity = owned_quantities.get(card.id, 0)
             fulfilled_quantity = self._resolve_covered_quantity(deck_card, owned_quantity, advanced_mode)
             missing_quantity = max(deck_card.quantity - fulfilled_quantity, 0)
             missing_copies += missing_quantity
@@ -269,13 +292,7 @@ class DeckService:
         deck_card = self.db.query(DeckCard).filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id).first()
         current_quantity = deck_card.quantity if deck_card else 0
         next_quantity = current_quantity + quantity
-        current_total = (
-            self.db.query(DeckCard)
-            .filter(DeckCard.deck_id == deck_id)
-            .with_entities(DeckCard.quantity)
-            .all()
-        )
-        total_cards_in_deck = sum(item_quantity for (item_quantity,) in current_total)
+        total_cards_in_deck = self._get_deck_total_quantity(deck_id)
         next_total = total_cards_in_deck - current_quantity + next_quantity
 
         if next_quantity > rules["max_copies_per_card"]:
@@ -312,13 +329,7 @@ class DeckService:
             raise ValueError("Card not found in deck")
 
         next_quantity = deck_card.quantity + delta
-        current_total = (
-            self.db.query(DeckCard)
-            .filter(DeckCard.deck_id == deck_id)
-            .with_entities(DeckCard.quantity)
-            .all()
-        )
-        total_cards_in_deck = sum(item_quantity for (item_quantity,) in current_total)
+        total_cards_in_deck = self._get_deck_total_quantity(deck_id)
         next_total = total_cards_in_deck - deck_card.quantity + max(next_quantity, 0)
 
         if next_quantity > rules["max_copies_per_card"]:

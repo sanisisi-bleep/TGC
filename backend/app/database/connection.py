@@ -101,6 +101,10 @@ def ensure_deck_columns():
         "ALTER TABLE decks ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)",
         "ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS assigned_quantity INTEGER",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_decks_share_token ON decks(share_token)",
+        "CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_decks_user_tgc_id ON decks(user_id, tgc_id)",
+        "CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id)",
+        "CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_card_id ON deck_cards(deck_id, card_id)",
     ]
 
     with engine.begin() as connection:
@@ -126,12 +130,25 @@ def ensure_user_columns():
         for statement in statements:
             connection.execute(text(statement))
 
+
+def ensure_collection_indexes():
+    statements = [
+        "CREATE INDEX IF NOT EXISTS idx_user_collections_user_id ON user_collections(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_user_collections_user_card_id ON user_collections(user_id, card_id)",
+        "CREATE INDEX IF NOT EXISTS idx_user_collections_card_id ON user_collections(card_id)",
+    ]
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     ensure_card_columns()
     ensure_game_detail_columns()
     ensure_deck_columns()
     ensure_user_columns()
+    ensure_collection_indexes()
 
 def get_db():
     db = SessionLocal()

@@ -120,9 +120,13 @@ function Decks({ activeTcgSlug, activeTgc }) {
     e.preventDefault();
 
     try {
-      await axios.post(`${API_BASE}/decks`, { name: newDeckName, tgc_id: activeTgc.id });
+      const response = await axios.post(`${API_BASE}/decks`, { name: newDeckName, tgc_id: activeTgc.id });
       setNewDeckName('');
-      fetchDecks();
+      if (response.data?.id) {
+        setDecks((current) => [response.data, ...current]);
+      } else {
+        await fetchDecks();
+      }
     } catch (error) {
       if (error.response?.status === 401) {
         navigate('/');
@@ -143,10 +147,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
     try {
       await axios.delete(`${API_BASE}/decks/${deckId}`);
+      setDecks((current) => current.filter((deck) => deck.id !== deckId));
       if (selectedDeck?.id === deckId) {
         setSelectedDeck(null);
       }
-      await fetchDecks();
     } catch (error) {
       if (error.response?.status === 401) {
         navigate('/');
@@ -251,9 +255,20 @@ function Decks({ activeTcgSlug, activeTgc }) {
     setRenamingDeckId(selectedDeck.id);
 
     try {
-      await axios.patch(`${API_BASE}/decks/${selectedDeck.id}`, { name: trimmedName });
-      await fetchDecks();
-      await viewDeckDetails(selectedDeck.id);
+      const response = await axios.patch(`${API_BASE}/decks/${selectedDeck.id}`, { name: trimmedName });
+      const nextName = response.data?.name || trimmedName;
+
+      setDraftDeckName(nextName);
+      setSelectedDeck((current) => (
+        current && current.id === selectedDeck.id
+          ? { ...current, name: nextName }
+          : current
+      ));
+      setDecks((current) => current.map((deck) => (
+        deck.id === selectedDeck.id
+          ? { ...deck, name: nextName }
+          : deck
+      )));
     } catch (error) {
       alert(error.response?.data?.detail || 'No se pudo cambiar el nombre del mazo');
     } finally {
@@ -267,7 +282,6 @@ function Decks({ activeTcgSlug, activeTgc }) {
     try {
       await axios.post(`${API_BASE}/decks/${deckId}/cards/${cardId}/adjust`, { delta });
       await viewDeckDetails(deckId, { keepCurrentView: true });
-      await fetchDecks();
     } catch (error) {
       if (error.response?.status === 401) {
         navigate('/');
@@ -488,7 +502,12 @@ function Decks({ activeTcgSlug, activeTgc }) {
                       key={card.id}
                       className={`deck-card-row ${card.missing_quantity > 0 ? 'has-missing-copies' : ''} ${deckCardView !== 'detail' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory' : ''}`}
                     >
-                      <img src={card.image_url} alt={card.name} />
+                      <img
+                        src={card.image_url}
+                        alt={card.name}
+                        loading="lazy"
+                        decoding="async"
+                      />
                       <div className="deck-card-copy">
                         <h4>{card.name}</h4>
                         <p>{[card.card_type || 'Sin tipo', card.color || 'Sin color', card.rarity || 'Sin rareza'].join(' · ')}</p>
