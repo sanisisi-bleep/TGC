@@ -18,7 +18,10 @@ import {
 } from '../utils/searchCache';
 
 const SEARCH_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
-const DEFAULT_PAGE_SIZE = 100;
+const MOBILE_BREAKPOINT_QUERY = '(max-width: 768px)';
+const MOBILE_DEFAULT_PAGE_SIZE = 20;
+const DESKTOP_DEFAULT_PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = DESKTOP_DEFAULT_PAGE_SIZE;
 const SEARCH_CARD_VIEW_MODES = ['detail', 'compact'];
 const SEARCH_INPUT_DELAY_MS = 280;
 const SEARCH_CACHE_STORAGE_KEYS = {
@@ -43,6 +46,16 @@ const EMPTY_FACETS = {
   rarities: [],
   set_names: [],
 };
+
+const getIsMobileLayout = () => (
+  typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
+  && window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches
+);
+
+const getRecommendedPageSize = () => (
+  getIsMobileLayout() ? MOBILE_DEFAULT_PAGE_SIZE : DESKTOP_DEFAULT_PAGE_SIZE
+);
 
 const buildOrderedOptions = (values, preferredOrder = []) => {
   const available = [...new Set(values.filter(Boolean))];
@@ -146,8 +159,9 @@ function Search({ activeTcgSlug, activeTgc }) {
   const [pageSize, setPageSize] = useState(() => readStoredEnumValue(
     SEARCH_CACHE_STORAGE_KEYS.pageSize,
     SEARCH_PAGE_SIZE_OPTIONS,
-    DEFAULT_PAGE_SIZE
+    getRecommendedPageSize()
   ));
+  const [isMobileLayout, setIsMobileLayout] = useState(getIsMobileLayout);
   const [cardViewMode, setCardViewMode] = useState(() => readStoredEnumValue(
     SEARCH_CACHE_STORAGE_KEYS.cardViewMode,
     SEARCH_CARD_VIEW_MODES,
@@ -178,6 +192,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     () => JSON.stringify(cardsRequestParams ?? {}),
     [cardsRequestParams]
   );
+  const effectiveCardViewMode = isMobileLayout ? cardViewMode : 'detail';
 
   const persistCardsCache = useCallback((cacheKey, payload) => {
     setLimitedCacheEntry(cardsCacheRef.current, cacheKey, payload, 24);
@@ -201,6 +216,27 @@ function Search({ activeTcgSlug, activeTgc }) {
   useEffect(() => {
     writeStoredValue(SEARCH_CACHE_STORAGE_KEYS.cardViewMode, cardViewMode);
   }, [cardViewMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia(MOBILE_BREAKPOINT_QUERY);
+    const handleChange = (event) => {
+      setIsMobileLayout(event.matches);
+    };
+
+    setIsMobileLayout(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
 
   useEffect(() => {
     setSearchTerm('');
@@ -660,7 +696,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         pageSize={pageSize}
         pageSizeOptions={SEARCH_PAGE_SIZE_OPTIONS}
         visiblePageNumbers={visiblePageNumbers}
-        cardViewMode={cardViewMode}
+        cardViewMode={effectiveCardViewMode}
         onPageSizeChange={handlePageSizeChange}
         onPageChange={setPage}
         onPreviousPage={() => setPage((current) => Math.max(1, current - 1))}
@@ -674,7 +710,7 @@ function Search({ activeTcgSlug, activeTgc }) {
             <SearchCardTile
               key={card.id}
               card={card}
-              cardViewMode={cardViewMode}
+              cardViewMode={effectiveCardViewMode}
               onOpen={setSelectedCard}
               onAddToCollection={handleAddToCollection}
               onAddToDeck={handleAddToDeck}

@@ -21,10 +21,17 @@ function SearchCardTile({
       }}
     >
       <img
-        src={card.image_url}
+        src={card.thumbnail_url || card.image_url}
         alt={card.name}
         loading="lazy"
         decoding="async"
+        fetchPriority="low"
+        sizes="(max-width: 768px) 42vw, (max-width: 1100px) 28vw, 260px"
+        onError={(event) => {
+          if (card.image_url && event.currentTarget.src !== card.image_url) {
+            event.currentTarget.src = card.image_url;
+          }
+        }}
       />
 
       <div className="search-card-meta">

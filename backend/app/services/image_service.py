@@ -1,4 +1,4 @@
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 
 def normalize_card_image_url(image_url: str | None) -> str | None:
@@ -17,3 +17,25 @@ def normalize_card_image_url(image_url: str | None) -> str | None:
         return f"https://images.weserv.nl/?url={quote(normalized, safe='/:?=&.-_%')}"
 
     return image_url
+
+
+def build_card_thumbnail_url(image_url: str | None, width: int = 360) -> str | None:
+    normalized = normalize_card_image_url(image_url)
+    if not normalized or "images.weserv.nl/" not in normalized:
+        return normalized
+
+    parsed = urlsplit(normalized)
+    query_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+
+    query_params.setdefault("w", str(width))
+    query_params.setdefault("fit", "inside")
+
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urlencode(query_params, doseq=True),
+            parsed.fragment,
+        )
+    )

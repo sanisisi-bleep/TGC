@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.models import Card, UserCollection, Deck, DeckCard, Tgc, User
 from app.database.repositories.card_repository import CardRepository
 from app.services.game_rules import GUNDAM_TGC_NAME
-from app.services.image_service import normalize_card_image_url
+from app.services.image_service import build_card_thumbnail_url, normalize_card_image_url
 
 class CardService:
     def __init__(self, db: Session):
@@ -17,6 +17,7 @@ class CardService:
         self.card_repo = CardRepository(db)
 
     def serialize_card(self, card: Card):
+        image_url = normalize_card_image_url(card.image_url)
         return {
             "id": card.id,
             "tgc_id": card.tgc_id,
@@ -38,7 +39,8 @@ class CardService:
             "artist": card.artist,
             "abilities": card.abilities,
             "description": card.description,
-            "image_url": normalize_card_image_url(card.image_url),
+            "image_url": image_url,
+            "thumbnail_url": build_card_thumbnail_url(image_url),
         }
 
     def _normalize_card_value(self, value: Optional[str]) -> Optional[str]:

@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database.connection import get_db
@@ -9,6 +9,13 @@ from app.services.auth_service import get_current_user, require_admin_user
 from app.models import User
 
 router = APIRouter(prefix="/cards", tags=["cards"])
+
+CATALOG_CACHE_CONTROL = "public, max-age=60, s-maxage=300, stale-while-revalidate=3600"
+FACETS_CACHE_CONTROL = "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400"
+
+
+def _apply_cache_headers(response: Response, cache_control: str):
+    response.headers["Cache-Control"] = cache_control
 
 class CardCreate(BaseModel):
     tgc_id: int
@@ -28,6 +35,7 @@ class CardCreate(BaseModel):
 
 @router.get("")
 def get_cards(
+    response: Response,
     tgc_id: Optional[int] = None,
     search: Optional[str] = Query(None, max_length=100),
     card_type: Optional[str] = Query(None, max_length=50),
@@ -38,6 +46,7 @@ def get_cards(
     limit: int = Query(100, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
+    _apply_cache_headers(response, CATALOG_CACHE_CONTROL)
     service = CardService(db)
     return service.get_cards_page(
         tgc_id=tgc_id,
@@ -51,7 +60,8 @@ def get_cards(
     )
 
 @router.get("/facets")
-def get_card_facets(tgc_id: Optional[int] = None, db: Session = Depends(get_db)):
+def get_card_facets(response: Response, tgc_id: Optional[int] = None, db: Session = Depends(get_db)):
+    _apply_cache_headers(response, FACETS_CACHE_CONTROL)
     service = CardService(db)
     return service.get_card_facets(tgc_id)
 
