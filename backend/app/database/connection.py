@@ -50,6 +50,7 @@ def ensure_card_columns():
         "ALTER TABLE cards ADD COLUMN IF NOT EXISTS link TEXT",
         "ALTER TABLE cards ADD COLUMN IF NOT EXISTS zones TEXT",
         "ALTER TABLE cards ADD COLUMN IF NOT EXISTS artist VARCHAR(255)",
+        "ALTER TABLE cards ALTER COLUMN color TYPE VARCHAR(100)",
         "ALTER TABLE cards DROP CONSTRAINT IF EXISTS idx_cards_tgc_source_card_id",
         "DROP INDEX IF EXISTS idx_cards_tgc_source_card_id",
         (

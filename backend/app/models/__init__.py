@@ -37,7 +37,7 @@ class Card(Base):
     cost = Column(Integer)
     ap = Column(Integer)
     hp = Column(Integer)
-    color = Column(String(20))
+    color = Column(String(100))
     rarity = Column(String(20))
     set_name = Column(String(255))
     version = Column(String(50))

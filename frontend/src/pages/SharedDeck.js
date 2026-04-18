@@ -54,6 +54,11 @@ function SharedDeck() {
     );
   }
 
+  const isOnePieceDeck = deck?.composition?.format_mode === 'one-piece';
+  const sharedDeckSummary = isOnePieceDeck
+    ? `Leader ${deck.leader_cards || 0}/${deck.required_leader_cards || 1} | Main ${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} | DON ${deck.don_cards || 0}/${deck.recommended_don_cards || 10}`
+    : `${deck.total_cards || 0} cartas en total`;
+
   return (
     <div className="page-shell">
       <section className="page-hero">
@@ -61,13 +66,17 @@ function SharedDeck() {
           <span className="eyebrow">Mazo compartido</span>
           <h1>{deck.name}</h1>
           <p>
-            {deck.tgc_name} · {deck.cards?.length || 0} cartas distintas · {deck.total_cards || 0} cartas en total
+            {`${deck.tgc_name} | ${deck.cards?.length || 0} cartas distintas | ${sharedDeckSummary}`}
           </p>
         </div>
 
         <div className="hero-stat">
           <span>Progreso</span>
-          <strong>{deck.total_cards || 0}/{deck.max_cards || 50}</strong>
+          <strong>
+            {isOnePieceDeck
+              ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50}`
+              : `${deck.total_cards || 0}/${deck.max_cards || 50}`}
+          </strong>
         </div>
       </section>
 
@@ -76,6 +85,16 @@ function SharedDeck() {
           <span className={`deck-status-chip ${deck.is_complete ? 'is-complete' : 'is-incomplete'}`}>
             {deck.is_complete ? 'Mazo completo' : 'Mazo incompleto'}
           </span>
+          {isOnePieceDeck && (
+            <>
+              <span className="deck-status-chip deck-progress-chip">
+                Leader {deck.leader_cards || 0}/{deck.required_leader_cards || 1}
+              </span>
+              <span className="deck-status-chip deck-progress-chip">
+                DON {deck.don_cards || 0}/{deck.recommended_don_cards || 10}
+              </span>
+            </>
+          )}
         </div>
 
         <div className="deck-detail-grid">
@@ -84,7 +103,15 @@ function SharedDeck() {
               <img src={card.image_url} alt={card.name} />
               <div className="deck-card-copy">
                 <h4>{card.name}</h4>
-                <p>{[card.card_type || 'Sin tipo', card.color || 'Sin color', card.rarity || 'Sin rareza'].join(' · ')}</p>
+                <div className="deck-owned-panel">
+                  <span className={`deck-role-badge is-${card.deck_role || 'main'}`}>
+                    {card.deck_role === 'leader' ? 'Leader' : card.deck_role === 'don' ? 'DON!!' : 'Main'}
+                  </span>
+                  {card.color_matches_leader === false && (
+                    <span className="deck-role-warning">Fuera de color con el Leader</span>
+                  )}
+                </div>
+                <p>{[card.card_type || 'Sin tipo', card.color || 'Sin color', card.rarity || 'Sin rareza'].join(' | ')}</p>
                 <span>{card.set_name || 'Set desconocido'}</span>
               </div>
               <div className="deck-card-controls">

@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 import time
@@ -6,33 +7,51 @@ from html import unescape
 import requests
 
 from app.env import load_environment
-from app.models import Card, Tgc, GundamCard, OnePieceCard
+from app.models import Card, Tgc, GundamCard, OnePieceCard, DeckCard, UserCollection
 from app.database.repositories.tgc_repository import TgcRepository
 from app.services.game_rules import GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME
 
 load_environment()
 
+# Populate settings
+# Puedes cambiar estos defaults aqui o sobreescribirlos por variables de entorno.
+DEFAULT_DATABASE_TARGET = "PRO"
+DEFAULT_TCG_SLUG = "one-piece"
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_REQUEST_TIMEOUT = 20
+DEFAULT_CARDS_PAGE_LIMIT = 100
+DEFAULT_APITCG_API_KEY = "069fac02cded932259a2ca204af880222b456ed8ac7e098ce7dfb9b1ed030f0c"
+DEFAULT_PRUNE_STALE = True
+PRUNE_STALE_SUPPORTED_TCGS = {"one-piece"}
+
+ONE_PIECE_CATALOGS = [
+    {
+        "label": "set cards",
+        "source_type": "set",
+        "url": "https://optcgapi.com/api/allSetCards/",
+    },
+    {
+        "label": "starter deck cards",
+        "source_type": "deck",
+        "url": "https://optcgapi.com/api/allSTCards/",
+    },
+    {
+        "label": "promo cards",
+        "source_type": "promo",
+        "url": "https://optcgapi.com/api/allPromos/",
+    },
+    {
+        "label": "Don cards",
+        "source_type": "don",
+        "url": "https://optcgapi.com/api/allDonCards/",
+    },
+]
+
 
 def resolve_populate_database_target():
-    raw_target = os.getenv("POPULATE_DATABASE_TARGET", "PRO")
+    raw_target = os.getenv("POPULATE_DATABASE_TARGET", DEFAULT_DATABASE_TARGET)
     normalized = raw_target.strip().strip('"').upper()
-    return normalized or "PRO"
-
-
-POPULATE_DATABASE_TARGET = resolve_populate_database_target()
-os.environ["DATABASE_TARGET"] = POPULATE_DATABASE_TARGET
-
-from app.database.connection import SessionLocal, init_db
-
-#one-piece, gundam
-TCG_SLUG = os.getenv("TCG_SLUG", "one-piece").strip().lower()
-MAX_RETRIES = int(os.getenv("POPULATE_RETRIES", "2"))
-REQUEST_TIMEOUT = int(os.getenv("POPULATE_REQUEST_TIMEOUT", "20"))
-CARDS_PAGE_LIMIT = max(1, int(os.getenv("CARDS_PAGE_LIMIT", "100")))
-APITCG_API_KEY = os.getenv(
-    "APITCG_API_KEY",
-    "069fac02cded932259a2ca204af880222b456ed8ac7e098ce7dfb9b1ed030f0c",
-)
+    return normalized or DEFAULT_DATABASE_TARGET
 
 
 def resolve_optional_int(name):
@@ -42,9 +61,32 @@ def resolve_optional_int(name):
     return int(raw_value)
 
 
+def resolve_optional_bool(name, default=False):
+    raw_value = os.getenv(name, "")
+    if not raw_value:
+        return default
+    return raw_value.strip().strip('"').lower() in {"1", "true", "yes", "on"}
+
+
+POPULATE_DATABASE_TARGET = resolve_populate_database_target()
+os.environ["DATABASE_TARGET"] = POPULATE_DATABASE_TARGET
+
+from app.database.connection import SessionLocal, init_db
+
+# one-piece, gundam
+TCG_SLUG = os.getenv("TCG_SLUG", DEFAULT_TCG_SLUG).strip().lower()
+MAX_RETRIES = int(os.getenv("POPULATE_RETRIES", str(DEFAULT_MAX_RETRIES)))
+REQUEST_TIMEOUT = int(os.getenv("POPULATE_REQUEST_TIMEOUT", str(DEFAULT_REQUEST_TIMEOUT)))
+CARDS_PAGE_LIMIT = max(1, int(os.getenv("CARDS_PAGE_LIMIT", str(DEFAULT_CARDS_PAGE_LIMIT))))
+APITCG_API_KEY = os.getenv(
+    "APITCG_API_KEY",
+    DEFAULT_APITCG_API_KEY,
+)
 CARD_CODE_PREFIX = os.getenv("CARD_CODE_PREFIX", os.getenv("CARD_SET_PREFIX", "")).strip().strip('"').upper()
 CARD_START = resolve_optional_int("CARD_START")
 CARD_END = resolve_optional_int("CARD_END")
+HAS_ACTIVE_CARD_FILTERS = bool(CARD_CODE_PREFIX or CARD_START is not None or CARD_END is not None)
+POPULATE_PRUNE_STALE = resolve_optional_bool("POPULATE_PRUNE_STALE", default=DEFAULT_PRUNE_STALE)
 
 REQUEST_HEADERS = {
     "User-Agent": (
@@ -53,6 +95,10 @@ REQUEST_HEADERS = {
         "Chrome/147.0.0.0 Safari/537.36"
     ),
     "Accept": "application/json",
+}
+
+APITCG_HEADERS = {
+    **REQUEST_HEADERS,
     "x-api-key": APITCG_API_KEY,
 }
 
@@ -60,6 +106,7 @@ TCG_CONFIG = {
     "gundam": {
         "name": GUNDAM_TGC_NAME,
         "description": "Gundam Card Game",
+        "provider": "apitcg",
         "api_slug": "gundam",
         "default_prefix": "GD01",
         "default_end": 299,
@@ -67,9 +114,10 @@ TCG_CONFIG = {
     "one-piece": {
         "name": ONE_PIECE_TCG_NAME,
         "description": "One Piece Card Game",
-        "api_slug": "one-piece",
+        "provider": "optcg",
         "default_prefix": "OP01",
         "default_end": 200,
+        "catalogs": ONE_PIECE_CATALOGS,
     },
 }
 
@@ -90,6 +138,14 @@ def build_filter_description():
     if CARD_END is not None:
         filters.append(f"end={CARD_END}")
     return ", ".join(filters) if filters else "all cards"
+
+
+def is_prune_stale_requested():
+    return POPULATE_PRUNE_STALE and TCG_SLUG in PRUNE_STALE_SUPPORTED_TCGS
+
+
+def should_prune_stale_cards():
+    return is_prune_stale_requested() and not HAS_ACTIVE_CARD_FILTERS
 
 
 def clean_text(text):
@@ -124,6 +180,46 @@ def normalize_image_url(url):
     return cleaned
 
 
+def normalize_source_card_code(code):
+    cleaned = clean_text(code)
+    if not cleaned:
+        return ""
+    cleaned = re.sub(r"\.(?:jpg|jpeg|png|webp)$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.replace("_", "-")
+    cleaned = re.sub(r"\s+", "", cleaned)
+    cleaned = re.sub(r"-{2,}", "-", cleaned)
+    return cleaned
+
+
+def normalize_token(value):
+    return re.sub(r"[^A-Z0-9]+", "", clean_text(value).upper())
+
+
+def has_meaningful_card_code(code):
+    normalized = normalize_source_card_code(code)
+    if not normalized:
+        return False
+    return bool(re.search(r"\d", normalized) or "-" in normalized)
+
+
+def short_hash(value):
+    return hashlib.sha1(clean_text(value).encode("utf-8")).hexdigest()[:8].upper()
+
+
+def extract_version_from_code(code):
+    normalized_code = normalize_source_card_code(code)
+    match = re.match(r"([A-Z]{1,5}\d{2,})", normalized_code.upper())
+    return match.group(1) if match else ""
+
+
+def extract_one_piece_trigger(text):
+    normalized = clean_multiline_text(text)
+    if not normalized:
+        return ""
+    match = re.search(r"\[Trigger\]\s*(.*)", normalized, flags=re.IGNORECASE | re.DOTALL)
+    return clean_text(match.group(1)) if match else ""
+
+
 def to_int(value):
     if value is None or value == "":
         return None
@@ -131,9 +227,12 @@ def to_int(value):
     return int(match.group()) if match else None
 
 
-def build_session():
+def build_session(config):
     session = requests.Session()
-    session.headers.update(REQUEST_HEADERS)
+    if config.get("provider") == "apitcg":
+        session.headers.update(APITCG_HEADERS)
+    else:
+        session.headers.update(REQUEST_HEADERS)
     return session
 
 
@@ -154,8 +253,21 @@ def extract_card_number(code):
     return int(match.group(1))
 
 
-def should_include_card(api_card):
-    code = clean_text(api_card.get("code") or api_card.get("id")).upper()
+def extract_api_card_code(api_card, config, source_type=None):
+    if config.get("provider") == "optcg":
+        return (
+            normalize_source_card_code(api_card.get("card_image_id"))
+            or normalize_source_card_code(api_card.get("card_set_id"))
+            or normalize_source_card_code(api_card.get("don_id"))
+            or normalize_source_card_code(api_card.get("optcg_don_name"))
+            or normalize_source_card_code(api_card.get("card_name"))
+        ).upper()
+
+    return normalize_source_card_code(api_card.get("code") or api_card.get("id")).upper()
+
+
+def should_include_card(api_card, config, source_type=None):
+    code = extract_api_card_code(api_card, config, source_type)
 
     if CARD_CODE_PREFIX and not code.startswith(CARD_CODE_PREFIX):
         return False
@@ -177,6 +289,9 @@ def should_include_card(api_card):
 
 
 def fetch_cards_page(session, config, page):
+    if config.get("provider") != "apitcg":
+        raise ValueError("Paginated page fetch is only supported for ApiTCG providers.")
+
     url = f"https://www.apitcg.com/api/{config['api_slug']}/cards"
     response = session.get(
         url,
@@ -195,8 +310,19 @@ def fetch_cards_page(session, config, page):
     return data, total_pages, total_cards
 
 
+def fetch_optcg_catalog(session, catalog):
+    response = session.get(catalog["url"], timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    payload = response.json()
+
+    if not isinstance(payload, list):
+        raise ValueError(f"Unexpected OPTCG payload for {catalog['label']}")
+
+    return payload
+
+
 def build_gundam_card_data(api_card):
-    code = clean_text(api_card.get("code") or api_card.get("id"))
+    code = normalize_source_card_code(api_card.get("code") or api_card.get("id"))
     set_info = api_card.get("set") or {}
     set_name = clean_text(set_info.get("name") or api_card.get("getIt") or GUNDAM_TGC_NAME)
     version = clean_text(set_info.get("id") or code.split("-")[0]).upper()
@@ -238,7 +364,9 @@ def build_gundam_card_data(api_card):
         "artist": "",
         "abilities": clean_multiline_text(api_card.get("effect")),
         "description": "\n".join(description_parts),
-        "image_url": normalize_image_url((api_card.get("images") or {}).get("large") or (api_card.get("images") or {}).get("small")),
+        "image_url": normalize_image_url(
+            (api_card.get("images") or {}).get("large") or (api_card.get("images") or {}).get("small")
+        ),
         "detail_payload": {
             "level": to_int(api_card.get("level")),
             "ap": to_int(api_card.get("ap")),
@@ -255,8 +383,8 @@ def build_gundam_card_data(api_card):
     }
 
 
-def build_one_piece_card_data(api_card):
-    code = clean_text(api_card.get("code") or api_card.get("id"))
+def build_one_piece_apitcg_card_data(api_card):
+    code = normalize_source_card_code(api_card.get("code") or api_card.get("id"))
     set_info = api_card.get("set") or {}
     set_name = clean_text(set_info.get("name") or ONE_PIECE_TCG_NAME)
     version_match = re.search(r"\[([A-Z]{2}\d{2})\]", set_name)
@@ -302,7 +430,9 @@ def build_one_piece_card_data(api_card):
         "artist": "",
         "abilities": "\n".join(part for part in abilities if part),
         "description": "\n".join(description_parts),
-        "image_url": normalize_image_url((api_card.get("images") or {}).get("large") or (api_card.get("images") or {}).get("small")),
+        "image_url": normalize_image_url(
+            (api_card.get("images") or {}).get("large") or (api_card.get("images") or {}).get("small")
+        ),
         "detail_payload": {
             "attribute_name": attribute_name,
             "attribute_image": clean_text((api_card.get("attribute") or {}).get("image")),
@@ -316,9 +446,108 @@ def build_one_piece_card_data(api_card):
     }
 
 
-def build_card_data(api_card):
+def build_one_piece_optcg_identity(api_card, source_type):
+    image_id = normalize_source_card_code(api_card.get("card_image_id"))
+    card_set_id = normalize_source_card_code(api_card.get("card_set_id"))
+    card_name = clean_text(api_card.get("card_name"))
+
+    if source_type == "don":
+        source_card_id = image_id or normalize_source_card_code(api_card.get("don_id")) or f"don-{short_hash(card_name)}"
+        return source_card_id, "DON"
+
+    source_card_id = image_id or card_set_id
+    if not source_card_id:
+        source_card_id = f"op-{short_hash(card_name)}"
+
+    if source_type == "promo":
+        if image_id:
+            return source_card_id, "PROMO"
+        promo_hash = short_hash(f"{card_set_id}|{card_name}")
+        if not has_meaningful_card_code(card_set_id):
+            source_card_id = f"P-{promo_hash}"
+        return source_card_id, f"PROMO-{promo_hash}"
+
+    version = normalize_token(api_card.get("set_id")) or extract_version_from_code(source_card_id) or "ONEPIECE"
+    return source_card_id, version
+
+
+def build_one_piece_optcg_card_data(api_card, source_type):
+    source_card_id, version = build_one_piece_optcg_identity(api_card, source_type)
+    set_name = clean_text(api_card.get("set_name"))
+    if source_type == "don":
+        set_name = clean_text(api_card.get("optcg_don_name") or set_name or "Don!! Cards")
+
+    family = clean_text(api_card.get("sub_types"))
+    attribute_name = clean_text(api_card.get("attribute"))
+    ability_text = clean_multiline_text(api_card.get("card_text"))
+    trigger = extract_one_piece_trigger(ability_text)
+    counter = clean_text(api_card.get("counter_amount"))
+    life = clean_text(api_card.get("life"))
+
+    description_parts = []
+    if source_type == "promo":
+        description_parts.append("Catalog: Promotion Cards")
+    elif source_type == "deck":
+        description_parts.append("Catalog: Starter Deck Cards")
+    elif source_type == "don":
+        description_parts.append("Catalog: Don Cards")
+    if life:
+        description_parts.append(f"Life: {life}")
+    if attribute_name:
+        description_parts.append(f"Attribute: {attribute_name}")
+    if counter:
+        description_parts.append(f"Counter: {counter}")
+    if family:
+        description_parts.append(f"Family: {family}")
+
+    notes_parts = []
+    if life:
+        notes_parts.append(f"Life: {life}")
+    if source_type == "promo":
+        notes_parts.append("Catalog: Promotion Cards")
+    elif source_type == "deck":
+        notes_parts.append("Catalog: Starter Deck Cards")
+    elif source_type == "don":
+        notes_parts.append("Catalog: Don Cards")
+
+    return {
+        "source_card_id": source_card_id,
+        "name": clean_text(api_card.get("card_name") or source_card_id),
+        "card_type": clean_text(api_card.get("card_type") or "Unknown"),
+        "lv": None,
+        "cost": to_int(api_card.get("card_cost")),
+        "ap": to_int(api_card.get("card_power")),
+        "hp": None,
+        "color": clean_text(api_card.get("card_color") or ""),
+        "rarity": clean_text(api_card.get("rarity") or ""),
+        "set_name": set_name or ONE_PIECE_TCG_NAME,
+        "version": version,
+        "block": None,
+        "traits": family,
+        "link": "",
+        "zones": attribute_name,
+        "artist": "",
+        "abilities": ability_text,
+        "description": "\n".join(description_parts),
+        "image_url": normalize_image_url(api_card.get("card_image")),
+        "detail_payload": {
+            "attribute_name": attribute_name,
+            "attribute_image": "",
+            "power": to_int(api_card.get("card_power")),
+            "family": family,
+            "ability": ability_text,
+            "counter": counter,
+            "trigger": trigger,
+            "notes": "\n".join(notes_parts),
+        },
+    }
+
+
+def build_card_data(api_card, config, source_type=None):
     if TCG_SLUG == "one-piece":
-        return build_one_piece_card_data(api_card)
+        if config.get("provider") == "optcg":
+            return build_one_piece_optcg_card_data(api_card, source_type or "set")
+        return build_one_piece_apitcg_card_data(api_card)
     return build_gundam_card_data(api_card)
 
 
@@ -439,8 +668,29 @@ def fetch_cards_page_with_retry(session, config, page):
     raise last_error
 
 
+def fetch_optcg_catalog_with_retry(session, catalog):
+    last_error = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            return fetch_optcg_catalog(session, catalog)
+        except Exception as exc:
+            last_error = exc
+            if attempt < MAX_RETRIES:
+                time.sleep(0.4)
+
+    raise last_error
+
+
+def log_included_card(card_data):
+    print(
+        f"{card_data['source_card_id']} -> {card_data['name']} | {card_data['color']} | "
+        f"type={card_data['card_type']} | cost={card_data['cost']}"
+    )
+
+
 def scrape_cards_paginated(config):
-    session = build_session()
+    session = build_session(config)
     scraped_cards = []
     failed_pages = []
     total_pages = None
@@ -466,14 +716,11 @@ def scrape_cards_paginated(config):
 
             included_cards = []
             for api_card in page_cards:
-                if not should_include_card(api_card):
+                if not should_include_card(api_card, config):
                     continue
-                card_data = build_card_data(api_card)
+                card_data = build_card_data(api_card, config)
                 included_cards.append(card_data)
-                print(
-                    f"{card_data['source_card_id']} -> {card_data['name']} | {card_data['color']} | "
-                    f"type={card_data['card_type']} | cost={card_data['cost']}"
-                )
+                log_included_card(card_data)
 
             scraped_cards.extend(included_cards)
             print(
@@ -486,11 +733,102 @@ def scrape_cards_paginated(config):
             f"Finished paginated scrape for {config['name']} | "
             f"Filter: {build_filter_description()} | Collected: {len(scraped_cards)}"
         )
-        scraped_cards.sort(key=lambda item: item["source_card_id"])
+        scraped_cards.sort(key=lambda item: (item["source_card_id"], item["version"]))
         failed_pages.sort()
         return scraped_cards, failed_pages
     finally:
         session.close()
+
+
+def scrape_one_piece_optcg(config):
+    if HAS_ACTIVE_CARD_FILTERS and is_prune_stale_requested():
+        raise ValueError(
+            "Refusing to prune stale One Piece cards during a filtered import. "
+            "Disable POPULATE_PRUNE_STALE or run a full import first."
+        )
+
+    session = build_session(config)
+    scraped_cards = []
+    failed_catalogs = []
+
+    try:
+        for catalog in config.get("catalogs", []):
+            try:
+                api_cards = fetch_optcg_catalog_with_retry(session, catalog)
+            except Exception as exc:
+                failed_catalogs.append(catalog["label"])
+                print(f"Error fetching {catalog['label']}: {exc}")
+                continue
+
+            included_cards = []
+            for api_card in api_cards:
+                if not should_include_card(api_card, config, catalog["source_type"]):
+                    continue
+                card_data = build_card_data(api_card, config, catalog["source_type"])
+                included_cards.append(card_data)
+                log_included_card(card_data)
+
+            scraped_cards.extend(included_cards)
+            print(
+                f"Catalog {catalog['label']} processed | API cards: {len(api_cards)} | "
+                f"Included: {len(included_cards)}"
+            )
+
+        print(
+            f"Finished OPTCG scrape for {config['name']} | "
+            f"Filter: {build_filter_description()} | Collected: {len(scraped_cards)}"
+        )
+        scraped_cards.sort(key=lambda item: (item["source_card_id"], item["version"]))
+        failed_catalogs.sort()
+        return scraped_cards, failed_catalogs
+    finally:
+        session.close()
+
+
+def scrape_cards(config):
+    if config.get("provider") == "optcg":
+        return scrape_one_piece_optcg(config)
+    return scrape_cards_paginated(config)
+
+
+def prune_stale_cards(db, stale_cards):
+    stale_card_ids = [card["id"] for card in stale_cards]
+    if not stale_card_ids:
+        return {"pruned": 0, "skipped_referenced": 0}
+
+    referenced_collection_ids = {
+        card_id
+        for (card_id,) in db.query(UserCollection.card_id)
+        .filter(UserCollection.card_id.in_(stale_card_ids))
+        .distinct()
+        .all()
+    }
+    referenced_deck_ids = {
+        card_id
+        for (card_id,) in db.query(DeckCard.card_id)
+        .filter(DeckCard.card_id.in_(stale_card_ids))
+        .distinct()
+        .all()
+    }
+    referenced_ids = referenced_collection_ids | referenced_deck_ids
+    deletable_ids = [card_id for card_id in stale_card_ids if card_id not in referenced_ids]
+
+    if deletable_ids:
+        if TCG_SLUG == "one-piece":
+            db.query(OnePieceCard).filter(OnePieceCard.card_id.in_(deletable_ids)).delete(
+                synchronize_session=False
+            )
+        else:
+            db.query(GundamCard).filter(GundamCard.card_id.in_(deletable_ids)).delete(
+                synchronize_session=False
+            )
+        db.query(Card).filter(Card.id.in_(deletable_ids)).delete(synchronize_session=False)
+        db.commit()
+
+    return {
+        "pruned": len(deletable_ids),
+        "skipped_referenced": len(referenced_ids),
+    }
 
 
 def upsert_cards(db, tgc_id, scraped_cards):
@@ -568,23 +906,32 @@ def upsert_cards(db, tgc_id, scraped_cards):
 
     sync_detail_tables(db, tgc_id, normalized_cards)
 
-    imported_keys = {
-        build_card_identity(card)
-        for card in normalized_cards
-    }
+    imported_keys = {build_card_identity(card) for card in normalized_cards}
 
     stale_cards = [
-        (source_card_id, version, name)
-        for _, source_card_id, version, _, name in existing_cards
-        if clean_text(source_card_id) and clean_text(version)
+        {
+            "id": card_id,
+            "source_card_id": source_card_id,
+            "version": version,
+            "name": name,
+        }
+        for card_id, source_card_id, version, _, name in existing_cards
+        if clean_text(source_card_id)
+        and clean_text(version)
         and normalize_card_identity(source_card_id, version) not in imported_keys
     ]
+
+    prune_result = {"pruned": 0, "skipped_referenced": 0}
+    if should_prune_stale_cards():
+        prune_result = prune_stale_cards(db, stale_cards)
 
     return {
         "updated": len(update_rows),
         "inserted": len(insert_rows),
         "stale": len(stale_cards),
         "deduplicated": duplicate_count,
+        "pruned": prune_result["pruned"],
+        "skipped_referenced": prune_result["skipped_referenced"],
     }
 
 
@@ -603,7 +950,9 @@ def sync_detail_tables(db, tgc_id, scraped_cards):
     if TCG_SLUG == "one-piece":
         existing_details = {
             detail.card_id: detail
-            for detail in db.query(OnePieceCard).filter(OnePieceCard.card_id.in_(card_id_by_identity.values())).all()
+            for detail in db.query(OnePieceCard)
+            .filter(OnePieceCard.card_id.in_(card_id_by_identity.values()))
+            .all()
         }
 
         for card_data in scraped_cards:
@@ -640,7 +989,9 @@ def sync_detail_tables(db, tgc_id, scraped_cards):
     else:
         existing_details = {
             detail.card_id: detail
-            for detail in db.query(GundamCard).filter(GundamCard.card_id.in_(card_id_by_identity.values())).all()
+            for detail in db.query(GundamCard)
+            .filter(GundamCard.card_id.in_(card_id_by_identity.values()))
+            .all()
         }
 
         for card_data in scraped_cards:
@@ -692,8 +1043,9 @@ def main():
     try:
         print(f"Database target: {POPULATE_DATABASE_TARGET}")
         print(f"Filter: {build_filter_description()}")
+        print(f"Provider: {config.get('provider', 'unknown')}")
         tgc = ensure_tgc(db, config)
-        scraped_cards, failures = scrape_cards_paginated(config)
+        scraped_cards, failures = scrape_cards(config)
         result = upsert_cards(db, tgc.id, scraped_cards)
 
         print("")
@@ -702,16 +1054,21 @@ def main():
         print(f"- Inserted: {result['inserted']}")
         print(f"- Updated: {result['updated']}")
         print(f"- Existing not seen in this run: {result['stale']}")
+        print(f"- Pruned stale unreferenced cards: {result['pruned']}")
+        print(f"- Skipped referenced stale cards: {result['skipped_referenced']}")
         print(f"- Deduplicated exact repeats: {result['deduplicated']}")
-        print(f"- Failed page fetches: {len(failures)}")
+        print(f"- Failed fetches: {len(failures)}")
 
         if failures:
-            print("- Failed pages:")
-            for page in failures:
-                print(f"  {page}")
+            print("- Failed fetch targets:")
+            for failure in failures:
+                print(f"  {failure}")
 
         print("")
-        print("User collections and decks were preserved because cards were not deleted.")
+        if should_prune_stale_cards():
+            print("Referenced collection and deck cards were preserved. Only stale unreferenced One Piece cards were deleted.")
+        else:
+            print("User collections and decks were preserved because stale cards were not deleted.")
 
     finally:
         db.close()

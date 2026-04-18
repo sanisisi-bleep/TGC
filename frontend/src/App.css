@@ -1115,6 +1115,16 @@ select {
   color: var(--text-soft);
 }
 
+.deck-picker-option-helper {
+  font-size: 0.84rem;
+}
+
+.deck-picker-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+  box-shadow: none;
+}
+
 .deck-picker-create {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1753,10 +1763,45 @@ select {
   color: var(--text);
 }
 
+.deck-stat-card.is-valid {
+  background: linear-gradient(180deg, rgba(235, 250, 240, 0.92), rgba(255, 255, 255, 0.88));
+  border-color: rgba(34, 153, 84, 0.18);
+}
+
+.deck-stat-card.is-warning {
+  background: linear-gradient(180deg, rgba(255, 248, 226, 0.96), rgba(255, 255, 255, 0.88));
+  border-color: rgba(241, 201, 75, 0.28);
+}
+
 .deck-stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.85rem;
+}
+
+.deck-rules-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.deck-rule-meter {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(21, 38, 58, 0.08);
+}
+
+.deck-rule-meter.is-danger {
+  background: rgba(255, 243, 241, 0.88);
+  border-color: rgba(201, 59, 47, 0.16);
+}
+
+.deck-rule-label {
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  font-weight: 700;
 }
 
 .deck-stat-block {
@@ -1791,6 +1836,24 @@ select {
   color: var(--primary-deep);
   font-weight: 700;
   font-size: 0.86rem;
+}
+
+.deck-stat-chip.is-ok {
+  background: rgba(34, 153, 84, 0.12);
+  border-color: rgba(34, 153, 84, 0.18);
+  color: #1e7a47;
+}
+
+.deck-stat-chip.is-warning {
+  background: rgba(241, 201, 75, 0.18);
+  border-color: rgba(241, 201, 75, 0.2);
+  color: #8b5c00;
+}
+
+.deck-stat-chip.is-danger {
+  background: rgba(201, 59, 47, 0.12);
+  border-color: rgba(201, 59, 47, 0.18);
+  color: #a22820;
 }
 
 .danger-ghost-button {
@@ -1972,6 +2035,39 @@ select {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.55rem;
+}
+
+.deck-role-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.deck-role-badge.is-leader {
+  background: rgba(22, 86, 193, 0.12);
+  color: var(--primary-deep);
+}
+
+.deck-role-badge.is-main {
+  background: rgba(21, 38, 58, 0.08);
+  color: var(--text);
+}
+
+.deck-role-badge.is-don {
+  background: rgba(214, 114, 19, 0.14);
+  color: #9b4d09;
+}
+
+.deck-role-warning {
+  color: #a22820;
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .deck-owned-manage {

@@ -52,6 +52,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const location = useLocation();
   const navigate = useNavigate();
   const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
+  const selectedDeckIsOnePiece = selectedDeck?.composition?.format_mode === 'one-piece';
+  const selectedDeckSummary = selectedDeckIsOnePiece
+    ? `Leader ${selectedDeck?.leader_cards || 0}/${selectedDeck?.required_leader_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | DON ${selectedDeck?.don_cards || 0}/${selectedDeck?.recommended_don_cards || 10}`
+    : `${selectedDeck?.total_cards || 0} cartas en total`;
 
   const shouldRedirectToLogin = useCallback((error) => {
     if (error.response?.status === 401) {
@@ -561,16 +565,27 @@ function Decks({ activeTcgSlug, activeTgc }) {
                       </button>
                     </div>
                     <p>
-                      {selectedDeck?.cards?.length || 0} cartas distintas,{' '}
-                      {selectedDeck?.total_cards || 0} cartas en total
+                      {`${selectedDeck?.cards?.length || 0} cartas distintas | ${selectedDeckSummary}`}
                     </p>
                     <div className="deck-status-row">
                       <span className={`deck-status-chip ${selectedDeck?.is_complete ? 'is-complete' : 'is-incomplete'}`}>
                         {selectedDeck?.is_complete ? 'Mazo completo' : 'Mazo incompleto'}
                       </span>
                       <span className="deck-status-chip deck-progress-chip">
-                        {selectedDeck?.total_cards || 0}/{selectedDeck?.max_cards || 50}
+                        {selectedDeckIsOnePiece
+                          ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50}`
+                          : `${selectedDeck?.total_cards || 0}/${selectedDeck?.max_cards || 50}`}
                       </span>
+                      {selectedDeckIsOnePiece && (
+                        <>
+                          <span className="deck-status-chip deck-progress-chip">
+                            Leader {selectedDeck?.leader_cards || 0}/{selectedDeck?.required_leader_cards || 1}
+                          </span>
+                          <span className="deck-status-chip deck-progress-chip">
+                            DON {selectedDeck?.don_cards || 0}/{selectedDeck?.recommended_don_cards || 10}
+                          </span>
+                        </>
+                      )}
                       {(selectedDeck?.missing_copies || 0) > 0 && (
                         <span className="deck-status-chip deck-missing-chip">
                           Faltan {selectedDeck?.missing_copies} copias

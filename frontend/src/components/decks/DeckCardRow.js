@@ -18,7 +18,12 @@ function DeckCardRow({
   const isUpdatingAssignment = updatingAssignmentCardId === card.id;
   const isUpdatingQuantity = updatingDeckCardId === card.id;
   const maxCoveredCopies = Math.min(card.quantity || 0, card.owned_quantity || 0);
-  const maxQuantity = maxCopiesPerCard || 4;
+  const maxQuantity = card.max_quantity_allowed || maxCopiesPerCard || 4;
+  const roleLabel = card.deck_role === 'leader'
+    ? 'Leader'
+    : card.deck_role === 'don'
+      ? 'DON!!'
+      : 'Main';
   const cardSummary = [
     card.card_type || 'Sin tipo',
     card.color || 'Sin color',
@@ -38,6 +43,12 @@ function DeckCardRow({
 
       <div className="deck-card-copy">
         <h4>{card.name}</h4>
+        <div className="deck-owned-panel">
+          <span className={`deck-role-badge is-${card.deck_role || 'main'}`}>{roleLabel}</span>
+          {card.color_matches_leader === false && (
+            <span className="deck-role-warning">Fuera de color con el Leader</span>
+          )}
+        </div>
         <p>{cardSummary}</p>
         <span>{card.set_name || 'Set desconocido'}</span>
 

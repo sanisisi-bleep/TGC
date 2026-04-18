@@ -1,4 +1,27 @@
 export const MAX_COPIES_PER_CARD = 4;
+export const ONE_PIECE_COLORS = ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'];
+
+export const getOnePieceDeckRole = (cardType) => {
+  const normalizedCardType = (cardType || '').trim().toLowerCase();
+  if (normalizedCardType.includes('don')) {
+    return 'don';
+  }
+  if (normalizedCardType === 'leader') {
+    return 'leader';
+  }
+  return 'main';
+};
+
+export const getOnePieceColorLabels = (rawColor) => {
+  const normalizedColor = (rawColor || '').trim();
+  if (!normalizedColor) {
+    return [];
+  }
+
+  return ONE_PIECE_COLORS.filter((color) => (
+    new RegExp(`\\b${color}\\b`, 'i').test(normalizedColor)
+  ));
+};
 
 export const safeDeckFilename = (value) => (
   (value || 'mazo')
@@ -29,6 +52,16 @@ export const buildDeckExportPayload = (deck) => ({
 
 export const buildDeckListText = (deck) => (
   (deck?.cards || [])
+    .slice()
+    .sort((left, right) => {
+      const roleOrder = { leader: 0, main: 1, don: 2 };
+      const leftOrder = roleOrder[left.deck_role] ?? 9;
+      const rightOrder = roleOrder[right.deck_role] ?? 9;
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+      return (left.source_card_id || '').localeCompare(right.source_card_id || '');
+    })
     .filter((card) => (Number(card.quantity) || 0) > 0)
     .map((card) => `${Number(card.quantity)}x${card.source_card_id || `CARD-${card.id}`}`)
     .join('\n')
@@ -81,7 +114,7 @@ export const copyTextToClipboard = async (text) => {
 };
 
 export const buildDeckStats = (deck) => {
-  if (!deck?.cards?.length) {
+  if (!deck) {
     return null;
   }
 
@@ -92,6 +125,7 @@ export const buildDeckStats = (deck) => {
   const curveMap = new Map();
   let coveredCopies = 0;
   let missingCopies = 0;
+  const composition = deck.composition || null;
 
   const addToMap = (map, key, amount) => {
     map.set(key, (map.get(key) || 0) + amount);
@@ -107,7 +141,7 @@ export const buildDeckStats = (deck) => {
     })
   );
 
-  deck.cards.forEach((card) => {
+  (deck.cards || []).forEach((card) => {
     const quantity = Number(card.quantity) || 0;
     if (quantity <= 0) {
       return;
@@ -118,14 +152,16 @@ export const buildDeckStats = (deck) => {
     addToMap(rarityMap, card.rarity || 'Sin rareza', quantity);
     addToMap(setMap, card.set_name || 'Sin set', quantity);
 
-    const rawCurveValue = Number.isFinite(card.cost) ? card.cost : card.lv;
-    const normalizedCurveValue = Number.isFinite(rawCurveValue)
-      ? rawCurveValue
-      : Number(rawCurveValue);
-    const curveKey = Number.isFinite(normalizedCurveValue)
-      ? (normalizedCurveValue >= 6 ? '6+' : String(normalizedCurveValue))
-      : '?';
-    addToMap(curveMap, curveKey, quantity);
+    if (card.deck_role !== 'leader' && card.deck_role !== 'don') {
+      const rawCurveValue = Number.isFinite(card.cost) ? card.cost : card.lv;
+      const normalizedCurveValue = Number.isFinite(rawCurveValue)
+        ? rawCurveValue
+        : Number(rawCurveValue);
+      const curveKey = Number.isFinite(normalizedCurveValue)
+        ? (normalizedCurveValue >= 6 ? '6+' : String(normalizedCurveValue))
+        : '?';
+      addToMap(curveMap, curveKey, quantity);
+    }
 
     coveredCopies += Number(card.fulfilled_quantity) || 0;
     missingCopies += Number(card.missing_quantity) || 0;
@@ -137,10 +173,22 @@ export const buildDeckStats = (deck) => {
     .filter(([, value]) => value > 0);
 
   return {
-    uniqueCards: deck.cards.length,
+    formatMode: composition?.format_mode || 'standard',
+    uniqueCards: deck.cards?.length || 0,
     totalCards: deck.total_cards || 0,
     coveredCopies,
     missingCopies,
+    composition,
+    leaderCards: composition?.leader_cards || 0,
+    requiredLeaderCards: composition?.required_leader_cards || 0,
+    mainDeckCards: composition?.main_deck_cards ?? (deck.total_cards || 0),
+    requiredMainDeckCards: composition?.required_main_deck_cards || deck.max_cards || 0,
+    donCards: composition?.don_cards || 0,
+    recommendedDonCards: composition?.recommended_don_cards || 0,
+    donIsOptional: Boolean(composition?.don_is_optional),
+    leaderColorLabels: composition?.leader_color_labels || [],
+    offColorCards: composition?.off_color_cards || [],
+    copyLimitExceededCards: composition?.copy_limit_exceeded_cards || [],
     typeEntries: toSortedEntries(typeMap),
     colorEntries: toSortedEntries(colorMap),
     rarityEntries: toSortedEntries(rarityMap),
