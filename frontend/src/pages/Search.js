@@ -1,9 +1,10 @@
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { getGameConfig } from '../tcgConfig';
 import API_BASE from '../apiBase';
 
 const PAGE_SIZE = 100;
+const SEARCH_INPUT_DELAY_MS = 280;
 const EMPTY_RESULTS = {
   items: [],
   page: 1,
@@ -30,12 +31,75 @@ const buildOrderedOptions = (values, preferredOrder = []) => {
   return [...preferred, ...extra].map((value) => ({ value, label: value }));
 };
 
+const buildCardsRequestParams = ({ tgcId, page, searchTerm, filters }) => {
+  if (!tgcId) {
+    return null;
+  }
+
+  const params = {
+    tgc_id: tgcId,
+    page,
+    limit: PAGE_SIZE,
+  };
+
+  const normalizedSearch = searchTerm.trim();
+  if (normalizedSearch) {
+    params.search = normalizedSearch;
+  }
+  if (filters.type) {
+    params.card_type = filters.type;
+  }
+  if (filters.color) {
+    params.color = filters.color;
+  }
+  if (filters.rarity) {
+    params.rarity = filters.rarity;
+  }
+  if (filters.expansion) {
+    params.set_name = filters.expansion;
+  }
+
+  return params;
+};
+
+const normalizeResultsPayload = (payload) => {
+  const safePayload = payload && typeof payload === 'object' ? payload : EMPTY_RESULTS;
+  const items = Array.isArray(safePayload.items) ? safePayload.items : [];
+
+  return {
+    ...EMPTY_RESULTS,
+    ...safePayload,
+    items,
+  };
+};
+
+const isRequestCanceled = (error) => (
+  axios.isCancel?.(error)
+  || error?.code === 'ERR_CANCELED'
+  || error?.name === 'CanceledError'
+  || error?.name === 'AbortError'
+);
+
+const useDebouncedValue = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [delay, value]);
+
+  return debouncedValue;
+};
+
 function Search({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const [cards, setCards] = useState([]);
   const [decks, setDecks] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, SEARCH_INPUT_DELAY_MS);
   const [filters, setFilters] = useState({
     type: '',
     color: '',
@@ -53,6 +117,25 @@ function Search({ activeTcgSlug, activeTgc }) {
   const [loadingCards, setLoadingCards] = useState(true);
   const [hasLoadedCards, setHasLoadedCards] = useState(false);
   const [hasLoadedFacets, setHasLoadedFacets] = useState(false);
+  const [loadingDecks, setLoadingDecks] = useState(false);
+  const cardsCacheRef = useRef(new Map());
+  const facetsCacheRef = useRef(new Map());
+  const decksCacheRef = useRef(new Map());
+
+  const cardsRequestParams = useMemo(
+    () => buildCardsRequestParams({
+      tgcId: activeTgc?.id,
+      page,
+      searchTerm: debouncedSearchTerm,
+      filters,
+    }),
+    [activeTgc?.id, debouncedSearchTerm, filters, page]
+  );
+
+  const cardsCacheKey = useMemo(
+    () => JSON.stringify(cardsRequestParams ?? {}),
+    [cardsRequestParams]
+  );
 
   useEffect(() => {
     setSearchTerm('');
@@ -66,87 +149,105 @@ function Search({ activeTcgSlug, activeTgc }) {
     setCards([]);
     setPagination(EMPTY_RESULTS);
     setFacets(EMPTY_FACETS);
+    setDecks([]);
     setSelectedCard(null);
     setDeckPickerCard(null);
     setNewDeckName('');
     setHasLoadedCards(false);
     setHasLoadedFacets(false);
+    setLoadingDecks(false);
   }, [activeTcgSlug, activeTgc?.id]);
 
   useEffect(() => {
-    let ignore = false;
+    if (!cardsRequestParams) {
+      setCards([]);
+      setPagination(EMPTY_RESULTS);
+      setLoadingCards(false);
+      setHasLoadedCards(true);
+      return undefined;
+    }
 
-    const fetchCards = async () => {
-      if (!activeTgc?.id) {
-        setCards([]);
-        setPagination(EMPTY_RESULTS);
-        setLoadingCards(false);
-        setHasLoadedCards(true);
+    const controller = new AbortController();
+    const cachedResults = cardsCacheRef.current.get(cardsCacheKey);
+
+    if (cachedResults) {
+      setCards(cachedResults.items);
+      setPagination(cachedResults);
+      setLoadingCards(false);
+      setHasLoadedCards(true);
+      return () => controller.abort();
+    }
+
+    const prefetchNextPage = async (baseParams, nextPage) => {
+      const nextParams = {
+        ...baseParams,
+        page: nextPage,
+      };
+      const nextCacheKey = JSON.stringify(nextParams);
+
+      if (cardsCacheRef.current.has(nextCacheKey)) {
         return;
       }
 
-      setLoadingCards(true);
-
       try {
-        const params = {
-          tgc_id: activeTgc.id,
-          page,
-          limit: PAGE_SIZE,
-        };
-
-        const normalizedSearch = deferredSearchTerm.trim();
-        if (normalizedSearch) {
-          params.search = normalizedSearch;
-        }
-        if (filters.type) {
-          params.card_type = filters.type;
-        }
-        if (filters.color) {
-          params.color = filters.color;
-        }
-        if (filters.rarity) {
-          params.rarity = filters.rarity;
-        }
-        if (filters.expansion) {
-          params.set_name = filters.expansion;
-        }
-
-        const res = await axios.get(`${API_BASE}/cards`, {
-          params,
+        const prefetchResponse = await axios.get(`${API_BASE}/cards`, {
+          params: nextParams,
+          signal: controller.signal,
           headers: {
             Accept: 'application/json',
           },
         });
 
-        if (ignore) {
-          return;
+        cardsCacheRef.current.set(
+          nextCacheKey,
+          normalizeResultsPayload(prefetchResponse.data)
+        );
+      } catch (error) {
+        if (!isRequestCanceled(error)) {
+          console.error('Error al precargar la siguiente pagina del buscador:', error);
         }
+      }
+    };
 
-        const payload = res.data && typeof res.data === 'object' ? res.data : EMPTY_RESULTS;
-        const items = Array.isArray(payload.items) ? payload.items : [];
-        const nextPagination = {
-          ...EMPTY_RESULTS,
-          ...payload,
-          items,
-        };
+    const fetchCards = async () => {
+      setLoadingCards(true);
 
-        setCards(items);
+      try {
+        const res = await axios.get(`${API_BASE}/cards`, {
+          params: cardsRequestParams,
+          signal: controller.signal,
+          headers: {
+            Accept: 'application/json',
+          },
+        });
+
+        const nextPagination = normalizeResultsPayload(res.data);
+        cardsCacheRef.current.set(cardsCacheKey, nextPagination);
+
+        setCards(nextPagination.items);
         setPagination(nextPagination);
 
         if (nextPagination.page !== page) {
           setPage(nextPagination.page);
         }
+
+        if (nextPagination.has_next) {
+          void prefetchNextPage(cardsRequestParams, nextPagination.page + 1);
+        }
       } catch (error) {
-        if (ignore) {
+        if (isRequestCanceled(error)) {
           return;
         }
 
         console.error('Error al cargar cartas:', error);
         console.error('Respuesta backend:', error.response?.data);
-        setCards([]);
-        setPagination(EMPTY_RESULTS);
+
+        if (!hasLoadedCards) {
+          setCards([]);
+          setPagination(EMPTY_RESULTS);
+        }
       } finally {
-        if (!ignore) {
+        if (!controller.signal.aborted) {
           setLoadingCards(false);
           setHasLoadedCards(true);
         }
@@ -156,56 +257,56 @@ function Search({ activeTcgSlug, activeTgc }) {
     fetchCards();
 
     return () => {
-      ignore = true;
+      controller.abort();
     };
-  }, [
-    activeTgc?.id,
-    deferredSearchTerm,
-    filters.color,
-    filters.expansion,
-    filters.rarity,
-    filters.type,
-    page,
-  ]);
+  }, [cardsCacheKey, cardsRequestParams, hasLoadedCards, page]);
 
   useEffect(() => {
-    let ignore = false;
+    if (!activeTgc?.id) {
+      setFacets(EMPTY_FACETS);
+      setHasLoadedFacets(true);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const facetsCacheKey = String(activeTgc.id);
+    const cachedFacets = facetsCacheRef.current.get(facetsCacheKey);
+
+    if (cachedFacets) {
+      setFacets(cachedFacets);
+      setHasLoadedFacets(true);
+      return () => controller.abort();
+    }
 
     const fetchFacets = async () => {
-      if (!activeTgc?.id) {
-        setFacets(EMPTY_FACETS);
-        setHasLoadedFacets(true);
-        return;
-      }
-
       try {
         const res = await axios.get(`${API_BASE}/cards/facets`, {
           params: { tgc_id: activeTgc.id },
+          signal: controller.signal,
           headers: {
             Accept: 'application/json',
           },
         });
 
-        if (ignore) {
-          return;
-        }
-
         const payload = res.data && typeof res.data === 'object' ? res.data : EMPTY_FACETS;
-        setFacets({
+        const nextFacets = {
           card_types: Array.isArray(payload.card_types) ? payload.card_types : [],
           colors: Array.isArray(payload.colors) ? payload.colors : [],
           rarities: Array.isArray(payload.rarities) ? payload.rarities : [],
           set_names: Array.isArray(payload.set_names) ? payload.set_names : [],
-        });
+        };
+
+        facetsCacheRef.current.set(facetsCacheKey, nextFacets);
+        setFacets(nextFacets);
       } catch (error) {
-        if (ignore) {
+        if (isRequestCanceled(error)) {
           return;
         }
 
         console.error('Error al cargar filtros del buscador:', error);
         setFacets(EMPTY_FACETS);
       } finally {
-        if (!ignore) {
+        if (!controller.signal.aborted) {
           setHasLoadedFacets(true);
         }
       }
@@ -214,29 +315,41 @@ function Search({ activeTcgSlug, activeTgc }) {
     fetchFacets();
 
     return () => {
-      ignore = true;
+      controller.abort();
     };
   }, [activeTgc?.id]);
 
-  useEffect(() => {
-    const fetchDecks = async () => {
-      if (!activeTgc?.id) {
-        return;
-      }
+  const loadDecksForPicker = async (forceRefresh = false) => {
+    if (!activeTgc?.id) {
+      setDecks([]);
+      return [];
+    }
 
-      try {
-        const res = await axios.get(`${API_BASE}/decks`, {
-          params: { tgc_id: activeTgc.id },
-        });
-        const deckList = Array.isArray(res.data) ? res.data : [];
-        setDecks(deckList);
-      } catch (error) {
-        console.error('Error al cargar mazos para el buscador:', error);
-      }
-    };
+    const decksCacheKey = String(activeTgc.id);
 
-    fetchDecks();
-  }, [activeTcgSlug, activeTgc]);
+    if (!forceRefresh && decksCacheRef.current.has(decksCacheKey)) {
+      const cachedDecks = decksCacheRef.current.get(decksCacheKey);
+      setDecks(cachedDecks);
+      return cachedDecks;
+    }
+
+    setLoadingDecks(true);
+
+    try {
+      const res = await axios.get(`${API_BASE}/decks`, {
+        params: { tgc_id: activeTgc.id },
+      });
+      const deckList = Array.isArray(res.data) ? res.data : [];
+      decksCacheRef.current.set(decksCacheKey, deckList);
+      setDecks(deckList);
+      return deckList;
+    } catch (error) {
+      console.error('Error al cargar mazos para el buscador:', error);
+      return [];
+    } finally {
+      setLoadingDecks(false);
+    }
+  };
 
   useEffect(() => {
     if (!toast) {
@@ -330,6 +443,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     const card = cards.find((item) => item.id === cardId) || null;
     setDeckPickerCard(card);
     setNewDeckName(card ? `${card.name} Test` : '');
+    await loadDecksForPicker();
   };
 
   const addCardToExistingDeck = async (deckId) => {
@@ -385,10 +499,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         quantity: 1,
       });
 
-      const res = await axios.get(`${API_BASE}/decks`, {
-        params: { tgc_id: activeTgc.id },
-      });
-      setDecks(Array.isArray(res.data) ? res.data : []);
+      await loadDecksForPicker(true);
       setToast({ type: 'success', message: 'Mazo creado y carta agregada' });
       setDeckPickerCard(null);
       setNewDeckName('');
@@ -609,7 +720,12 @@ function Search({ activeTcgSlug, activeTgc }) {
               onClick={() => setSelectedCard(card)}
               style={{ cursor: 'pointer' }}
             >
-              <img src={card.image_url} alt={card.name} />
+              <img
+                src={card.image_url}
+                alt={card.name}
+                loading="lazy"
+                decoding="async"
+              />
               <h3>{card.name}</h3>
               <p>Set: {card.set_name || 'Sin set'}</p>
               <p>Tipo: {card.card_type || 'Sin tipo'}</p>
@@ -738,7 +854,9 @@ function Search({ activeTcgSlug, activeTgc }) {
             <div className="deck-picker-section">
               <span className="collection-panel-label">Mazos existentes</span>
               <div className="deck-picker-list">
-                {decks.length > 0 ? (
+                {loadingDecks ? (
+                  <p className="collection-empty-text">Cargando mazos...</p>
+                ) : decks.length > 0 ? (
                   decks.map((deck) => (
                     <button
                       key={deck.id}

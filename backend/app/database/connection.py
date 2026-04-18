@@ -50,6 +50,24 @@ def ensure_card_columns():
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_cards_tgc_source_card_version "
             "ON cards(tgc_id, source_card_id, version)"
         ),
+        "CREATE INDEX IF NOT EXISTS idx_cards_tgc_id ON cards(tgc_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cards_tgc_name_id ON cards(tgc_id, name, id)",
+        (
+            "CREATE INDEX IF NOT EXISTS idx_cards_tgc_card_type_lower "
+            "ON cards(tgc_id, lower(card_type)) WHERE card_type IS NOT NULL"
+        ),
+        (
+            "CREATE INDEX IF NOT EXISTS idx_cards_tgc_color_lower "
+            "ON cards(tgc_id, lower(color)) WHERE color IS NOT NULL"
+        ),
+        (
+            "CREATE INDEX IF NOT EXISTS idx_cards_tgc_rarity_lower "
+            "ON cards(tgc_id, lower(rarity)) WHERE rarity IS NOT NULL"
+        ),
+        (
+            "CREATE INDEX IF NOT EXISTS idx_cards_tgc_set_name_lower "
+            "ON cards(tgc_id, lower(set_name)) WHERE set_name IS NOT NULL"
+        ),
     ]
 
     with engine.begin() as connection:

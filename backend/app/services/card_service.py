@@ -59,22 +59,21 @@ class CardService:
             .replace("_", "\\_")
         )
 
+    def _normalized_sql_value(self, column):
+        normalized_column = func.trim(column)
+        bind = self.db.get_bind()
+
+        if bind is not None and bind.dialect.name == "postgresql":
+            normalized_column = func.regexp_replace(normalized_column, r"\s+", " ", "g")
+
+        return func.lower(normalized_column)
+
     def _apply_normalized_exact_filter(self, query, column, value: Optional[str], tgc_id: Optional[int] = None):
         normalized_value = self._normalize_filter_value(value)
         if not normalized_value:
             return query
 
-        matching_variants = sorted({
-            raw_value.lower()
-            for raw_value in self._get_distinct_card_values(column, tgc_id)
-            if self._normalize_card_value(raw_value)
-            and self._normalize_card_value(raw_value).lower() == normalized_value.lower()
-        })
-
-        if matching_variants:
-            return query.filter(func.lower(column).in_(matching_variants))
-
-        return query.filter(func.lower(func.trim(column)) == normalized_value.lower())
+        return query.filter(self._normalized_sql_value(column) == normalized_value.lower())
 
     def _build_cards_query(
         self,
@@ -161,8 +160,9 @@ class CardService:
         if tgc_id is not None:
             query = query.filter(Card.tgc_id == tgc_id)
 
-        rows = query.distinct().order_by(func.lower(column).asc()).all()
-        return [value for value, in rows if value]
+        rows = query.distinct().all()
+        values = [value for value, in rows if value]
+        return sorted(values, key=lambda value: value.lower())
 
     def _get_normalized_distinct_card_values(self, column, tgc_id: Optional[int] = None):
         normalized_values = {}
