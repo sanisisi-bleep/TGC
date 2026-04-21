@@ -108,7 +108,9 @@ function SharedDeck() {
                     {card.deck_role === 'leader' ? 'Leader' : card.deck_role === 'don' ? 'DON!!' : 'Main'}
                   </span>
                   {card.color_matches_leader === false && (
-                    <span className="deck-role-warning">Fuera de color con el Leader</span>
+                    <span className="deck-role-warning">
+                      {card.color_warning_text || 'Fuera de color con el Leader'}
+                    </span>
                   )}
                 </div>
                 <p>{[card.card_type || 'Sin tipo', card.color || 'Sin color', card.rarity || 'Sin rareza'].join(' | ')}</p>

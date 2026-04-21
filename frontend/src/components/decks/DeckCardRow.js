@@ -46,7 +46,9 @@ function DeckCardRow({
         <div className="deck-owned-panel">
           <span className={`deck-role-badge is-${card.deck_role || 'main'}`}>{roleLabel}</span>
           {card.color_matches_leader === false && (
-            <span className="deck-role-warning">Fuera de color con el Leader</span>
+            <span className="deck-role-warning">
+              {card.color_warning_text || 'Fuera de color con el Leader'}
+            </span>
           )}
         </div>
         <p>{cardSummary}</p>
