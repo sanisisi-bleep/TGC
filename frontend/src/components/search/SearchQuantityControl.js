@@ -9,13 +9,25 @@ function SearchQuantityControl({
   disabled = false,
   label = 'Copias',
   hint = '',
+  compact = false,
 }) {
   return (
-    <div className="search-quantity-panel" onClick={(event) => event.stopPropagation()}>
-      <div className="search-quantity-header">
-        <span className="collection-panel-label">{label}</span>
-        {hint ? <span className="search-quantity-hint">{hint}</span> : null}
-      </div>
+    <div
+      className={`search-quantity-panel ${compact ? 'is-compact' : ''}`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {!compact && (
+        <div className="search-quantity-header">
+          <span className="collection-panel-label">{label}</span>
+          {hint ? <span className="search-quantity-hint">{hint}</span> : null}
+        </div>
+      )}
+
+      {compact && (
+        <div className="search-quantity-inline-label">
+          <span className="collection-panel-label">{label}</span>
+        </div>
+      )}
 
       <div className="search-quantity-stepper">
         <button

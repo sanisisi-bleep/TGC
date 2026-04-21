@@ -1,8 +1,14 @@
 import React from 'react';
+import SearchQuantityControl from './SearchQuantityControl';
 
 function SearchCardTile({
   card,
   cardViewMode,
+  actionQuantity,
+  onActionQuantityChange,
+  onActionQuantityBlur,
+  onIncreaseActionQuantity,
+  onDecreaseActionQuantity,
   onOpen,
   onAddToCollection,
   onAddToDeck,
@@ -43,12 +49,22 @@ function SearchCardTile({
         </div>
       </div>
 
+      <SearchQuantityControl
+        value={String(actionQuantity)}
+        onChange={(value) => onActionQuantityChange(card.id, value)}
+        onBlur={() => onActionQuantityBlur(card.id)}
+        onDecrease={() => onDecreaseActionQuantity(card.id)}
+        onIncrease={() => onIncreaseActionQuantity(card.id)}
+        label="Copias"
+        compact
+      />
+
       <div className="search-card-actions">
         <button
           type="button"
           onClick={(event) => {
             event.stopPropagation();
-            onAddToCollection(card.id, 1);
+            onAddToCollection(card.id);
           }}
         >
           Agregar a Coleccion
@@ -58,7 +74,7 @@ function SearchCardTile({
           className="ghost-button card-secondary-action"
           onClick={(event) => {
             event.stopPropagation();
-            onAddToDeck(card.id, 1);
+            onAddToDeck(card.id);
           }}
         >
           Agregar al Mazo

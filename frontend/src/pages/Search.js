@@ -795,6 +795,11 @@ function Search({ activeTcgSlug, activeTgc }) {
               key={card.id}
               card={card}
               cardViewMode={effectiveCardViewMode}
+              actionQuantity={getActionQuantity(card.id)}
+              onActionQuantityChange={setActionQuantityDraft}
+              onActionQuantityBlur={commitActionQuantity}
+              onIncreaseActionQuantity={(cardId) => stepActionQuantity(cardId, 1)}
+              onDecreaseActionQuantity={(cardId) => stepActionQuantity(cardId, -1)}
               onOpen={setSelectedCard}
               onAddToCollection={handleAddToCollection}
               onAddToDeck={handleAddToDeck}

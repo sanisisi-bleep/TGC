@@ -1034,6 +1034,14 @@ select {
   background: linear-gradient(180deg, rgba(244, 248, 255, 0.96), rgba(233, 241, 255, 0.74));
 }
 
+.search-quantity-panel.is-compact {
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 14px;
+  background: rgba(244, 248, 255, 0.82);
+}
+
 .search-quantity-header {
   display: flex;
   align-items: center;
@@ -1046,6 +1054,12 @@ select {
   font-size: 0.78rem;
 }
 
+.search-quantity-inline-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .search-quantity-stepper {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) 42px;
@@ -1053,10 +1067,20 @@ select {
   align-items: center;
 }
 
+.search-quantity-panel.is-compact .search-quantity-stepper {
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  gap: 0.45rem;
+}
+
 .search-quantity-stepper button {
   min-width: 42px;
   min-height: 42px;
   padding: 0;
+}
+
+.search-quantity-panel.is-compact .search-quantity-stepper button {
+  min-width: 36px;
+  min-height: 36px;
 }
 
 .search-quantity-input {
@@ -1070,6 +1094,11 @@ select {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 1rem;
   font-weight: 700;
+}
+
+.search-quantity-panel.is-compact .search-quantity-input {
+  min-height: 36px;
+  font-size: 0.95rem;
 }
 
 .search-quantity-input:focus {
