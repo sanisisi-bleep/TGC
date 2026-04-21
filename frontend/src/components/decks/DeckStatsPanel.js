@@ -34,7 +34,7 @@ const getCurveChartScaleMax = (...values) => {
   return Math.ceil(maxValue / 5) * 5;
 };
 
-function DeckCurveChart({ entries, averageCost }) {
+function DeckCurveChart({ entries, averageCost, legendEntries }) {
   const chartEntries = useMemo(
     () => entries.filter((entry) => entry.label !== '?' || entry.total > 0),
     [entries]
@@ -43,22 +43,9 @@ function DeckCurveChart({ entries, averageCost }) {
     () => chartEntries.some((entry) => entry.total > 0),
     [chartEntries]
   );
-  const averageCardsPerCost = useMemo(() => {
-    const eligibleEntries = chartEntries.filter((entry) => entry.label !== '?');
-    const sourceEntries = eligibleEntries.length > 0 ? eligibleEntries : chartEntries;
-    if (sourceEntries.length === 0) {
-      return null;
-    }
-
-    const totalCards = sourceEntries.reduce((sum, entry) => sum + entry.total, 0);
-    return totalCards / sourceEntries.length;
-  }, [chartEntries]);
   const scaleMax = useMemo(
-    () => getCurveChartScaleMax(
-      ...chartEntries.map((entry) => entry.total),
-      averageCardsPerCost ?? 0
-    ),
-    [averageCardsPerCost, chartEntries]
+    () => getCurveChartScaleMax(...chartEntries.map((entry) => entry.total)),
+    [chartEntries]
   );
   const gradientEntries = useMemo(() => {
     const gradients = new Map();
@@ -90,29 +77,38 @@ function DeckCurveChart({ entries, averageCost }) {
   const plotWidth = CURVE_CHART_WIDTH - CURVE_CHART_MARGIN.left - CURVE_CHART_MARGIN.right;
   const plotHeight = CURVE_CHART_HEIGHT - CURVE_CHART_MARGIN.top - CURVE_CHART_MARGIN.bottom;
   const slotWidth = plotWidth / Math.max(chartEntries.length, 1);
-  const barWidth = Math.min(48, Math.max(24, slotWidth * 0.56));
+  const barWidth = Math.min(40, Math.max(18, slotWidth * 0.42));
   const tickValues = Array.from({ length: 5 }, (_, index) => (scaleMax / 4) * index);
-  const averageLineY = Number.isFinite(averageCardsPerCost)
-    ? CURVE_CHART_MARGIN.top + plotHeight - ((averageCardsPerCost / scaleMax) * plotHeight)
-    : null;
 
   return (
     <div className="deck-curve-chart-shell">
       <div className="deck-curve-chart-meta">
         <span className="deck-curve-axis-label">Cartas por coste</span>
         <div className="deck-curve-meta-values">
-          {Number.isFinite(averageCardsPerCost) && (
-            <span className="deck-curve-average-copy">
-              Media por coste {averageCardsPerCost.toFixed(1)}
-            </span>
-          )}
           {Number.isFinite(averageCost) && (
-            <span className="deck-curve-average-copy is-secondary">
+            <span className="deck-curve-average-copy">
               Coste medio {averageCost.toFixed(2)}
             </span>
           )}
         </div>
       </div>
+
+      {legendEntries.length > 0 && (
+        <div className="deck-curve-legend deck-curve-legend-inline">
+          {legendEntries.map((entry) => {
+            const presentation = getDeckColorPresentation(entry.label);
+            return (
+              <span
+                key={`curve-legend-${entry.label}`}
+                className="deck-curve-legend-chip"
+                style={presentation.style}
+              >
+                {entry.label} x{entry.value}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       <div className="deck-curve-chart">
         <svg
@@ -170,26 +166,6 @@ function DeckCurveChart({ entries, averageCost }) {
             );
           })}
 
-          {averageLineY !== null && (
-            <g>
-              <line
-                x1={CURVE_CHART_MARGIN.left}
-                y1={averageLineY}
-                x2={CURVE_CHART_WIDTH - CURVE_CHART_MARGIN.right}
-                y2={averageLineY}
-                className="deck-curve-reference-line"
-              />
-              <text
-                x={CURVE_CHART_WIDTH - CURVE_CHART_MARGIN.right}
-                y={Math.max(16, averageLineY - 8)}
-                textAnchor="end"
-                className="deck-curve-reference-label"
-              >
-                Media {averageCardsPerCost.toFixed(1)}
-              </text>
-            </g>
-          )}
-
           <line
             x1={CURVE_CHART_MARGIN.left}
             y1={CURVE_CHART_HEIGHT - CURVE_CHART_MARGIN.bottom}
@@ -206,14 +182,16 @@ function DeckCurveChart({ entries, averageCost }) {
 
             return (
               <g key={entry.label}>
-                <text
-                  x={x + (barWidth / 2)}
-                  y={entry.total > 0 ? Math.max(CURVE_CHART_MARGIN.top - 2, baseY - totalHeight - 10) : baseY - 8}
-                  textAnchor="middle"
-                  className={`deck-curve-total-label ${entry.total > 0 ? '' : 'is-empty'}`.trim()}
-                >
-                  {entry.total}
-                </text>
+                {entry.total > 0 && (
+                  <text
+                    x={x + (barWidth / 2)}
+                    y={Math.max(CURVE_CHART_MARGIN.top - 2, baseY - totalHeight - 10)}
+                    textAnchor="middle"
+                    className="deck-curve-total-label"
+                  >
+                    {entry.total}
+                  </text>
+                )}
 
                 {entry.segments.map((segment) => {
                   const segmentHeight = (segment.value / scaleMax) * plotHeight;
@@ -230,8 +208,8 @@ function DeckCurveChart({ entries, averageCost }) {
                       y={currentY}
                       width={barWidth}
                       height={segmentHeight}
-                      rx={8}
-                      ry={8}
+                      rx={4}
+                      ry={4}
                       fill={fill}
                     >
                       <title>{`${entry.label} - ${segment.label}: ${segment.value}`}</title>
@@ -245,8 +223,8 @@ function DeckCurveChart({ entries, averageCost }) {
                     y={baseY - totalHeight}
                     width={barWidth}
                     height={totalHeight}
-                    rx={8}
-                    ry={8}
+                    rx={4}
+                    ry={4}
                     className="deck-curve-bar-outline"
                   />
                 )}
@@ -255,7 +233,7 @@ function DeckCurveChart({ entries, averageCost }) {
                   x={x + (barWidth / 2)}
                   y={CURVE_CHART_HEIGHT - 12}
                   textAnchor="middle"
-                  className="deck-curve-cost-label"
+                  className={`deck-curve-cost-label ${entry.total > 0 ? 'has-data' : 'is-empty'}`.trim()}
                 >
                   {entry.label}
                 </text>
@@ -442,23 +420,8 @@ function DeckStatsPanel({ stats }) {
               <DeckCurveChart
                 entries={stats.curveChartEntries || []}
                 averageCost={stats.averageCurveCost}
+                legendEntries={curveLegendEntries}
               />
-              {curveLegendEntries.length > 0 && (
-                <div className="deck-curve-legend deck-curve-legend-global">
-                  {curveLegendEntries.map((entry) => {
-                    const presentation = getDeckColorPresentation(entry.label);
-                    return (
-                      <span
-                        key={`curve-legend-${entry.label}`}
-                        className="deck-curve-legend-chip"
-                        style={presentation.style}
-                      >
-                        {entry.label} x{entry.value}
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
             </>
           ) : (
             <div className="deck-stat-chip-list">
