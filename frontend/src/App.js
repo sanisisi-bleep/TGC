@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import './App.css';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import Home from './pages/Home';
 import Search from './pages/Search';
 import Collection from './pages/Collection';
@@ -84,6 +85,12 @@ function App() {
   const [loadingTgcs, setLoadingTgcs] = useState(true);
   const [tgcLoadError, setTgcLoadError] = useState(null);
   const [tgcReloadNonce, setTgcReloadNonce] = useState(0);
+
+  const updateActiveTcgSlug = useCallback((nextSlug) => {
+    const normalizedSlug = (nextSlug || DEFAULT_TCG_SLUG).trim() || DEFAULT_TCG_SLUG;
+    localStorage.setItem('activeTcgSlug', normalizedSlug);
+    setActiveTcgSlug(normalizedSlug);
+  }, []);
 
   const clearSession = useCallback(() => {
     delete axios.defaults.headers.common.Authorization;
@@ -175,10 +182,6 @@ function App() {
   }, [clearSession]);
 
   useEffect(() => {
-    localStorage.setItem('activeTcgSlug', activeTcgSlug);
-  }, [activeTcgSlug]);
-
-  useEffect(() => {
     let isCancelled = false;
 
     const fetchTgcs = async () => {
@@ -231,8 +234,8 @@ function App() {
 
     const fallbackSlug = Object.keys(tgcBySlug).find((slug) => GAME_CONFIGS[slug]?.available)
       || DEFAULT_TCG_SLUG;
-    setActiveTcgSlug(fallbackSlug);
-  }, [activeTcgSlug, loadingTgcs, tgcBySlug]);
+    updateActiveTcgSlug(fallbackSlug);
+  }, [activeTcgSlug, loadingTgcs, tgcBySlug, updateActiveTcgSlug]);
 
   const logout = () => {
     clearSession();
@@ -282,7 +285,7 @@ function App() {
                       key={game.slug}
                       type="button"
                       className={`nav-game-pill ${activeTcgSlug === game.slug ? 'is-active' : ''}`}
-                      onClick={() => setActiveTcgSlug(game.slug)}
+                      onClick={() => updateActiveTcgSlug(game.slug)}
                     >
                       {game.shortName}
                     </button>
@@ -311,7 +314,7 @@ function App() {
                     token={isAuthenticated ? token : null}
                     onLoginSuccess={handleLoginSuccess}
                     activeTcgSlug={activeTcgSlug}
-                    setActiveTcgSlug={setActiveTcgSlug}
+                    setActiveTcgSlug={updateActiveTcgSlug}
                     availableGames={navGames}
                   />
                 }
@@ -322,7 +325,11 @@ function App() {
                   isAuthenticated
                     ? (shouldShowTgcBootstrapPanel && (isResolvingActiveTgc || tgcLoadError || !activeTgc)
                       ? protectedCatalogFallback
-                      : <Search key={`${activeTcgSlug}-${activeTgc?.id || 'ready'}`} activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />)
+                      : (
+                        <AppErrorBoundary>
+                          <Search key={`${activeTcgSlug}-${activeTgc?.id || 'ready'}`} activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />
+                        </AppErrorBoundary>
+                      ))
                     : <Navigate to="/" />
                 }
               />
@@ -332,7 +339,11 @@ function App() {
                   isAuthenticated
                     ? (shouldShowTgcBootstrapPanel && (isResolvingActiveTgc || tgcLoadError || !activeTgc)
                       ? protectedCatalogFallback
-                      : <Collection key={`${activeTcgSlug}-${activeTgc?.id || 'ready'}`} activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />)
+                      : (
+                        <AppErrorBoundary>
+                          <Collection key={`${activeTcgSlug}-${activeTgc?.id || 'ready'}`} activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />
+                        </AppErrorBoundary>
+                      ))
                     : <Navigate to="/" />
                 }
               />
@@ -342,7 +353,11 @@ function App() {
                   isAuthenticated
                     ? (shouldShowTgcBootstrapPanel && (isResolvingActiveTgc || tgcLoadError || !activeTgc)
                       ? protectedCatalogFallback
-                      : <Decks key={`${activeTcgSlug}-${activeTgc?.id || 'ready'}`} activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />)
+                      : (
+                        <AppErrorBoundary>
+                          <Decks key={`${activeTcgSlug}-${activeTgc?.id || 'ready'}`} activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />
+                        </AppErrorBoundary>
+                      ))
                     : <Navigate to="/" />
                 }
               />

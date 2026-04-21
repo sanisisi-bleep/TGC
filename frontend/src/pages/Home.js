@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { GAME_CONFIGS, getGameConfig } from '../tcgConfig';
@@ -94,7 +95,10 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
       return;
     }
 
-    setActiveTcgSlug(game.slug);
+    flushSync(() => {
+      setActiveTcgSlug(game.slug);
+    });
+
     if (token) {
       navigate('/search');
     }
