@@ -30,9 +30,9 @@ const SEARCH_CARDS_CACHE_TTL_MS = 5 * 60 * 1000;
 const SEARCH_FACETS_CACHE_TTL_MS = 60 * 60 * 1000;
 const SEARCH_DECKS_CACHE_TTL_MS = 2 * 60 * 1000;
 const SEARCH_CACHE_STORAGE_KEYS = {
-  cards: 'tgc-search-cards-cache-v1',
-  facets: 'tgc-search-facets-cache-v1',
-  decks: 'tgc-search-decks-cache-v1',
+  cards: 'tgc-search-cards-cache-v2',
+  facets: 'tgc-search-facets-cache-v2',
+  decks: 'tgc-search-decks-cache-v2',
   pageSize: 'tgc-search-page-size-v1',
   cardViewMode: 'tgc-search-card-view-mode-v1',
 };
@@ -51,6 +51,8 @@ const EMPTY_FACETS = {
   rarities: [],
   set_names: [],
 };
+const EMPTY_CARDS = [];
+const EMPTY_DECKS = [];
 
 const getIsMobileLayout = () => (
   typeof window !== 'undefined'
@@ -120,6 +122,49 @@ const normalizeResultsPayload = (payload, fallbackLimit = DEFAULT_PAGE_SIZE) => 
     ...safePayload,
     items,
   };
+};
+
+const isValidResultsPayload = (payload) => (
+  payload
+  && typeof payload === 'object'
+  && !Array.isArray(payload)
+  && Array.isArray(payload.items)
+);
+
+const normalizeFacetsPayload = (payload) => ({
+  card_types: Array.isArray(payload?.card_types) ? payload.card_types : [],
+  colors: Array.isArray(payload?.colors) ? payload.colors : [],
+  rarities: Array.isArray(payload?.rarities) ? payload.rarities : [],
+  set_names: Array.isArray(payload?.set_names) ? payload.set_names : [],
+});
+
+const isValidFacetsPayload = (payload) => (
+  payload
+  && typeof payload === 'object'
+  && !Array.isArray(payload)
+  && Array.isArray(payload.card_types)
+  && Array.isArray(payload.colors)
+  && Array.isArray(payload.rarities)
+  && Array.isArray(payload.set_names)
+);
+
+const normalizeDeckList = (payload) => (Array.isArray(payload) ? payload : EMPTY_DECKS);
+const normalizeCardList = (payload) => (Array.isArray(payload) ? payload : EMPTY_CARDS);
+
+const readValidatedCacheEntry = (cacheRef, storageKey, cacheKey, validator) => {
+  const cachedPayload = cacheRef.current.get(cacheKey);
+
+  if (!cachedPayload) {
+    return null;
+  }
+
+  if (validator(cachedPayload)) {
+    return cachedPayload;
+  }
+
+  cacheRef.current.delete(cacheKey);
+  writeCacheMap(storageKey, cacheRef.current);
+  return null;
 };
 
 const isRequestCanceled = (error) => (
@@ -266,10 +311,10 @@ function Search({ activeTcgSlug, activeTgc }) {
       expansion: '',
     });
     setPage(1);
-    setCards([]);
+    setCards(EMPTY_CARDS);
     setPagination((current) => createEmptyResults(current.limit || DEFAULT_PAGE_SIZE));
     setFacets(EMPTY_FACETS);
-    setDecks([]);
+    setDecks(EMPTY_DECKS);
     setSelectedCard(null);
     setDeckPickerCard(null);
     setNewDeckName('');
@@ -281,7 +326,7 @@ function Search({ activeTcgSlug, activeTgc }) {
 
   useEffect(() => {
     if (!cardsRequestParams) {
-      setCards([]);
+      setCards(EMPTY_CARDS);
       setPagination(createEmptyResults(pageSize));
       setLoadingCards(false);
       setHasLoadedCards(true);
@@ -289,11 +334,17 @@ function Search({ activeTcgSlug, activeTgc }) {
     }
 
     const controller = new AbortController();
-    const cachedResults = cardsCacheRef.current.get(cardsCacheKey);
+    const cachedResults = readValidatedCacheEntry(
+      cardsCacheRef,
+      SEARCH_CACHE_STORAGE_KEYS.cards,
+      cardsCacheKey,
+      isValidResultsPayload
+    );
 
     if (cachedResults) {
-      setCards(cachedResults.items);
-      setPagination(cachedResults);
+      const nextPagination = normalizeResultsPayload(cachedResults, pageSize);
+      setCards(nextPagination.items);
+      setPagination(nextPagination);
       setLoadingCards(false);
       setHasLoadedCards(true);
       return () => controller.abort();
@@ -329,7 +380,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         console.error('Respuesta backend:', error.response?.data);
 
         if (!hasLoadedCards) {
-          setCards([]);
+          setCards(EMPTY_CARDS);
           setPagination(createEmptyResults(pageSize));
         }
       } finally {
@@ -356,10 +407,15 @@ function Search({ activeTcgSlug, activeTgc }) {
 
     const controller = new AbortController();
     const facetsCacheKey = String(activeTgc.id);
-    const cachedFacets = facetsCacheRef.current.get(facetsCacheKey);
+    const cachedFacets = readValidatedCacheEntry(
+      facetsCacheRef,
+      SEARCH_CACHE_STORAGE_KEYS.facets,
+      facetsCacheKey,
+      isValidFacetsPayload
+    );
 
     if (cachedFacets) {
-      setFacets(cachedFacets);
+      setFacets(normalizeFacetsPayload(cachedFacets));
       setHasLoadedFacets(true);
       return () => controller.abort();
     }
@@ -374,13 +430,7 @@ function Search({ activeTcgSlug, activeTgc }) {
           },
         });
 
-        const payload = res.data && typeof res.data === 'object' ? res.data : EMPTY_FACETS;
-        const nextFacets = {
-          card_types: Array.isArray(payload.card_types) ? payload.card_types : [],
-          colors: Array.isArray(payload.colors) ? payload.colors : [],
-          rarities: Array.isArray(payload.rarities) ? payload.rarities : [],
-          set_names: Array.isArray(payload.set_names) ? payload.set_names : [],
-        };
+        const nextFacets = normalizeFacetsPayload(res.data);
 
         persistFacetsCache(facetsCacheKey, nextFacets);
         setFacets(nextFacets);
@@ -473,17 +523,26 @@ function Search({ activeTcgSlug, activeTgc }) {
 
   const loadDecksForPicker = async (forceRefresh = false) => {
     if (!activeTgc?.id) {
-      setDecks([]);
-      return [];
+      setDecks(EMPTY_DECKS);
+      return EMPTY_DECKS;
     }
 
     const decksCacheKey = String(activeTgc.id);
     const pendingRequest = decksRequestRef.current.get(decksCacheKey);
 
     if (!forceRefresh && decksCacheRef.current.has(decksCacheKey)) {
-      const cachedDecks = decksCacheRef.current.get(decksCacheKey);
-      setDecks(cachedDecks);
-      return cachedDecks;
+      const cachedDecks = readValidatedCacheEntry(
+        decksCacheRef,
+        SEARCH_CACHE_STORAGE_KEYS.decks,
+        decksCacheKey,
+        Array.isArray
+      );
+
+      if (cachedDecks) {
+        const nextDecks = normalizeDeckList(cachedDecks);
+        setDecks(nextDecks);
+        return nextDecks;
+      }
     }
 
     if (pendingRequest) {
@@ -495,7 +554,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     const request = axios.get(`${API_BASE}/decks`, {
       params: { tgc_id: activeTgc.id },
     }).then((res) => {
-      const deckList = Array.isArray(res.data) ? res.data : [];
+      const deckList = normalizeDeckList(res.data);
       persistDecksCache(decksCacheKey, deckList);
       setDecks(deckList);
       return deckList;
@@ -505,7 +564,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         type: 'error',
         message: getApiErrorMessage(error, 'No se pudieron cargar tus mazos.'),
       });
-      return [];
+      return EMPTY_DECKS;
     }).finally(() => {
       decksRequestRef.current.delete(decksCacheKey);
       setLoadingDecks(false);
@@ -572,7 +631,7 @@ function Search({ activeTcgSlug, activeTgc }) {
   };
 
   const handleAddToDeck = async (cardId, quantityOverride = null) => {
-    const card = cards.find((item) => item.id === cardId) || null;
+    const card = normalizeCardList(cards).find((item) => item.id === cardId) || null;
     setDeckPickerCard(card);
     setNewDeckName(card ? `${card.name} Test` : '');
     if (quantityOverride !== null) {
@@ -728,6 +787,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     ? 0
     : Math.min(pagination.page * pagination.limit, pagination.total);
   const isInitialLoading = !hasLoadedCards || !hasLoadedFacets;
+  const cardList = normalizeCardList(cards);
 
   if (isInitialLoading) {
     return (
@@ -789,8 +849,8 @@ function Search({ activeTcgSlug, activeTgc }) {
       />
 
       <div className="cards-grid">
-        {cards.length > 0 ? (
-          cards.map((card) => (
+        {cardList.length > 0 ? (
+          cardList.map((card) => (
             <SearchCardTile
               key={card.id}
               card={card}

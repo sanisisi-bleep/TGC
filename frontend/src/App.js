@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { Analytics } from '@vercel/analytics/react';
@@ -14,6 +14,9 @@ import SharedDeck from './pages/SharedDeck';
 import { ToastProvider } from './context/ToastContext';
 import { buildTcgMap, DEFAULT_TCG_SLUG, GAME_CONFIGS, getGameConfig } from './tcgConfig';
 import API_BASE from './apiBase';
+
+const TGC_FETCH_RETRY_ATTEMPTS = 2;
+const TGC_FETCH_RETRY_DELAY_MS = 350;
 
 const sanitizeTelemetryPayload = (event) => {
   if (!event?.url) {
@@ -38,26 +41,35 @@ const sanitizeTelemetryPayload = (event) => {
   }
 };
 
-function TgcBootstrapPanel({ activeGame, error, onRetry }) {
-  const isEmptyCatalog = !error;
+const wait = (durationMs) => new Promise((resolve) => {
+  window.setTimeout(resolve, durationMs);
+});
 
+const buildAvailableGames = (tgcBySlug) => (
+  Object.entries(tgcBySlug)
+    .map(([slug, item]) => ({
+      ...getGameConfig(slug),
+      id: item.id,
+    }))
+    .filter((game) => game.available)
+);
+
+function BootstrapPanel({
+  paletteClass = '',
+  eyebrow,
+  title,
+  description,
+  action = null,
+}) {
   return (
-    <div className={`page-shell ${activeGame.palette}`}>
+    <div className={`page-shell ${paletteClass}`.trim()}>
       <section className="page-hero">
         <div>
-          <span className="eyebrow">{activeGame.eyebrow}</span>
-          <h1>{error ? 'No se pudo preparar el catalogo' : `Preparando ${activeGame.shortName}`}</h1>
-          <p>
-            {error
-              ? `No pudimos cargar la configuracion de ${activeGame.shortName}. Reintenta sin tener que refrescar toda la pagina.`
-              : `Preparando ${activeGame.shortName} para que el buscador entre ya con el juego activo correcto.`}
-          </p>
+          <span className="eyebrow">{eyebrow}</span>
+          <h1>{title}</h1>
+          <p>{description}</p>
         </div>
-        {!isEmptyCatalog ? (
-          <button type="button" className="logout-button" onClick={onRetry}>
-            Reintentar carga
-          </button>
-        ) : null}
+        {action}
       </section>
     </div>
   );
@@ -65,15 +77,98 @@ function TgcBootstrapPanel({ activeGame, error, onRetry }) {
 
 function SessionBootstrapPanel() {
   return (
-    <div className="page-shell">
-      <section className="page-hero">
-        <div>
-          <span className="eyebrow">Sesion</span>
-          <h1>Preparando la aplicacion</h1>
-          <p>Comprobando tu sesion y cargando el estado inicial antes de mostrar el contenido.</p>
+    <BootstrapPanel
+      eyebrow="Sesion"
+      title="Preparando la aplicacion"
+      description="Comprobando tu sesion y cargando el estado inicial antes de mostrar el contenido."
+    />
+  );
+}
+
+function TgcBootstrapPanel({ activeGame, error, onRetry }) {
+  const action = error ? (
+    <button type="button" className="logout-button" onClick={onRetry}>
+      Reintentar carga
+    </button>
+  ) : null;
+
+  return (
+    <BootstrapPanel
+      paletteClass={activeGame.palette}
+      eyebrow={activeGame.eyebrow}
+      title={error ? 'No se pudo preparar el catalogo' : `Preparando ${activeGame.shortName}`}
+      description={
+        error
+          ? `No pudimos cargar la configuracion de ${activeGame.shortName}. Reintenta sin tener que refrescar toda la pagina.`
+          : `Preparando ${activeGame.shortName} para que el buscador entre ya con el juego activo correcto.`
+      }
+      action={action}
+    />
+  );
+}
+
+function SiteNavigation({
+  isAuthenticated,
+  navGames,
+  activeTcgSlug,
+  onSelectGame,
+  onLogout,
+}) {
+  return (
+    <nav className="navbar">
+      <div className="nav-brand">
+        <Link to="/">Multiverse TCG Manager</Link>
+      </div>
+      {isAuthenticated ? (
+        <div className="nav-session">
+          <div className="nav-game-switcher" aria-label="Juego activo">
+            {navGames.map((game) => (
+              <button
+                key={game.slug}
+                type="button"
+                className={`nav-game-pill ${activeTcgSlug === game.slug ? 'is-active' : ''}`}
+                onClick={() => onSelectGame(game.slug)}
+              >
+                {game.shortName}
+              </button>
+            ))}
+          </div>
+          <ul className="nav-links">
+            <li><Link to="/search">Buscar Cartas</Link></li>
+            <li><Link to="/collection">Mi Coleccion</Link></li>
+            <li><Link to="/decks">Mis Mazos</Link></li>
+            <li><Link to="/settings">Configuracion</Link></li>
+            <li><button className="logout-button" onClick={onLogout}>Cerrar Sesion</button></li>
+          </ul>
         </div>
-      </section>
-    </div>
+      ) : (
+        <ul className="nav-links">
+          <li><Link to="/">Inicio</Link></li>
+        </ul>
+      )}
+    </nav>
+  );
+}
+
+function ProtectedGameRoute({
+  isAuthenticated,
+  isBlocked,
+  fallback,
+  resetKey,
+  children,
+}) {
+  if (!isAuthenticated) {
+    return <Navigate to="/" />;
+  }
+
+  if (isBlocked) {
+    return fallback;
+  }
+
+  return (
+    <AppErrorBoundary resetKey={resetKey}>
+      {children}
+    </AppErrorBoundary>
   );
 }
 
@@ -110,6 +205,10 @@ function App() {
     setAuthReady(true);
   }, [clearSession]);
 
+  const retryTgcLoad = useCallback(() => {
+    setTgcReloadNonce((current) => current + 1);
+  }, []);
+
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common.Authorization = `Bearer ${token}`;
@@ -144,9 +243,8 @@ function App() {
         if (!isCancelled) {
           setToken(storedToken);
         }
-      } catch (error) {
+      } catch (_error) {
         if (!isCancelled) {
-          console.warn('Sesion almacenada no valida, limpiando token local.');
           localStorage.removeItem('token');
           setToken(null);
         }
@@ -162,7 +260,7 @@ function App() {
     return () => {
       isCancelled = true;
     };
-  }, [clearSession]);
+  }, []);
 
   useEffect(() => {
     const interceptor = axios.interceptors.response.use(
@@ -190,25 +288,21 @@ function App() {
 
       let lastError = null;
 
-      for (let attempt = 1; attempt <= 2; attempt += 1) {
+      for (let attempt = 1; attempt <= TGC_FETCH_RETRY_ATTEMPTS; attempt += 1) {
         try {
           const response = await axios.get(`${API_BASE}/tgc`);
           if (isCancelled) {
             return;
           }
 
-          const nextTgcMap = buildTcgMap(Array.isArray(response.data) ? response.data : []);
-          setTgcBySlug(nextTgcMap);
-
+          setTgcBySlug(buildTcgMap(Array.isArray(response.data) ? response.data : []));
           setLoadingTgcs(false);
           return;
         } catch (error) {
           lastError = error;
 
-          if (attempt < 2) {
-            await new Promise((resolve) => {
-              window.setTimeout(resolve, 350);
-            });
+          if (attempt < TGC_FETCH_RETRY_ATTEMPTS) {
+            await wait(TGC_FETCH_RETRY_DELAY_MS);
           }
         }
       }
@@ -237,29 +331,26 @@ function App() {
     updateActiveTcgSlug(fallbackSlug);
   }, [activeTcgSlug, loadingTgcs, tgcBySlug, updateActiveTcgSlug]);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     clearSession();
     setAuthReady(true);
-  };
+  }, [clearSession]);
 
   const isAuthenticated = authReady && Boolean(token);
   const activeGame = getGameConfig(activeTcgSlug);
   const activeTgc = tgcBySlug[activeTcgSlug] || null;
-  const isResolvingActiveTgc = isAuthenticated && loadingTgcs && !activeTgc;
-  const shouldShowTgcBootstrapPanel = isAuthenticated && !activeTgc;
-  const availableGames = Object.values(tgcBySlug)
-    .map((item) => ({
-      ...getGameConfig(Object.keys(tgcBySlug).find((slug) => tgcBySlug[slug]?.id === item.id) || DEFAULT_TCG_SLUG),
-      id: item.id,
-    }))
-    .filter((game) => game.available);
-  const fallbackGames = Object.values(GAME_CONFIGS).filter((game) => game.available);
+  const availableGames = useMemo(() => buildAvailableGames(tgcBySlug), [tgcBySlug]);
+  const fallbackGames = useMemo(
+    () => Object.values(GAME_CONFIGS).filter((game) => game.available),
+    []
+  );
   const navGames = availableGames.length > 0 ? availableGames : fallbackGames;
-  const protectedCatalogFallback = (
+  const shouldBlockProtectedGameRoutes = isAuthenticated && (loadingTgcs || !activeTgc || Boolean(tgcLoadError));
+  const protectedGameFallback = (
     <TgcBootstrapPanel
       activeGame={activeGame}
       error={tgcLoadError}
-      onRetry={() => setTgcReloadNonce((current) => current + 1)}
+      onRetry={retryTgcLoad}
     />
   );
 
@@ -273,98 +364,83 @@ function App() {
             </main>
           ) : (
             <>
-          <nav className="navbar">
-            <div className="nav-brand">
-              <Link to="/">Multiverse TCG Manager</Link>
-            </div>
-            {isAuthenticated ? (
-              <div className="nav-session">
-                <div className="nav-game-switcher" aria-label="Juego activo">
-                  {navGames.map((game) => (
-                    <button
-                      key={game.slug}
-                      type="button"
-                      className={`nav-game-pill ${activeTcgSlug === game.slug ? 'is-active' : ''}`}
-                      onClick={() => updateActiveTcgSlug(game.slug)}
-                    >
-                      {game.shortName}
-                    </button>
-                  ))}
-                </div>
-                <ul className="nav-links">
-                <li><Link to="/search">Buscar Cartas</Link></li>
-                <li><Link to="/collection">Mi Coleccion</Link></li>
-                <li><Link to="/decks">Mis Mazos</Link></li>
-                <li><Link to="/settings">Configuracion</Link></li>
-                <li><button className="logout-button" onClick={logout}>Cerrar Sesion</button></li>
-                </ul>
-              </div>
-            ) : (
-              <ul className="nav-links">
-                <li><Link to="/">Inicio</Link></li>
-              </ul>
-            )}
-          </nav>
-          <main className="main-content">
-            <Routes>
-              <Route
-                path="/"
-                element={
-                  <Home
-                    token={isAuthenticated ? token : null}
-                    onLoginSuccess={handleLoginSuccess}
-                    activeTcgSlug={activeTcgSlug}
-                    setActiveTcgSlug={updateActiveTcgSlug}
-                    availableGames={navGames}
+              <SiteNavigation
+                isAuthenticated={isAuthenticated}
+                navGames={navGames}
+                activeTcgSlug={activeTcgSlug}
+                onSelectGame={updateActiveTcgSlug}
+                onLogout={logout}
+              />
+
+              <main className="main-content">
+                <Routes>
+                  <Route
+                    path="/"
+                    element={
+                      <Home
+                        token={isAuthenticated ? token : null}
+                        onLoginSuccess={handleLoginSuccess}
+                        activeTcgSlug={activeTcgSlug}
+                        setActiveTcgSlug={updateActiveTcgSlug}
+                        availableGames={navGames}
+                      />
+                    }
                   />
-                }
-              />
-              <Route
-                path="/search"
-                element={
-                  isAuthenticated
-                    ? (shouldShowTgcBootstrapPanel && (isResolvingActiveTgc || tgcLoadError || !activeTgc)
-                      ? protectedCatalogFallback
-                      : (
-                        <AppErrorBoundary>
-                          <Search key={`${activeTcgSlug}-${activeTgc?.id || 'ready'}`} activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />
-                        </AppErrorBoundary>
-                      ))
-                    : <Navigate to="/" />
-                }
-              />
-              <Route
-                path="/collection"
-                element={
-                  isAuthenticated
-                    ? (shouldShowTgcBootstrapPanel && (isResolvingActiveTgc || tgcLoadError || !activeTgc)
-                      ? protectedCatalogFallback
-                      : (
-                        <AppErrorBoundary>
-                          <Collection key={`${activeTcgSlug}-${activeTgc?.id || 'ready'}`} activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />
-                        </AppErrorBoundary>
-                      ))
-                    : <Navigate to="/" />
-                }
-              />
-              <Route
-                path="/decks"
-                element={
-                  isAuthenticated
-                    ? (shouldShowTgcBootstrapPanel && (isResolvingActiveTgc || tgcLoadError || !activeTgc)
-                      ? protectedCatalogFallback
-                      : (
-                        <AppErrorBoundary>
-                          <Decks key={`${activeTcgSlug}-${activeTgc?.id || 'ready'}`} activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />
-                        </AppErrorBoundary>
-                      ))
-                    : <Navigate to="/" />
-                }
-              />
-              <Route path="/shared-deck/:shareToken" element={<SharedDeck />} />
-              <Route path="/settings" element={isAuthenticated ? <Settings /> : <Navigate to="/" />} />
-            </Routes>
-          </main>
+                  <Route
+                    path="/search"
+                    element={
+                      <ProtectedGameRoute
+                        isAuthenticated={isAuthenticated}
+                        isBlocked={shouldBlockProtectedGameRoutes}
+                        fallback={protectedGameFallback}
+                        resetKey={`search-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                      >
+                        <Search
+                          key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                          activeTcgSlug={activeTcgSlug}
+                          activeTgc={activeTgc}
+                        />
+                      </ProtectedGameRoute>
+                    }
+                  />
+                  <Route
+                    path="/collection"
+                    element={
+                      <ProtectedGameRoute
+                        isAuthenticated={isAuthenticated}
+                        isBlocked={shouldBlockProtectedGameRoutes}
+                        fallback={protectedGameFallback}
+                        resetKey={`collection-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                      >
+                        <Collection
+                          key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                          activeTcgSlug={activeTcgSlug}
+                          activeTgc={activeTgc}
+                        />
+                      </ProtectedGameRoute>
+                    }
+                  />
+                  <Route
+                    path="/decks"
+                    element={
+                      <ProtectedGameRoute
+                        isAuthenticated={isAuthenticated}
+                        isBlocked={shouldBlockProtectedGameRoutes}
+                        fallback={protectedGameFallback}
+                        resetKey={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                      >
+                        <Decks
+                          key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                          activeTcgSlug={activeTcgSlug}
+                          activeTgc={activeTgc}
+                        />
+                      </ProtectedGameRoute>
+                    }
+                  />
+                  <Route path="/shared-deck/:shareToken" element={<SharedDeck />} />
+                  <Route path="/settings" element={isAuthenticated ? <Settings /> : <Navigate to="/" />} />
+                </Routes>
+              </main>
             </>
           )}
           <Analytics beforeSend={sanitizeTelemetryPayload} />

@@ -20,6 +20,15 @@ class AppErrorBoundary extends React.Component {
     console.error('AppErrorBoundary capturo un error de renderizado:', error, errorInfo);
   }
 
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({
+        hasError: false,
+        errorMessage: '',
+      });
+    }
+  }
+
   handleReload = () => {
     window.location.reload();
   };
