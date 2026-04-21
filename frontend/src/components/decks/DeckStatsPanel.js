@@ -80,21 +80,17 @@ function DeckCurveChart({ entries, averageCost }) {
   return (
     <div className="deck-curve-chart-shell">
       <div className="deck-curve-chart-meta">
-        <span className="deck-curve-axis-label">Cartas</span>
+        <span className="deck-curve-axis-label">Cartas por coste</span>
         {Number.isFinite(averageCost) && (
           <span className="deck-curve-average-copy">
-            Media de coste: {averageCost.toFixed(2)}
+            Media de coste {averageCost.toFixed(2)}
           </span>
         )}
       </div>
 
       <div className="deck-curve-chart">
         {averageLineLeft && (
-          <div className="deck-curve-average-line" style={{ left: averageLineLeft }}>
-            <span className="deck-curve-average-pill">
-              Media {averageCost.toFixed(2)}
-            </span>
-          </div>
+          <div className="deck-curve-average-line" style={{ left: averageLineLeft }} />
         )}
 
         {entries.map((entry) => {
@@ -117,7 +113,7 @@ function DeckCurveChart({ entries, averageCost }) {
                         className="deck-curve-segment"
                         style={{
                           ...presentation.style,
-                          height: `${segment.share * 100}%`,
+                          flexBasis: `${segment.share * 100}%`,
                         }}
                         title={`${segment.label}: ${segment.value}`}
                       />
