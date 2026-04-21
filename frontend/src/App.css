@@ -1993,20 +1993,129 @@ select {
   flex-shrink: 0;
 }
 
-.deck-curve-chart {
+.deck-curve-chart-shell {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.7rem;
 }
 
-.deck-curve-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.65rem;
+.deck-curve-chart-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
   align-items: center;
-  padding: 0.65rem 0.8rem;
-  border-radius: 16px;
+}
+
+.deck-curve-axis-label,
+.deck-curve-average-copy {
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.deck-curve-chart {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: 0.8rem;
+  align-items: end;
+  min-height: 280px;
+  padding: 1rem 0.9rem 0.9rem;
+  border-radius: 20px;
   background: rgba(247, 250, 255, 0.88);
   border: 1px solid rgba(21, 38, 58, 0.08);
+  overflow: hidden;
+}
+
+.deck-curve-chart::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 46px 0;
+  height: 1px;
+  background: rgba(21, 38, 58, 0.08);
+}
+
+.deck-curve-average-line {
+  position: absolute;
+  top: 0.8rem;
+  bottom: 2.5rem;
+  width: 0;
+  border-left: 2px dashed rgba(201, 59, 47, 0.78);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.deck-curve-average-pill {
+  position: absolute;
+  top: -0.15rem;
+  left: 50%;
+  transform: translate(-50%, -100%);
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(201, 59, 47, 0.12);
+  border: 1px solid rgba(201, 59, 47, 0.24);
+  color: #a22820;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 10px 18px rgba(162, 40, 32, 0.08);
+}
+
+.deck-curve-column {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: end;
+  min-width: 0;
+  z-index: 1;
+}
+
+.deck-curve-total {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.92rem;
+  text-align: center;
+  color: var(--primary-deep);
+}
+
+.deck-curve-track {
+  position: relative;
+  width: 100%;
+  min-height: 170px;
+  border-radius: 18px 18px 12px 12px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(19, 38, 63, 0.04)),
+    repeating-linear-gradient(
+      to top,
+      rgba(21, 38, 58, 0.06) 0,
+      rgba(21, 38, 58, 0.06) 1px,
+      transparent 1px,
+      transparent 25%
+    );
+  border: 1px solid rgba(21, 38, 58, 0.08);
+  display: flex;
+  align-items: end;
+  padding: 0.35rem;
+}
+
+.deck-curve-fill {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 0;
+  border-radius: 12px 12px 8px 8px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(17, 31, 53, 0.08);
+}
+
+.deck-curve-segment {
+  width: 100%;
+  background: var(--deck-color-swatch);
 }
 
 .deck-curve-cost {
@@ -2016,6 +2125,7 @@ select {
   min-width: 2.7rem;
   min-height: 32px;
   padding: 0.3rem 0.65rem;
+  margin: 0 auto;
   border-radius: 999px;
   background: rgba(22, 86, 193, 0.08);
   border: 1px solid rgba(22, 86, 193, 0.12);
@@ -2023,34 +2133,6 @@ select {
   font-weight: 800;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 0.88rem;
-}
-
-.deck-curve-total {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.96rem;
-  min-width: 2.2rem;
-  text-align: right;
-}
-
-.deck-curve-track {
-  width: 100%;
-  min-height: 14px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(19, 38, 63, 0.08);
-}
-
-.deck-curve-fill {
-  display: flex;
-  min-height: 14px;
-  border-radius: 999px;
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(17, 31, 53, 0.08);
-}
-
-.deck-curve-segment {
-  min-height: 14px;
-  background: var(--deck-color-swatch);
 }
 
 .deck-curve-legend {
@@ -2819,6 +2901,27 @@ select {
 
   .deck-title-edit {
     width: 100%;
+  }
+
+  .deck-curve-chart-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .deck-curve-chart {
+    grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
+    gap: 0.6rem;
+    min-height: 240px;
+    padding: 0.9rem 0.7rem 0.85rem;
+  }
+
+  .deck-curve-track {
+    min-height: 145px;
+  }
+
+  .deck-curve-average-pill {
+    font-size: 0.72rem;
+    padding: 0.16rem 0.5rem;
   }
 
   .collection-main {

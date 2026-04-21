@@ -12,47 +12,125 @@ const readStoredCurveDisplayMode = () => {
   return storedValue === 'values' ? 'values' : 'chart';
 };
 
-function DeckCurveChart({ entries }) {
+const getCurveEntryNumericValue = (label) => {
+  if (label === '6+') {
+    return 6;
+  }
+
+  const parsedValue = Number(label);
+  return Number.isFinite(parsedValue) ? parsedValue : null;
+};
+
+function DeckCurveChart({ entries, averageCost }) {
   const maxValue = useMemo(
     () => Math.max(...entries.map((entry) => entry.total), 1),
     [entries]
   );
+  const averageLineLeft = useMemo(() => {
+    if (!Number.isFinite(averageCost) || entries.length === 0) {
+      return null;
+    }
+
+    const numericEntries = entries
+      .map((entry, index) => ({
+        index,
+        value: getCurveEntryNumericValue(entry.label),
+      }))
+      .filter((entry) => entry.value !== null);
+
+    if (numericEntries.length === 0) {
+      return null;
+    }
+
+    if (numericEntries.length === 1) {
+      return `${((numericEntries[0].index + 0.5) / entries.length) * 100}%`;
+    }
+
+    if (averageCost <= numericEntries[0].value) {
+      return `${((numericEntries[0].index + 0.5) / entries.length) * 100}%`;
+    }
+
+    const lastNumericEntry = numericEntries[numericEntries.length - 1];
+    if (averageCost >= lastNumericEntry.value) {
+      return `${((lastNumericEntry.index + 0.5) / entries.length) * 100}%`;
+    }
+
+    for (let index = 0; index < numericEntries.length - 1; index += 1) {
+      const currentEntry = numericEntries[index];
+      const nextEntry = numericEntries[index + 1];
+      if (averageCost < currentEntry.value || averageCost > nextEntry.value) {
+        continue;
+      }
+
+      const range = nextEntry.value - currentEntry.value || 1;
+      const progress = (averageCost - currentEntry.value) / range;
+      const currentPosition = (currentEntry.index + 0.5) / entries.length;
+      const nextPosition = (nextEntry.index + 0.5) / entries.length;
+      const interpolatedPosition = currentPosition + ((nextPosition - currentPosition) * progress);
+      return `${interpolatedPosition * 100}%`;
+    }
+
+    return null;
+  }, [averageCost, entries]);
 
   if (entries.length === 0) {
     return <p className="collection-empty-text">Todavia no hay datos de coste para esta curva.</p>;
   }
 
   return (
-    <div className="deck-curve-chart">
-      {entries.map((entry) => {
-        const rowWidth = `${Math.max((entry.total / maxValue) * 100, 8)}%`;
+    <div className="deck-curve-chart-shell">
+      <div className="deck-curve-chart-meta">
+        <span className="deck-curve-axis-label">Cartas</span>
+        {Number.isFinite(averageCost) && (
+          <span className="deck-curve-average-copy">
+            Media de coste: {averageCost.toFixed(2)}
+          </span>
+        )}
+      </div>
 
-        return (
-          <article key={entry.label} className="deck-curve-row">
-            <span className="deck-curve-cost">{entry.label}</span>
+      <div className="deck-curve-chart">
+        {averageLineLeft && (
+          <div className="deck-curve-average-line" style={{ left: averageLineLeft }}>
+            <span className="deck-curve-average-pill">
+              Media {averageCost.toFixed(2)}
+            </span>
+          </div>
+        )}
 
-            <div className="deck-curve-track" aria-label={`Coste ${entry.label}: ${entry.total} cartas`}>
-              <div className="deck-curve-fill" style={{ width: rowWidth }}>
-                {entry.segments.map((segment) => {
-                  const presentation = getDeckColorPresentation(segment.label);
-                  return (
-                    <span
-                      key={`${entry.label}-${segment.label}`}
-                      className="deck-curve-segment"
-                      style={{
-                        ...presentation.style,
-                        width: `${segment.share * 100}%`,
-                      }}
-                      title={`${segment.label}: ${segment.value}`}
-                    />
-                  );
-                })}
+        {entries.map((entry) => {
+          const columnHeight = `${Math.max((entry.total / maxValue) * 100, 8)}%`;
+
+          return (
+            <article key={entry.label} className="deck-curve-column">
+              <strong className="deck-curve-total">{entry.total}</strong>
+
+              <div
+                className="deck-curve-track"
+                aria-label={`Coste ${entry.label}: ${entry.total} cartas`}
+              >
+                <div className="deck-curve-fill" style={{ height: columnHeight }}>
+                  {entry.segments.map((segment) => {
+                    const presentation = getDeckColorPresentation(segment.label);
+                    return (
+                      <span
+                        key={`${entry.label}-${segment.label}`}
+                        className="deck-curve-segment"
+                        style={{
+                          ...presentation.style,
+                          height: `${segment.share * 100}%`,
+                        }}
+                        title={`${segment.label}: ${segment.value}`}
+                      />
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-            <strong className="deck-curve-total">{entry.total}</strong>
-          </article>
-        );
-      })}
+
+              <span className="deck-curve-cost">{entry.label}</span>
+            </article>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -206,7 +284,7 @@ function DeckStatsPanel({ stats }) {
           <div className="deck-curve-header">
             <div>
               <h3>Curva de coste</h3>
-              <p className="deck-curve-copy">Consulta la curva como valores rapidos o en grafica con el color de cada tramo.</p>
+              <p className="deck-curve-copy">Consulta la curva como valores rapidos o en una grafica vertical con el color de cada tramo y la media de coste del mazo.</p>
             </div>
             <div className="view-toggle deck-curve-toggle" role="tablist" aria-label="Vista de curva del mazo">
               <button
@@ -228,7 +306,10 @@ function DeckStatsPanel({ stats }) {
 
           {curveDisplayMode === 'chart' ? (
             <>
-              <DeckCurveChart entries={stats.curveChartEntries || []} />
+              <DeckCurveChart
+                entries={stats.curveChartEntries || []}
+                averageCost={stats.averageCurveCost}
+              />
               {curveLegendEntries.length > 0 && (
                 <div className="deck-curve-legend deck-curve-legend-global">
                   {curveLegendEntries.map((entry) => {

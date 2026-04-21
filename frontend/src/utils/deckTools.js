@@ -201,6 +201,8 @@ export const buildDeckStats = (deck) => {
   const setMap = new Map();
   const curveMap = new Map();
   const curveColorMap = new Map();
+  let curveWeightedTotal = 0;
+  let curveWeightedCards = 0;
   let coveredCopies = 0;
   let missingCopies = 0;
   const composition = deck.composition || null;
@@ -241,6 +243,12 @@ export const buildDeckStats = (deck) => {
       const normalizedCurveValue = Number.isFinite(rawCurveValue)
         ? rawCurveValue
         : Number(rawCurveValue);
+
+      if (Number.isFinite(normalizedCurveValue)) {
+        curveWeightedTotal += normalizedCurveValue * quantity;
+        curveWeightedCards += quantity;
+      }
+
       const curveKey = Number.isFinite(normalizedCurveValue)
         ? (normalizedCurveValue >= 6 ? '6+' : String(normalizedCurveValue))
         : '?';
@@ -311,6 +319,7 @@ export const buildDeckStats = (deck) => {
     setEntries: toSortedEntries(setMap),
     curveEntries,
     curveChartEntries,
+    averageCurveCost: curveWeightedCards > 0 ? curveWeightedTotal / curveWeightedCards : null,
   };
 };
 
