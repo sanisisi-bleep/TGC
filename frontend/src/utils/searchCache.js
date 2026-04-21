@@ -3,6 +3,14 @@ const canUseSessionStorage = () => (
   && typeof window.sessionStorage !== 'undefined'
 );
 
+const isWrappedCacheEntry = (value) => (
+  value
+  && typeof value === 'object'
+  && !Array.isArray(value)
+  && Object.prototype.hasOwnProperty.call(value, 'data')
+  && Object.prototype.hasOwnProperty.call(value, 'expiresAt')
+);
+
 const readJsonFromSessionStorage = (storageKey) => {
   if (!canUseSessionStorage()) {
     return null;
@@ -35,19 +43,39 @@ export const readCacheMap = (storageKey) => {
     return new Map();
   }
 
-  return new Map(Object.entries(payload));
+  const now = Date.now();
+  const entries = Object.entries(payload).flatMap(([key, value]) => {
+    if (isWrappedCacheEntry(value)) {
+      if (typeof value.expiresAt === 'number' && value.expiresAt < now) {
+        return [];
+      }
+      return [[key, value.data]];
+    }
+
+    return [[key, value]];
+  });
+
+  return new Map(entries);
 };
 
 export const writeCacheMap = (storageKey, cacheMap) => {
   writeJsonToSessionStorage(storageKey, Object.fromEntries(cacheMap));
 };
 
-export const setLimitedCacheEntry = (cacheMap, key, value, limit = 24) => {
+export const setLimitedCacheEntry = (cacheMap, key, value, limit = 24, ttlMs = null) => {
   if (cacheMap.has(key)) {
     cacheMap.delete(key);
   }
 
-  cacheMap.set(key, value);
+  cacheMap.set(
+    key,
+    ttlMs
+      ? {
+          data: value,
+          expiresAt: Date.now() + ttlMs,
+        }
+      : value
+  );
 
   while (cacheMap.size > limit) {
     const oldestKey = cacheMap.keys().next().value;

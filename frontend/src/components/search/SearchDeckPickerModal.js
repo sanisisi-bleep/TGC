@@ -121,7 +121,6 @@ function SearchDeckPickerModal({
           onIncrease={onIncreaseActionQuantity}
           disabled={submittingDeckAction}
           label="Copias a mover"
-          hint="Se enviaran juntas en una sola peticion"
         />
 
         <div className="deck-picker-section">

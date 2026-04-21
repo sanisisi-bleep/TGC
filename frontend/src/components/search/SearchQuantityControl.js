@@ -14,9 +14,7 @@ function SearchQuantityControl({
     <div className="search-quantity-panel" onClick={(event) => event.stopPropagation()}>
       <div className="search-quantity-header">
         <span className="collection-panel-label">{label}</span>
-        {hint ? (
-          <span className="search-quantity-hint">{hint}</span>
-        ) : null}
+        {hint ? <span className="search-quantity-hint">{hint}</span> : null}
       </div>
 
       <div className="search-quantity-stepper">

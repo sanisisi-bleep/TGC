@@ -1,20 +1,12 @@
 import React from 'react';
-import SearchQuantityControl from './SearchQuantityControl';
 
 function SearchCardTile({
   card,
   cardViewMode,
-  actionQuantity,
-  onActionQuantityChange,
-  onActionQuantityBlur,
-  onIncreaseActionQuantity,
-  onDecreaseActionQuantity,
   onOpen,
   onAddToCollection,
   onAddToDeck,
 }) {
-  const quantityLabel = actionQuantity === 1 ? '1 copia' : `${actionQuantity} copias`;
-
   return (
     <div
       className={`card-item search-card-item ${cardViewMode === 'compact' ? 'is-compact' : ''}`}
@@ -51,35 +43,25 @@ function SearchCardTile({
         </div>
       </div>
 
-      <SearchQuantityControl
-        value={String(actionQuantity)}
-        onChange={(value) => onActionQuantityChange(card.id, value)}
-        onBlur={() => onActionQuantityBlur(card.id)}
-        onDecrease={() => onDecreaseActionQuantity(card.id)}
-        onIncrease={() => onIncreaseActionQuantity(card.id)}
-        label="Copias a anadir"
-        hint="Una sola peticion al backend"
-      />
-
       <div className="search-card-actions">
         <button
           type="button"
           onClick={(event) => {
             event.stopPropagation();
-            onAddToCollection(card.id);
+            onAddToCollection(card.id, 1);
           }}
         >
-          {`Agregar ${quantityLabel} a Coleccion`}
+          Agregar a Coleccion
         </button>
         <button
           type="button"
           className="ghost-button card-secondary-action"
           onClick={(event) => {
             event.stopPropagation();
-            onAddToDeck(card.id);
+            onAddToDeck(card.id, 1);
           }}
         >
-          {`Agregar ${quantityLabel} al Mazo`}
+          Agregar al Mazo
         </button>
       </div>
     </div>

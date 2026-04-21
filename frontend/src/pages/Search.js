@@ -26,6 +26,9 @@ const SEARCH_CARD_VIEW_MODES = ['detail', 'compact'];
 const SEARCH_INPUT_DELAY_MS = 280;
 const DEFAULT_ACTION_QUANTITY = 1;
 const MAX_ACTION_QUANTITY = 99;
+const SEARCH_CARDS_CACHE_TTL_MS = 5 * 60 * 1000;
+const SEARCH_FACETS_CACHE_TTL_MS = 60 * 60 * 1000;
+const SEARCH_DECKS_CACHE_TTL_MS = 2 * 60 * 1000;
 const SEARCH_CACHE_STORAGE_KEYS = {
   cards: 'tgc-search-cards-cache-v1',
   facets: 'tgc-search-facets-cache-v1',
@@ -211,17 +214,17 @@ function Search({ activeTcgSlug, activeTgc }) {
   const effectiveCardViewMode = isMobileLayout ? cardViewMode : 'detail';
 
   const persistCardsCache = useCallback((cacheKey, payload) => {
-    setLimitedCacheEntry(cardsCacheRef.current, cacheKey, payload, 24);
+    setLimitedCacheEntry(cardsCacheRef.current, cacheKey, payload, 24, SEARCH_CARDS_CACHE_TTL_MS);
     writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.cards, cardsCacheRef.current);
   }, []);
 
   const persistFacetsCache = useCallback((cacheKey, payload) => {
-    setLimitedCacheEntry(facetsCacheRef.current, cacheKey, payload, 12);
+    setLimitedCacheEntry(facetsCacheRef.current, cacheKey, payload, 12, SEARCH_FACETS_CACHE_TTL_MS);
     writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.facets, facetsCacheRef.current);
   }, []);
 
   const persistDecksCache = useCallback((cacheKey, payload) => {
-    setLimitedCacheEntry(decksCacheRef.current, cacheKey, payload, 12);
+    setLimitedCacheEntry(decksCacheRef.current, cacheKey, payload, 12, SEARCH_DECKS_CACHE_TTL_MS);
     writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.decks, decksCacheRef.current);
   }, []);
 
@@ -512,7 +515,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     return request;
   };
 
-  const handleAddToCollection = async (cardId) => {
+  const handleAddToCollection = async (cardId, quantityOverride = null) => {
     try {
       const token = localStorage.getItem('token');
 
@@ -528,7 +531,14 @@ function Search({ activeTcgSlug, activeTgc }) {
         return;
       }
 
-      const quantity = commitActionQuantity(parsedCardId);
+      const quantity = quantityOverride ?? commitActionQuantity(parsedCardId);
+
+      if (quantityOverride !== null) {
+        setActionQuantityDrafts((current) => ({
+          ...current,
+          [parsedCardId]: String(quantityOverride),
+        }));
+      }
 
       const requestData = {
         card_id: parsedCardId,
@@ -561,11 +571,18 @@ function Search({ activeTcgSlug, activeTgc }) {
     }
   };
 
-  const handleAddToDeck = async (cardId) => {
+  const handleAddToDeck = async (cardId, quantityOverride = null) => {
     const card = cards.find((item) => item.id === cardId) || null;
     setDeckPickerCard(card);
     setNewDeckName(card ? `${card.name} Test` : '');
-    commitActionQuantity(cardId);
+    if (quantityOverride !== null) {
+      setActionQuantityDrafts((current) => ({
+        ...current,
+        [cardId]: String(quantityOverride),
+      }));
+    } else {
+      commitActionQuantity(cardId);
+    }
     await loadDecksForPicker();
   };
 
@@ -778,11 +795,6 @@ function Search({ activeTcgSlug, activeTgc }) {
               key={card.id}
               card={card}
               cardViewMode={effectiveCardViewMode}
-              actionQuantity={getActionQuantity(card.id)}
-              onActionQuantityChange={setActionQuantityDraft}
-              onActionQuantityBlur={commitActionQuantity}
-              onIncreaseActionQuantity={(cardId) => stepActionQuantity(cardId, 1)}
-              onDecreaseActionQuantity={(cardId) => stepActionQuantity(cardId, -1)}
               onOpen={setSelectedCard}
               onAddToCollection={handleAddToCollection}
               onAddToDeck={handleAddToDeck}

@@ -55,7 +55,6 @@ function SearchCardDetailModal({
           onDecrease={() => onDecreaseActionQuantity(card.id)}
           onIncrease={() => onIncreaseActionQuantity(card.id)}
           label="Copias a anadir"
-          hint="Coleccion y mazos en una sola llamada"
         />
 
         <div className="search-card-detail-actions">
