@@ -1,5 +1,19 @@
 export const MAX_COPIES_PER_CARD = 4;
 export const ONE_PIECE_COLORS = ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'];
+const DECK_COLOR_TONES = {
+  Blue: { solid: '#2d6cdf', border: '#17479c', text: '#ffffff' },
+  Green: { solid: '#2f8f5b', border: '#1d6440', text: '#ffffff' },
+  Red: { solid: '#d24b4b', border: '#982c2c', text: '#ffffff' },
+  Purple: { solid: '#7a58c7', border: '#543892', text: '#ffffff' },
+  Black: { solid: '#2d3644', border: '#151b24', text: '#ffffff' },
+  Yellow: { solid: '#f1c94b', border: '#b38614', text: '#3d2d00' },
+  White: { solid: '#f1f5fb', border: '#b6c4d8', text: '#213247' },
+};
+const DEFAULT_DECK_COLOR_TONE = {
+  solid: '#7c8aa0',
+  border: '#556273',
+  text: '#ffffff',
+};
 
 export const getOnePieceDeckRole = (cardType) => {
   const normalizedCardType = (cardType || '').trim().toLowerCase();
@@ -21,6 +35,69 @@ export const getOnePieceColorLabels = (rawColor) => {
   return ONE_PIECE_COLORS.filter((color) => (
     new RegExp(`\\b${color}\\b`, 'i').test(normalizedColor)
   ));
+};
+
+export const getDeckColorLabels = (rawColor) => {
+  const normalizedColor = (rawColor || '').trim();
+  if (!normalizedColor) {
+    return [];
+  }
+
+  return Object.keys(DECK_COLOR_TONES).filter((color) => (
+    new RegExp(`\\b${color}\\b`, 'i').test(normalizedColor)
+  ));
+};
+
+export const getDeckColorPresentation = (rawColor) => {
+  const colorLabels = getDeckColorLabels(rawColor);
+  const normalizedLabel = (rawColor || '').trim();
+  const label = colorLabels.length > 0
+    ? colorLabels.join(' / ')
+    : (normalizedLabel || 'Sin color');
+
+  if (colorLabels.length === 0) {
+    return {
+      label,
+      colorLabels,
+      style: {
+        '--deck-color-swatch': DEFAULT_DECK_COLOR_TONE.solid,
+        '--deck-color-border': DEFAULT_DECK_COLOR_TONE.border,
+        '--deck-color-text': DEFAULT_DECK_COLOR_TONE.text,
+      },
+    };
+  }
+
+  if (colorLabels.length === 1) {
+    const tone = DECK_COLOR_TONES[colorLabels[0]] || DEFAULT_DECK_COLOR_TONE;
+    return {
+      label,
+      colorLabels,
+      style: {
+        '--deck-color-swatch': tone.solid,
+        '--deck-color-border': tone.border,
+        '--deck-color-text': tone.text,
+      },
+    };
+  }
+
+  const gradient = `linear-gradient(135deg, ${colorLabels
+    .map((color, index) => {
+      const tone = DECK_COLOR_TONES[color] || DEFAULT_DECK_COLOR_TONE;
+      const start = Math.round((index / colorLabels.length) * 100);
+      const end = Math.round(((index + 1) / colorLabels.length) * 100);
+      return `${tone.solid} ${start}%, ${tone.solid} ${end}%`;
+    })
+    .join(', ')})`;
+
+  return {
+    label,
+    colorLabels,
+    style: {
+      '--deck-color-swatch': gradient,
+      '--deck-color-border': (DECK_COLOR_TONES[colorLabels[0]] || DEFAULT_DECK_COLOR_TONE).border,
+      '--deck-color-text': '#ffffff',
+    },
+  };
 };
 
 export const safeDeckFilename = (value) => (
@@ -123,12 +200,19 @@ export const buildDeckStats = (deck) => {
   const rarityMap = new Map();
   const setMap = new Map();
   const curveMap = new Map();
+  const curveColorMap = new Map();
   let coveredCopies = 0;
   let missingCopies = 0;
   const composition = deck.composition || null;
 
   const addToMap = (map, key, amount) => {
     map.set(key, (map.get(key) || 0) + amount);
+  };
+
+  const addToNestedMap = (outerMap, outerKey, innerKey, amount) => {
+    const nextInnerMap = outerMap.get(outerKey) || new Map();
+    addToMap(nextInnerMap, innerKey, amount);
+    outerMap.set(outerKey, nextInnerMap);
   };
 
   const toSortedEntries = (map) => (
@@ -161,6 +245,12 @@ export const buildDeckStats = (deck) => {
         ? (normalizedCurveValue >= 6 ? '6+' : String(normalizedCurveValue))
         : '?';
       addToMap(curveMap, curveKey, quantity);
+      addToNestedMap(
+        curveColorMap,
+        curveKey,
+        getDeckColorPresentation(card.color).label,
+        quantity
+      );
     }
 
     coveredCopies += Number(card.fulfilled_quantity) || 0;
@@ -171,6 +261,32 @@ export const buildDeckStats = (deck) => {
   const curveEntries = curveOrder
     .map((key) => [key, curveMap.get(key) || 0])
     .filter(([, value]) => value > 0);
+  const curveChartEntries = curveOrder.flatMap((key) => {
+    const total = curveMap.get(key) || 0;
+    if (total <= 0) {
+      return [];
+    }
+
+    const segmentEntries = [...(curveColorMap.get(key)?.entries() || [])]
+      .map(([label, value]) => ({
+        label,
+        value,
+        share: value / total,
+      }))
+      .sort((left, right) => {
+        if (right.value !== left.value) {
+          return right.value - left.value;
+        }
+
+        return left.label.localeCompare(right.label);
+      });
+
+    return [{
+      label: key,
+      total,
+      segments: segmentEntries,
+    }];
+  });
 
   return {
     formatMode: composition?.format_mode || 'standard',
@@ -194,6 +310,7 @@ export const buildDeckStats = (deck) => {
     rarityEntries: toSortedEntries(rarityMap),
     setEntries: toSortedEntries(setMap),
     curveEntries,
+    curveChartEntries,
   };
 };
 

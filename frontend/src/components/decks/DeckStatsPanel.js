@@ -1,6 +1,90 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { getDeckColorPresentation } from '../../utils/deckTools';
+
+const CURVE_DISPLAY_STORAGE_KEY = 'deckCurveDisplayMode';
+
+const readStoredCurveDisplayMode = () => {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return 'chart';
+  }
+
+  const storedValue = window.localStorage.getItem(CURVE_DISPLAY_STORAGE_KEY);
+  return storedValue === 'values' ? 'values' : 'chart';
+};
+
+function DeckCurveChart({ entries }) {
+  const maxValue = useMemo(
+    () => Math.max(...entries.map((entry) => entry.total), 1),
+    [entries]
+  );
+
+  if (entries.length === 0) {
+    return <p className="collection-empty-text">Todavia no hay datos de coste para esta curva.</p>;
+  }
+
+  return (
+    <div className="deck-curve-chart">
+      {entries.map((entry) => {
+        const rowWidth = `${Math.max((entry.total / maxValue) * 100, 8)}%`;
+
+        return (
+          <article key={entry.label} className="deck-curve-row">
+            <div className="deck-curve-row-header">
+              <span className="deck-curve-cost">{entry.label}</span>
+              <strong>{entry.total}</strong>
+            </div>
+
+            <div className="deck-curve-track" aria-label={`Coste ${entry.label}: ${entry.total} cartas`}>
+              <div className="deck-curve-fill" style={{ width: rowWidth }}>
+                {entry.segments.map((segment) => {
+                  const presentation = getDeckColorPresentation(segment.label);
+                  return (
+                    <span
+                      key={`${entry.label}-${segment.label}`}
+                      className="deck-curve-segment"
+                      style={{
+                        ...presentation.style,
+                        width: `${segment.share * 100}%`,
+                      }}
+                      title={`${segment.label}: ${segment.value}`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="deck-curve-legend">
+              {entry.segments.map((segment) => {
+                const presentation = getDeckColorPresentation(segment.label);
+                return (
+                  <span
+                    key={`${entry.label}-legend-${segment.label}`}
+                    className="deck-curve-legend-chip"
+                    style={presentation.style}
+                  >
+                    {segment.label} x{segment.value}
+                  </span>
+                );
+              })}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
 
 function DeckStatsPanel({ stats }) {
+  const [curveDisplayMode, setCurveDisplayMode] = useState(readStoredCurveDisplayMode);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(CURVE_DISPLAY_STORAGE_KEY, curveDisplayMode);
+  }, [curveDisplayMode]);
+
   if (!stats) {
     return null;
   }
@@ -116,15 +200,41 @@ function DeckStatsPanel({ stats }) {
       )}
 
       <div className="deck-stats-grid">
-        <div className="deck-stat-block">
-          <h3>Curva</h3>
-          <div className="deck-stat-chip-list">
-            {stats.curveEntries.map(([label, value]) => (
-              <span key={label} className="deck-stat-chip">
-                {label}: {value}
-              </span>
-            ))}
+        <div className="deck-stat-block is-curve">
+          <div className="deck-curve-header">
+            <div>
+              <h3>Curva de coste</h3>
+              <p className="deck-curve-copy">Consulta la curva como valores rapidos o en grafica con el color de cada tramo.</p>
+            </div>
+            <div className="view-toggle deck-curve-toggle" role="tablist" aria-label="Vista de curva del mazo">
+              <button
+                type="button"
+                className={curveDisplayMode === 'chart' ? 'is-active' : ''}
+                onClick={() => setCurveDisplayMode('chart')}
+              >
+                Grafica
+              </button>
+              <button
+                type="button"
+                className={curveDisplayMode === 'values' ? 'is-active' : ''}
+                onClick={() => setCurveDisplayMode('values')}
+              >
+                Valores
+              </button>
+            </div>
           </div>
+
+          {curveDisplayMode === 'chart' ? (
+            <DeckCurveChart entries={stats.curveChartEntries || []} />
+          ) : (
+            <div className="deck-stat-chip-list">
+              {stats.curveEntries.map(([label, value]) => (
+                <span key={label} className="deck-stat-chip">
+                  {label}: {value}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="deck-stat-block">
