@@ -1,12 +1,20 @@
 import React from 'react';
+import SearchQuantityControl from './SearchQuantityControl';
 
 function SearchCardTile({
   card,
   cardViewMode,
+  actionQuantity,
+  onActionQuantityChange,
+  onActionQuantityBlur,
+  onIncreaseActionQuantity,
+  onDecreaseActionQuantity,
   onOpen,
   onAddToCollection,
   onAddToDeck,
 }) {
+  const quantityLabel = actionQuantity === 1 ? '1 copia' : `${actionQuantity} copias`;
+
   return (
     <div
       className={`card-item search-card-item ${cardViewMode === 'compact' ? 'is-compact' : ''}`}
@@ -43,6 +51,16 @@ function SearchCardTile({
         </div>
       </div>
 
+      <SearchQuantityControl
+        value={String(actionQuantity)}
+        onChange={(value) => onActionQuantityChange(card.id, value)}
+        onBlur={() => onActionQuantityBlur(card.id)}
+        onDecrease={() => onDecreaseActionQuantity(card.id)}
+        onIncrease={() => onIncreaseActionQuantity(card.id)}
+        label="Copias a anadir"
+        hint="Una sola peticion al backend"
+      />
+
       <div className="search-card-actions">
         <button
           type="button"
@@ -51,7 +69,7 @@ function SearchCardTile({
             onAddToCollection(card.id);
           }}
         >
-          Agregar a Coleccion
+          {`Agregar ${quantityLabel} a Coleccion`}
         </button>
         <button
           type="button"
@@ -61,7 +79,7 @@ function SearchCardTile({
             onAddToDeck(card.id);
           }}
         >
-          Agregar al Mazo
+          {`Agregar ${quantityLabel} al Mazo`}
         </button>
       </div>
     </div>

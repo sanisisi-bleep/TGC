@@ -1,8 +1,14 @@
 import React from 'react';
+import SearchQuantityControl from './SearchQuantityControl';
 
 function SearchCardDetailModal({
   card,
   activeTcgSlug,
+  actionQuantity,
+  onActionQuantityChange,
+  onActionQuantityBlur,
+  onIncreaseActionQuantity,
+  onDecreaseActionQuantity,
   onClose,
   onAddToCollection,
   onAddToDeck,
@@ -10,6 +16,8 @@ function SearchCardDetailModal({
   if (!card) {
     return null;
   }
+
+  const quantityLabel = actionQuantity === 1 ? '1 copia' : `${actionQuantity} copias`;
 
   return (
     <div className="card-modal" onClick={onClose}>
@@ -40,20 +48,30 @@ function SearchCardDetailModal({
           <p><strong>Descripcion:</strong> {card.description}</p>
         )}
 
+        <SearchQuantityControl
+          value={String(actionQuantity)}
+          onChange={(value) => onActionQuantityChange(card.id, value)}
+          onBlur={() => onActionQuantityBlur(card.id)}
+          onDecrease={() => onDecreaseActionQuantity(card.id)}
+          onIncrease={() => onIncreaseActionQuantity(card.id)}
+          label="Copias a anadir"
+          hint="Coleccion y mazos en una sola llamada"
+        />
+
         <div className="search-card-detail-actions">
           <button
             type="button"
             className="ghost-button"
             onClick={() => onAddToCollection(card.id)}
           >
-            Agregar a Coleccion
+            {`Agregar ${quantityLabel} a Coleccion`}
           </button>
           <button
             type="button"
             className="ghost-button"
             onClick={() => onAddToDeck(card.id)}
           >
-            Agregar al Mazo
+            {`Agregar ${quantityLabel} al Mazo`}
           </button>
           <button
             type="button"

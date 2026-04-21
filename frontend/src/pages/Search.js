@@ -24,6 +24,8 @@ const DESKTOP_DEFAULT_PAGE_SIZE = 50;
 const DEFAULT_PAGE_SIZE = DESKTOP_DEFAULT_PAGE_SIZE;
 const SEARCH_CARD_VIEW_MODES = ['detail', 'compact'];
 const SEARCH_INPUT_DELAY_MS = 280;
+const DEFAULT_ACTION_QUANTITY = 1;
+const MAX_ACTION_QUANTITY = 99;
 const SEARCH_CACHE_STORAGE_KEYS = {
   cards: 'tgc-search-cards-cache-v1',
   facets: 'tgc-search-facets-cache-v1',
@@ -124,6 +126,18 @@ const isRequestCanceled = (error) => (
   || error?.name === 'AbortError'
 );
 
+const normalizeQuantityInput = (value) => value.replace(/[^\d]/g, '');
+
+const clampActionQuantity = (value) => {
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < DEFAULT_ACTION_QUANTITY) {
+    return DEFAULT_ACTION_QUANTITY;
+  }
+
+  return Math.min(parsedValue, MAX_ACTION_QUANTITY);
+};
+
 const useDebouncedValue = (value, delay) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -155,6 +169,7 @@ function Search({ activeTcgSlug, activeTgc }) {
   const [deckPickerCard, setDeckPickerCard] = useState(null);
   const [newDeckName, setNewDeckName] = useState('');
   const [submittingDeckAction, setSubmittingDeckAction] = useState(false);
+  const [actionQuantityDrafts, setActionQuantityDrafts] = useState({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(() => readStoredEnumValue(
     SEARCH_CACHE_STORAGE_KEYS.pageSize,
@@ -176,6 +191,7 @@ function Search({ activeTcgSlug, activeTgc }) {
   const cardsCacheRef = useRef(readCacheMap(SEARCH_CACHE_STORAGE_KEYS.cards));
   const facetsCacheRef = useRef(readCacheMap(SEARCH_CACHE_STORAGE_KEYS.facets));
   const decksCacheRef = useRef(readCacheMap(SEARCH_CACHE_STORAGE_KEYS.decks));
+  const decksRequestRef = useRef(new Map());
 
   const cardsRequestParams = useMemo(
     () => buildCardsRequestParams({
@@ -254,6 +270,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     setSelectedCard(null);
     setDeckPickerCard(null);
     setNewDeckName('');
+    setActionQuantityDrafts({});
     setHasLoadedCards(false);
     setHasLoadedFacets(false);
     setLoadingDecks(false);
@@ -279,37 +296,6 @@ function Search({ activeTcgSlug, activeTgc }) {
       return () => controller.abort();
     }
 
-    const prefetchNextPage = async (baseParams, nextPage) => {
-      const nextParams = {
-        ...baseParams,
-        page: nextPage,
-      };
-      const nextCacheKey = JSON.stringify(nextParams);
-
-      if (cardsCacheRef.current.has(nextCacheKey)) {
-        return;
-      }
-
-      try {
-        const prefetchResponse = await axios.get(`${API_BASE}/cards`, {
-          params: nextParams,
-          signal: controller.signal,
-          headers: {
-            Accept: 'application/json',
-          },
-        });
-
-        persistCardsCache(
-          nextCacheKey,
-          normalizeResultsPayload(prefetchResponse.data, pageSize)
-        );
-      } catch (error) {
-        if (!isRequestCanceled(error)) {
-          console.error('Error al precargar la siguiente pagina del buscador:', error);
-        }
-      }
-    };
-
     const fetchCards = async () => {
       setLoadingCards(true);
 
@@ -330,10 +316,6 @@ function Search({ activeTcgSlug, activeTgc }) {
 
         if (nextPagination.page !== page) {
           setPage(nextPagination.page);
-        }
-
-        if (nextPagination.has_next) {
-          void prefetchNextPage(cardsRequestParams, nextPagination.page + 1);
         }
       } catch (error) {
         if (isRequestCanceled(error)) {
@@ -420,6 +402,72 @@ function Search({ activeTcgSlug, activeTgc }) {
     };
   }, [activeTgc?.id, persistFacetsCache]);
 
+  const setActionQuantityDraft = useCallback((cardId, value) => {
+    if (!cardId) {
+      return;
+    }
+
+    const normalizedValue = normalizeQuantityInput(String(value));
+    setActionQuantityDrafts((current) => ({
+      ...current,
+      [cardId]: normalizedValue,
+    }));
+  }, []);
+
+  const getActionQuantity = useCallback((cardId) => {
+    const draftValue = actionQuantityDrafts[cardId];
+    if (!draftValue) {
+      return DEFAULT_ACTION_QUANTITY;
+    }
+
+    return clampActionQuantity(draftValue);
+  }, [actionQuantityDrafts]);
+
+  const commitActionQuantity = useCallback((cardId) => {
+    if (!cardId) {
+      return DEFAULT_ACTION_QUANTITY;
+    }
+
+    const normalizedValue = clampActionQuantity(actionQuantityDrafts[cardId]);
+    setActionQuantityDrafts((current) => ({
+      ...current,
+      [cardId]: String(normalizedValue),
+    }));
+    return normalizedValue;
+  }, [actionQuantityDrafts]);
+
+  const stepActionQuantity = useCallback((cardId, delta) => {
+    if (!cardId) {
+      return;
+    }
+
+    const nextQuantity = Math.max(
+      DEFAULT_ACTION_QUANTITY,
+      Math.min(getActionQuantity(cardId) + delta, MAX_ACTION_QUANTITY)
+    );
+    setActionQuantityDrafts((current) => ({
+      ...current,
+      [cardId]: String(nextQuantity),
+    }));
+  }, [getActionQuantity]);
+
+  const getAddedMessage = useCallback((quantity, destinationLabel) => (
+    quantity === 1
+      ? `1 copia agregada a ${destinationLabel}.`
+      : `${quantity} copias agregadas a ${destinationLabel}.`
+  ), []);
+
+  const invalidateDeckPickerCache = useCallback(() => {
+    if (!activeTgc?.id) {
+      return;
+    }
+
+    const decksCacheKey = String(activeTgc.id);
+    decksCacheRef.current.delete(decksCacheKey);
+    writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.decks, decksCacheRef.current);
+    setDecks([]);
+  }, [activeTgc?.id]);
+
   const loadDecksForPicker = async (forceRefresh = false) => {
     if (!activeTgc?.id) {
       setDecks([]);
@@ -427,6 +475,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     }
 
     const decksCacheKey = String(activeTgc.id);
+    const pendingRequest = decksRequestRef.current.get(decksCacheKey);
 
     if (!forceRefresh && decksCacheRef.current.has(decksCacheKey)) {
       const cachedDecks = decksCacheRef.current.get(decksCacheKey);
@@ -434,26 +483,33 @@ function Search({ activeTcgSlug, activeTgc }) {
       return cachedDecks;
     }
 
+    if (pendingRequest) {
+      return pendingRequest;
+    }
+
     setLoadingDecks(true);
 
-    try {
-      const res = await axios.get(`${API_BASE}/decks`, {
-        params: { tgc_id: activeTgc.id },
-      });
+    const request = axios.get(`${API_BASE}/decks`, {
+      params: { tgc_id: activeTgc.id },
+    }).then((res) => {
       const deckList = Array.isArray(res.data) ? res.data : [];
       persistDecksCache(decksCacheKey, deckList);
       setDecks(deckList);
       return deckList;
-    } catch (error) {
+    }).catch((error) => {
       console.error('Error al cargar mazos para el buscador:', error);
       showToast({
         type: 'error',
         message: getApiErrorMessage(error, 'No se pudieron cargar tus mazos.'),
       });
       return [];
-    } finally {
+    }).finally(() => {
+      decksRequestRef.current.delete(decksCacheKey);
       setLoadingDecks(false);
-    }
+    });
+
+    decksRequestRef.current.set(decksCacheKey, request);
+    return request;
   };
 
   const handleAddToCollection = async (cardId) => {
@@ -472,9 +528,11 @@ function Search({ activeTcgSlug, activeTgc }) {
         return;
       }
 
+      const quantity = commitActionQuantity(parsedCardId);
+
       const requestData = {
         card_id: parsedCardId,
-        quantity: 1,
+        quantity,
       };
 
       await axios.post(
@@ -489,7 +547,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         }
       );
 
-      showToast({ type: 'success', message: 'Carta agregada a la coleccion.' });
+      showToast({ type: 'success', message: getAddedMessage(quantity, 'la coleccion') });
     } catch (error) {
       if (error.response?.status === 401) {
         showToast({ type: 'error', message: 'Sesion expirada. Por favor, inicia sesion de nuevo.' });
@@ -507,6 +565,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     const card = cards.find((item) => item.id === cardId) || null;
     setDeckPickerCard(card);
     setNewDeckName(card ? `${card.name} Test` : '');
+    commitActionQuantity(cardId);
     await loadDecksForPicker();
   };
 
@@ -518,11 +577,13 @@ function Search({ activeTcgSlug, activeTgc }) {
     setSubmittingDeckAction(true);
 
     try {
+      const quantity = commitActionQuantity(deckPickerCard.id);
       await axios.post(`${API_BASE}/decks/${deckId}/cards`, {
         card_id: deckPickerCard.id,
-        quantity: 1,
+        quantity,
       });
-      showToast({ type: 'success', message: 'Carta agregada al mazo.' });
+      invalidateDeckPickerCache();
+      showToast({ type: 'success', message: getAddedMessage(quantity, 'el mazo') });
       setDeckPickerCard(null);
     } catch (error) {
       showToast({
@@ -548,6 +609,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     setSubmittingDeckAction(true);
 
     try {
+      const quantity = commitActionQuantity(deckPickerCard.id);
       const createResponse = await axios.post(`${API_BASE}/decks`, {
         name: trimmedDeckName,
         tgc_id: activeTgc.id,
@@ -560,11 +622,16 @@ function Search({ activeTcgSlug, activeTgc }) {
 
       await axios.post(`${API_BASE}/decks/${deckId}/cards`, {
         card_id: deckPickerCard.id,
-        quantity: 1,
+        quantity,
       });
 
-      await loadDecksForPicker(true);
-      showToast({ type: 'success', message: 'Mazo creado y carta agregada.' });
+      invalidateDeckPickerCache();
+      showToast({
+        type: 'success',
+        message: quantity === 1
+          ? 'Mazo creado y 1 copia agregada.'
+          : `Mazo creado y ${quantity} copias agregadas.`,
+      });
       setDeckPickerCard(null);
       setNewDeckName('');
     } catch (error) {
@@ -711,6 +778,11 @@ function Search({ activeTcgSlug, activeTgc }) {
               key={card.id}
               card={card}
               cardViewMode={effectiveCardViewMode}
+              actionQuantity={getActionQuantity(card.id)}
+              onActionQuantityChange={setActionQuantityDraft}
+              onActionQuantityBlur={commitActionQuantity}
+              onIncreaseActionQuantity={(cardId) => stepActionQuantity(cardId, 1)}
+              onDecreaseActionQuantity={(cardId) => stepActionQuantity(cardId, -1)}
               onOpen={setSelectedCard}
               onAddToCollection={handleAddToCollection}
               onAddToDeck={handleAddToDeck}
@@ -727,6 +799,11 @@ function Search({ activeTcgSlug, activeTgc }) {
       <SearchCardDetailModal
         card={selectedCard}
         activeTcgSlug={activeTcgSlug}
+        actionQuantity={selectedCard ? getActionQuantity(selectedCard.id) : DEFAULT_ACTION_QUANTITY}
+        onActionQuantityChange={setActionQuantityDraft}
+        onActionQuantityBlur={commitActionQuantity}
+        onIncreaseActionQuantity={(cardId) => stepActionQuantity(cardId, 1)}
+        onDecreaseActionQuantity={(cardId) => stepActionQuantity(cardId, -1)}
         onClose={() => setSelectedCard(null)}
         onAddToCollection={handleAddToCollection}
         onAddToDeck={handleAddToDeck}
@@ -738,8 +815,29 @@ function Search({ activeTcgSlug, activeTgc }) {
         loadingDecks={loadingDecks}
         decks={decks}
         newDeckName={newDeckName}
+        actionQuantity={deckPickerCard ? getActionQuantity(deckPickerCard.id) : DEFAULT_ACTION_QUANTITY}
         submittingDeckAction={submittingDeckAction}
         onClose={() => setDeckPickerCard(null)}
+        onActionQuantityChange={(value) => {
+          if (deckPickerCard) {
+            setActionQuantityDraft(deckPickerCard.id, value);
+          }
+        }}
+        onActionQuantityBlur={() => {
+          if (deckPickerCard) {
+            commitActionQuantity(deckPickerCard.id);
+          }
+        }}
+        onIncreaseActionQuantity={() => {
+          if (deckPickerCard) {
+            stepActionQuantity(deckPickerCard.id, 1);
+          }
+        }}
+        onDecreaseActionQuantity={() => {
+          if (deckPickerCard) {
+            stepActionQuantity(deckPickerCard.id, -1);
+          }
+        }}
         onNewDeckNameChange={setNewDeckName}
         onAddCardToExistingDeck={addCardToExistingDeck}
         onCreateDeckAndAddCard={createDeckAndAddCard}

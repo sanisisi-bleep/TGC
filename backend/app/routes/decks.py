@@ -18,7 +18,7 @@ class DeckRename(BaseModel):
 
 class DeckCardCreate(BaseModel):
     card_id: int
-    quantity: int
+    quantity: int = Field(..., gt=0)
 
 
 class DeckCardAdjust(BaseModel):

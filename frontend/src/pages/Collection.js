@@ -17,6 +17,26 @@ const buildOrderedOptions = (values, preferredOrder = []) => {
 };
 
 const normalizeText = (value) => (value || '').toString().trim().toLowerCase();
+const normalizeCollectionCardType = (cardType, tcgSlug) => {
+  const normalizedType = (cardType || '').toString().trim();
+  if (!normalizedType) {
+    return '';
+  }
+
+  if (tcgSlug === 'one-piece' && normalizedType.toUpperCase().includes('DON')) {
+    return 'DON!!';
+  }
+
+  return normalizedType;
+};
+
+const buildCollectionMeta = (card, tcgSlug) => (
+  [
+    normalizeCollectionCardType(card?.card_type, tcgSlug) || 'Sin tipo',
+    card?.color || 'Sin color',
+    card?.rarity || 'Sin rareza',
+  ].join(' | ')
+);
 
 function Collection({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
@@ -257,10 +277,10 @@ function Collection({ activeTcgSlug, activeTgc }) {
 
   const availableTypeOptions = useMemo(
     () => buildOrderedOptions(
-      safeCollection.map((item) => item.card.card_type),
+      safeCollection.map((item) => normalizeCollectionCardType(item.card.card_type, activeTcgSlug)),
       activeGame.filters.types
     ),
-    [activeGame.filters.types, safeCollection]
+    [activeGame.filters.types, activeTcgSlug, safeCollection]
   );
 
   const availableColorOptions = useMemo(
@@ -285,13 +305,14 @@ function Collection({ activeTcgSlug, activeTgc }) {
     const normalizedSearch = normalizeText(collectionSearchTerm);
     const nextCollection = safeCollection.filter((item) => {
       const card = item.card;
+      const normalizedCardType = normalizeCollectionCardType(card.card_type, activeTcgSlug);
 
       if (normalizedSearch) {
         const matchesSearch = [
           card.name,
           card.source_card_id,
           card.set_name,
-          card.card_type,
+          normalizedCardType,
         ].some((value) => normalizeText(value).includes(normalizedSearch));
 
         if (!matchesSearch) {
@@ -299,7 +320,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
         }
       }
 
-      if (collectionFilters.type && card.card_type !== collectionFilters.type) {
+      if (collectionFilters.type && normalizedCardType !== collectionFilters.type) {
         return false;
       }
       if (collectionFilters.color && card.color !== collectionFilters.color) {
@@ -340,7 +361,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
     });
 
     return sortedCollection;
-  }, [collectionFilters, collectionSearchTerm, collectionSort, safeCollection]);
+  }, [activeTcgSlug, collectionFilters, collectionSearchTerm, collectionSort, safeCollection]);
 
   const hasCollectionFilters = Boolean(
     collectionSearchTerm.trim()
@@ -600,7 +621,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
                   </div>
 
                   <p className="collection-meta">
-                    {[item.card.card_type || 'Sin tipo', item.card.color || 'Sin color', item.card.rarity || 'Sin rareza'].join(' · ')}
+                    {buildCollectionMeta(item.card, activeTcgSlug)}
                   </p>
 
                   <p className="collection-meta">Set: {collectionSet}</p>
@@ -621,7 +642,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
                         ))}
                       </div>
                     ) : (
-                      <span className="collection-empty-text">Todav?a no esta en ning?n mazo.</span>
+                      <span className="collection-empty-text">Todavia no esta en ningun mazo.</span>
                     )}
                   </div>
                 </div>
@@ -650,7 +671,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
         {safeCollection.length === 0 && (
           <div className="empty-state panel">
             <h3>No hay cartas de {activeGame.shortName} en tu coleccion todavia</h3>
-            <p>A?ade cartas desde el buscador para empezar a construir mazos.</p>
+            <p>Anade cartas desde el buscador para empezar a construir mazos.</p>
           </div>
         )}
 

@@ -31,7 +31,7 @@ export const GAME_CONFIGS = {
     description: 'Navega tu coleccion, gestiona mazos y prepara la cubierta para cada partida de OP.',
     palette: 'theme-one-piece',
     filters: {
-      types: ['LEADER', 'CHARACTER', 'EVENT', 'STAGE'],
+      types: ['LEADER', 'CHARACTER', 'EVENT', 'STAGE', 'DON!!'],
       colors: ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'],
     },
   },

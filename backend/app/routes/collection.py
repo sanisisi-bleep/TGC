@@ -15,7 +15,7 @@ router = APIRouter(prefix="/collection", tags=["collection"])
 
 class CollectionAdd(BaseModel):
     card_id: int
-    quantity: int = 1
+    quantity: int = Field(1, gt=0)
 
 
 class CollectionAdjust(BaseModel):

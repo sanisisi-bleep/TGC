@@ -1,5 +1,6 @@
 import React from 'react';
 import { getOnePieceColorLabels, getOnePieceDeckRole } from '../../utils/deckTools';
+import SearchQuantityControl from './SearchQuantityControl';
 
 function SearchDeckPickerModal({
   deckPickerCard,
@@ -7,8 +8,13 @@ function SearchDeckPickerModal({
   loadingDecks,
   decks,
   newDeckName,
+  actionQuantity,
   submittingDeckAction,
   onClose,
+  onActionQuantityChange,
+  onActionQuantityBlur,
+  onDecreaseActionQuantity,
+  onIncreaseActionQuantity,
   onNewDeckNameChange,
   onAddCardToExistingDeck,
   onCreateDeckAndAddCard,
@@ -22,12 +28,15 @@ function SearchDeckPickerModal({
   const isOnePiece = activeGame?.slug === 'one-piece';
   const isLeaderCard = cardRole === 'leader';
   const isDonCard = cardRole === 'don';
-  const canCreateDeckAndAdd = !isOnePiece || isLeaderCard || isDonCard;
+  const quantityLabel = actionQuantity === 1 ? '1 copia' : `${actionQuantity} copias`;
+  const canCreateDeckAndAdd = !isOnePiece || (
+    (isLeaderCard && actionQuantity <= 1) || (isDonCard && actionQuantity <= 10)
+  );
   const getDeckOptionState = (deck) => {
     if (!isOnePiece) {
       return {
         disabled: false,
-        summary: 'Anadir 1 copia a este mazo',
+        summary: `Anadir ${quantityLabel} a este mazo`,
         helper: '',
       };
     }
@@ -42,11 +51,11 @@ function SearchDeckPickerModal({
     const sharesLeaderColor = leaderColors.length > 0 && cardColors.some((color) => leaderColors.includes(color));
     const summary = `Leader ${leaderCards}/${requiredLeaderCards} | Main ${mainDeckCards}/${requiredMainDeckCards} | DON ${donCards}/${recommendedDonCards}`;
 
-    if (cardRole === 'leader' && leaderCards >= requiredLeaderCards) {
+    if (cardRole === 'leader' && leaderCards + actionQuantity > requiredLeaderCards) {
       return {
         disabled: true,
         summary,
-        helper: 'Este mazo ya tiene su Leader.',
+        helper: 'Ese mazo ya no admite mas Leaders.',
       };
     }
 
@@ -66,19 +75,19 @@ function SearchDeckPickerModal({
       };
     }
 
-    if (cardRole === 'main' && mainDeckCards >= requiredMainDeckCards) {
+    if (cardRole === 'main' && mainDeckCards + actionQuantity > requiredMainDeckCards) {
       return {
         disabled: true,
         summary,
-        helper: 'Este mazo principal ya tiene 50 cartas.',
+        helper: `Con ${quantityLabel} superarias las 50 cartas del mazo principal.`,
       };
     }
 
-    if (cardRole === 'don' && donCards >= recommendedDonCards) {
+    if (cardRole === 'don' && donCards + actionQuantity > recommendedDonCards) {
       return {
         disabled: true,
         summary,
-        helper: 'Este mazo ya tiene sus 10 DON!!.',
+        helper: `Con ${quantityLabel} superarias el limite de 10 DON!!.`,
       };
     }
 
@@ -87,7 +96,7 @@ function SearchDeckPickerModal({
       summary,
       helper: cardRole === 'main'
         ? `Encaja con el Leader ${leaderColors.join(' / ') || 'del mazo'}.`
-        : 'Anadir 1 copia a este mazo',
+        : `Anadir ${quantityLabel} a este mazo`,
     };
   };
 
@@ -103,6 +112,17 @@ function SearchDeckPickerModal({
             </p>
           )}
         </div>
+
+        <SearchQuantityControl
+          value={String(actionQuantity)}
+          onChange={onActionQuantityChange}
+          onBlur={onActionQuantityBlur}
+          onDecrease={onDecreaseActionQuantity}
+          onIncrease={onIncreaseActionQuantity}
+          disabled={submittingDeckAction}
+          label="Copias a mover"
+          hint="Se enviaran juntas en una sola peticion"
+        />
 
         <div className="deck-picker-section">
           <span className="collection-panel-label">Mazos existentes</span>
@@ -155,7 +175,11 @@ function SearchDeckPickerModal({
           </div>
           {isOnePiece && !canCreateDeckAndAdd && (
             <p className="collection-empty-text">
-              En un mazo nuevo de One Piece conviene empezar por el Leader o por los DON!!.
+              {isLeaderCard
+                ? 'En un mazo nuevo de One Piece solo puedes empezar con 1 Leader.'
+                : isDonCard
+                  ? 'En un mazo nuevo de One Piece el mazo DON!! admite hasta 10 cartas.'
+                  : 'En un mazo nuevo de One Piece conviene empezar por el Leader o por los DON!!.'}
             </p>
           )}
         </div>

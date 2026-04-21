@@ -1,4 +1,4 @@
-from .models import (
+from app.database.models import (
     Base,
     Card,
     Deck,
