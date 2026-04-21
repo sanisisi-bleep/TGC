@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getDeckColorPresentation } from '../../utils/deckTools';
+import { getDeckColorPresentation, getDeckColorToneStops } from '../../utils/deckTools';
 
 const CURVE_DISPLAY_STORAGE_KEY = 'deckCurveDisplayMode';
+const CURVE_CHART_WIDTH = 720;
+const CURVE_CHART_HEIGHT = 300;
+const CURVE_CHART_MARGIN = {
+  top: 24,
+  right: 18,
+  bottom: 40,
+  left: 42,
+};
 
 const readStoredCurveDisplayMode = () => {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
@@ -12,120 +20,249 @@ const readStoredCurveDisplayMode = () => {
   return storedValue === 'values' ? 'values' : 'chart';
 };
 
-const getCurveEntryNumericValue = (label) => {
-  if (label === '6+') {
-    return 6;
+const getCurveChartScaleMax = (...values) => {
+  const maxValue = Math.max(...values.filter((value) => Number.isFinite(value)), 1);
+
+  if (maxValue <= 5) {
+    return 5;
   }
 
-  const parsedValue = Number(label);
-  return Number.isFinite(parsedValue) ? parsedValue : null;
+  if (maxValue <= 10) {
+    return 10;
+  }
+
+  return Math.ceil(maxValue / 5) * 5;
 };
 
 function DeckCurveChart({ entries, averageCost }) {
-  const maxValue = useMemo(
-    () => Math.max(...entries.map((entry) => entry.total), 1),
+  const chartEntries = useMemo(
+    () => entries.filter((entry) => entry.label !== '?' || entry.total > 0),
     [entries]
   );
-  const averageLineLeft = useMemo(() => {
-    if (!Number.isFinite(averageCost) || entries.length === 0) {
+  const hasData = useMemo(
+    () => chartEntries.some((entry) => entry.total > 0),
+    [chartEntries]
+  );
+  const averageCardsPerCost = useMemo(() => {
+    const eligibleEntries = chartEntries.filter((entry) => entry.label !== '?');
+    const sourceEntries = eligibleEntries.length > 0 ? eligibleEntries : chartEntries;
+    if (sourceEntries.length === 0) {
       return null;
     }
 
-    const numericEntries = entries
-      .map((entry, index) => ({
-        index,
-        value: getCurveEntryNumericValue(entry.label),
-      }))
-      .filter((entry) => entry.value !== null);
+    const totalCards = sourceEntries.reduce((sum, entry) => sum + entry.total, 0);
+    return totalCards / sourceEntries.length;
+  }, [chartEntries]);
+  const scaleMax = useMemo(
+    () => getCurveChartScaleMax(
+      ...chartEntries.map((entry) => entry.total),
+      averageCardsPerCost ?? 0
+    ),
+    [averageCardsPerCost, chartEntries]
+  );
+  const gradientEntries = useMemo(() => {
+    const gradients = new Map();
 
-    if (numericEntries.length === 0) {
-      return null;
-    }
+    chartEntries.forEach((entry) => {
+      entry.segments.forEach((segment) => {
+        const toneStops = getDeckColorToneStops(segment.label);
+        if (toneStops.length < 2) {
+          return;
+        }
 
-    if (numericEntries.length === 1) {
-      return `${((numericEntries[0].index + 0.5) / entries.length) * 100}%`;
-    }
+        if (!gradients.has(segment.label)) {
+          gradients.set(segment.label, {
+            label: segment.label,
+            id: `deck-curve-gradient-${segment.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`,
+            stops: toneStops,
+          });
+        }
+      });
+    });
 
-    if (averageCost <= numericEntries[0].value) {
-      return `${((numericEntries[0].index + 0.5) / entries.length) * 100}%`;
-    }
+    return [...gradients.values()];
+  }, [chartEntries]);
 
-    const lastNumericEntry = numericEntries[numericEntries.length - 1];
-    if (averageCost >= lastNumericEntry.value) {
-      return `${((lastNumericEntry.index + 0.5) / entries.length) * 100}%`;
-    }
-
-    for (let index = 0; index < numericEntries.length - 1; index += 1) {
-      const currentEntry = numericEntries[index];
-      const nextEntry = numericEntries[index + 1];
-      if (averageCost < currentEntry.value || averageCost > nextEntry.value) {
-        continue;
-      }
-
-      const range = nextEntry.value - currentEntry.value || 1;
-      const progress = (averageCost - currentEntry.value) / range;
-      const currentPosition = (currentEntry.index + 0.5) / entries.length;
-      const nextPosition = (nextEntry.index + 0.5) / entries.length;
-      const interpolatedPosition = currentPosition + ((nextPosition - currentPosition) * progress);
-      return `${interpolatedPosition * 100}%`;
-    }
-
-    return null;
-  }, [averageCost, entries]);
-
-  if (entries.length === 0) {
+  if (!hasData) {
     return <p className="collection-empty-text">Todavia no hay datos de coste para esta curva.</p>;
   }
+
+  const plotWidth = CURVE_CHART_WIDTH - CURVE_CHART_MARGIN.left - CURVE_CHART_MARGIN.right;
+  const plotHeight = CURVE_CHART_HEIGHT - CURVE_CHART_MARGIN.top - CURVE_CHART_MARGIN.bottom;
+  const slotWidth = plotWidth / Math.max(chartEntries.length, 1);
+  const barWidth = Math.min(48, Math.max(24, slotWidth * 0.56));
+  const tickValues = Array.from({ length: 5 }, (_, index) => (scaleMax / 4) * index);
+  const averageLineY = Number.isFinite(averageCardsPerCost)
+    ? CURVE_CHART_MARGIN.top + plotHeight - ((averageCardsPerCost / scaleMax) * plotHeight)
+    : null;
 
   return (
     <div className="deck-curve-chart-shell">
       <div className="deck-curve-chart-meta">
         <span className="deck-curve-axis-label">Cartas por coste</span>
-        {Number.isFinite(averageCost) && (
-          <span className="deck-curve-average-copy">
-            Media de coste {averageCost.toFixed(2)}
-          </span>
-        )}
+        <div className="deck-curve-meta-values">
+          {Number.isFinite(averageCardsPerCost) && (
+            <span className="deck-curve-average-copy">
+              Media por coste {averageCardsPerCost.toFixed(1)}
+            </span>
+          )}
+          {Number.isFinite(averageCost) && (
+            <span className="deck-curve-average-copy is-secondary">
+              Coste medio {averageCost.toFixed(2)}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="deck-curve-chart">
-        {averageLineLeft && (
-          <div className="deck-curve-average-line" style={{ left: averageLineLeft }} />
-        )}
-
-        {entries.map((entry) => {
-          const columnHeight = `${Math.max((entry.total / maxValue) * 100, 8)}%`;
-
-          return (
-            <article key={entry.label} className="deck-curve-column">
-              <strong className="deck-curve-total">{entry.total}</strong>
-
-              <div
-                className="deck-curve-track"
-                aria-label={`Coste ${entry.label}: ${entry.total} cartas`}
+        <svg
+          className="deck-curve-svg"
+          viewBox={`0 0 ${CURVE_CHART_WIDTH} ${CURVE_CHART_HEIGHT}`}
+          role="img"
+          aria-label="Curva de coste del mazo"
+        >
+          <defs>
+            {gradientEntries.map((gradient) => (
+              <linearGradient
+                key={gradient.id}
+                id={gradient.id}
+                x1="0%"
+                y1="100%"
+                x2="0%"
+                y2="0%"
               >
-                <div className="deck-curve-fill" style={{ height: columnHeight }}>
-                  {entry.segments.map((segment) => {
-                    const presentation = getDeckColorPresentation(segment.label);
-                    return (
-                      <span
-                        key={`${entry.label}-${segment.label}`}
-                        className="deck-curve-segment"
-                        style={{
-                          ...presentation.style,
-                          flexBasis: `${segment.share * 100}%`,
-                        }}
-                        title={`${segment.label}: ${segment.value}`}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
+                {gradient.stops.map((stopColor, index) => {
+                  const offset = gradient.stops.length === 1
+                    ? '100%'
+                    : `${(index / (gradient.stops.length - 1)) * 100}%`;
 
-              <span className="deck-curve-cost">{entry.label}</span>
-            </article>
-          );
-        })}
+                  return (
+                    <stop
+                      key={`${gradient.id}-${stopColor}-${offset}`}
+                      offset={offset}
+                      stopColor={stopColor}
+                    />
+                  );
+                })}
+              </linearGradient>
+            ))}
+          </defs>
+
+          {tickValues.map((tickValue) => {
+            const y = CURVE_CHART_MARGIN.top + plotHeight - ((tickValue / scaleMax) * plotHeight);
+            return (
+              <g key={`curve-tick-${tickValue}`}>
+                <line
+                  x1={CURVE_CHART_MARGIN.left}
+                  y1={y}
+                  x2={CURVE_CHART_WIDTH - CURVE_CHART_MARGIN.right}
+                  y2={y}
+                  className="deck-curve-grid-line"
+                />
+                <text
+                  x={CURVE_CHART_MARGIN.left - 12}
+                  y={y + 4}
+                  className="deck-curve-grid-label"
+                >
+                  {Math.round(tickValue)}
+                </text>
+              </g>
+            );
+          })}
+
+          {averageLineY !== null && (
+            <g>
+              <line
+                x1={CURVE_CHART_MARGIN.left}
+                y1={averageLineY}
+                x2={CURVE_CHART_WIDTH - CURVE_CHART_MARGIN.right}
+                y2={averageLineY}
+                className="deck-curve-reference-line"
+              />
+              <text
+                x={CURVE_CHART_WIDTH - CURVE_CHART_MARGIN.right}
+                y={Math.max(16, averageLineY - 8)}
+                textAnchor="end"
+                className="deck-curve-reference-label"
+              >
+                Media {averageCardsPerCost.toFixed(1)}
+              </text>
+            </g>
+          )}
+
+          <line
+            x1={CURVE_CHART_MARGIN.left}
+            y1={CURVE_CHART_HEIGHT - CURVE_CHART_MARGIN.bottom}
+            x2={CURVE_CHART_WIDTH - CURVE_CHART_MARGIN.right}
+            y2={CURVE_CHART_HEIGHT - CURVE_CHART_MARGIN.bottom}
+            className="deck-curve-axis-line"
+          />
+
+          {chartEntries.map((entry, index) => {
+            const totalHeight = (entry.total / scaleMax) * plotHeight;
+            const x = CURVE_CHART_MARGIN.left + (index * slotWidth) + ((slotWidth - barWidth) / 2);
+            const baseY = CURVE_CHART_HEIGHT - CURVE_CHART_MARGIN.bottom;
+            let currentY = baseY;
+
+            return (
+              <g key={entry.label}>
+                <text
+                  x={x + (barWidth / 2)}
+                  y={entry.total > 0 ? Math.max(CURVE_CHART_MARGIN.top - 2, baseY - totalHeight - 10) : baseY - 8}
+                  textAnchor="middle"
+                  className={`deck-curve-total-label ${entry.total > 0 ? '' : 'is-empty'}`.trim()}
+                >
+                  {entry.total}
+                </text>
+
+                {entry.segments.map((segment) => {
+                  const segmentHeight = (segment.value / scaleMax) * plotHeight;
+                  currentY -= segmentHeight;
+                  const toneStops = getDeckColorToneStops(segment.label);
+                  const fill = toneStops.length > 1
+                    ? `url(#deck-curve-gradient-${segment.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()})`
+                    : toneStops[0];
+
+                  return (
+                    <rect
+                      key={`${entry.label}-${segment.label}`}
+                      x={x}
+                      y={currentY}
+                      width={barWidth}
+                      height={segmentHeight}
+                      rx={8}
+                      ry={8}
+                      fill={fill}
+                    >
+                      <title>{`${entry.label} - ${segment.label}: ${segment.value}`}</title>
+                    </rect>
+                  );
+                })}
+
+                {entry.total > 0 && (
+                  <rect
+                    x={x}
+                    y={baseY - totalHeight}
+                    width={barWidth}
+                    height={totalHeight}
+                    rx={8}
+                    ry={8}
+                    className="deck-curve-bar-outline"
+                  />
+                )}
+
+                <text
+                  x={x + (barWidth / 2)}
+                  y={CURVE_CHART_HEIGHT - 12}
+                  textAnchor="middle"
+                  className="deck-curve-cost-label"
+                >
+                  {entry.label}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
       </div>
     </div>
   );
@@ -280,7 +417,7 @@ function DeckStatsPanel({ stats }) {
           <div className="deck-curve-header">
             <div>
               <h3>Curva de coste</h3>
-              <p className="deck-curve-copy">Consulta la curva como valores rapidos o en una grafica vertical con el color de cada tramo y la media de coste del mazo.</p>
+              <p className="deck-curve-copy">Consulta la curva como valores rapidos o en una grafica vertical con el color de cada tramo, una linea de media por coste y el coste medio del mazo.</p>
             </div>
             <div className="view-toggle deck-curve-toggle" role="tablist" aria-label="Vista de curva del mazo">
               <button

@@ -101,6 +101,18 @@ export const getDeckColorPresentation = (rawColor) => {
   };
 };
 
+export const getDeckColorToneStops = (rawColor) => {
+  const presentation = getDeckColorPresentation(rawColor);
+
+  if (presentation.colorLabels.length === 0) {
+    return [DEFAULT_DECK_COLOR_TONE.solid];
+  }
+
+  return presentation.colorLabels.map(
+    (label) => (DECK_COLOR_TONES[label] || DEFAULT_DECK_COLOR_TONE).solid
+  );
+};
+
 export const safeDeckFilename = (value) => (
   (value || 'mazo')
     .toLowerCase()
@@ -269,32 +281,30 @@ export const buildDeckStats = (deck) => {
   const curveEntries = curveOrder
     .map((key) => [key, curveMap.get(key) || 0])
     .filter(([, value]) => value > 0);
-  const curveChartEntries = curveOrder.flatMap((key) => {
-    const total = curveMap.get(key) || 0;
-    if (total <= 0) {
-      return [];
-    }
+  const curveChartEntries = curveOrder
+    .filter((key) => key !== '?' || (curveMap.get(key) || 0) > 0)
+    .map((key) => {
+      const total = curveMap.get(key) || 0;
+      const segmentEntries = [...(curveColorMap.get(key)?.entries() || [])]
+        .map(([label, value]) => ({
+          label,
+          value,
+          share: total > 0 ? value / total : 0,
+        }))
+        .sort((left, right) => {
+          if (right.value !== left.value) {
+            return right.value - left.value;
+          }
 
-    const segmentEntries = [...(curveColorMap.get(key)?.entries() || [])]
-      .map(([label, value]) => ({
-        label,
-        value,
-        share: value / total,
-      }))
-      .sort((left, right) => {
-        if (right.value !== left.value) {
-          return right.value - left.value;
-        }
+          return left.label.localeCompare(right.label);
+        });
 
-        return left.label.localeCompare(right.label);
-      });
-
-    return [{
-      label: key,
-      total,
-      segments: segmentEntries,
-    }];
-  });
+      return {
+        label: key,
+        total,
+        segments: segmentEntries,
+      };
+    });
 
   return {
     formatMode: composition?.format_mode || 'standard',

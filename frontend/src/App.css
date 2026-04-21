@@ -2050,6 +2050,13 @@ select {
   align-items: center;
 }
 
+.deck-curve-meta-values {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem 0.7rem;
+}
+
 .deck-curve-axis-label,
 .deck-curve-average-copy {
   color: var(--text-soft);
@@ -2069,122 +2076,75 @@ select {
   border-top: 2px dashed rgba(201, 59, 47, 0.78);
 }
 
+.deck-curve-average-copy.is-secondary::before {
+  border-top-style: solid;
+  border-top-color: rgba(22, 86, 193, 0.72);
+}
+
 .deck-curve-chart {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-  gap: 0.9rem;
-  align-items: end;
-  min-height: 260px;
-  padding: 1rem 0.9rem 0.85rem;
+  padding: 0.65rem 0.4rem 0.3rem;
   border-radius: 20px;
   background: linear-gradient(180deg, rgba(250, 252, 255, 0.96), rgba(242, 247, 255, 0.88));
   border: 1px solid rgba(21, 38, 58, 0.08);
-  overflow: visible;
-}
-
-.deck-curve-chart::before {
-  content: '';
-  position: absolute;
-  inset: 2.55rem 0.75rem 2.85rem;
-  border-radius: 18px;
-  background:
-    repeating-linear-gradient(
-      to top,
-      rgba(21, 38, 58, 0.08) 0,
-      rgba(21, 38, 58, 0.08) 1px,
-      transparent 1px,
-      transparent 25%
-    ),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(229, 238, 251, 0.4));
-  pointer-events: none;
-}
-
-.deck-curve-chart::after {
-  content: '';
-  position: absolute;
-  left: 0.75rem;
-  right: 0.75rem;
-  bottom: 2.85rem;
-  height: 1px;
-  background: rgba(21, 38, 58, 0.1);
-  pointer-events: none;
-}
-
-.deck-curve-average-line {
-  position: absolute;
-  top: 2.55rem;
-  bottom: 2.85rem;
-  width: 0;
-  border-left: 2px dashed rgba(201, 59, 47, 0.78);
-  pointer-events: none;
-  z-index: 2;
-  transform: translateX(-50%);
-}
-
-.deck-curve-column {
-  position: relative;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 0.5rem;
-  align-items: end;
-  min-width: 0;
-  z-index: 1;
-}
-
-.deck-curve-total {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.94rem;
-  text-align: center;
-  color: var(--primary-deep);
-}
-
-.deck-curve-track {
-  width: 100%;
-  min-height: 165px;
-  display: flex;
-  align-items: end;
-  justify-content: center;
-  padding: 0 0.35rem;
-}
-
-.deck-curve-fill {
-  display: flex;
-  flex-direction: column-reverse;
-  justify-content: flex-end;
-  width: min(100%, 60px);
-  min-height: 0;
-  margin: 0 auto;
-  border-radius: 16px 16px 8px 8px;
   overflow: hidden;
-  box-shadow:
-    inset 0 0 0 1px rgba(17, 31, 53, 0.08),
-    0 16px 28px rgba(23, 71, 156, 0.12);
 }
 
-.deck-curve-segment {
+.deck-curve-svg {
   display: block;
-  flex-grow: 0;
-  flex-shrink: 0;
   width: 100%;
-  background: var(--deck-color-swatch);
+  height: auto;
 }
 
-.deck-curve-cost {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 2.7rem;
-  min-height: 32px;
-  padding: 0.3rem 0.65rem;
-  margin: 0 auto;
-  border-radius: 999px;
-  background: rgba(22, 86, 193, 0.08);
-  border: 1px solid rgba(22, 86, 193, 0.12);
-  color: var(--primary-deep);
+.deck-curve-grid-line {
+  stroke: rgba(21, 38, 58, 0.1);
+  stroke-width: 1;
+}
+
+.deck-curve-grid-label {
+  fill: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.deck-curve-reference-line {
+  stroke: rgba(201, 59, 47, 0.82);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+}
+
+.deck-curve-reference-label {
+  fill: #a22820;
+  font-size: 12px;
   font-weight: 800;
+}
+
+.deck-curve-axis-line {
+  stroke: rgba(19, 38, 63, 0.72);
+  stroke-width: 1.5;
+}
+
+.deck-curve-total-label {
+  fill: var(--primary-deep);
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.88rem;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.deck-curve-total-label.is-empty {
+  opacity: 0.34;
+}
+
+.deck-curve-bar-outline {
+  fill: none;
+  stroke: rgba(17, 31, 53, 0.12);
+  stroke-width: 1;
+}
+
+.deck-curve-cost-label {
+  fill: var(--primary-deep);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .deck-curve-legend {
@@ -2960,15 +2920,12 @@ select {
     align-items: flex-start;
   }
 
-  .deck-curve-chart {
-    grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
-    gap: 0.65rem;
-    min-height: 230px;
-    padding: 0.9rem 0.7rem 0.85rem;
+  .deck-curve-meta-values {
+    justify-content: flex-start;
   }
 
-  .deck-curve-track {
-    min-height: 150px;
+  .deck-curve-chart {
+    padding: 0.55rem 0.2rem 0.2rem;
   }
 
   .collection-main {
