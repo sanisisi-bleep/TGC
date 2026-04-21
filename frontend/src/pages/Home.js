@@ -51,7 +51,7 @@ const getAuthErrorMessage = (error, isRegister) => {
   return isRegister ? 'No se pudo completar el registro.' : 'No se pudo iniciar sesion.';
 };
 
-function Home({ token, setToken, activeTcgSlug, setActiveTcgSlug, availableGames }) {
+function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availableGames }) {
   const navigate = useNavigate();
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [registerData, setRegisterData] = useState({ username: '', email: '', password: '' });
@@ -77,8 +77,7 @@ function Home({ token, setToken, activeTcgSlug, setActiveTcgSlug, availableGames
         setIsRegister(false);
       } else {
         const res = await axios.post(`${API_BASE}/auth/token`, loginData);
-        setToken(res.data.access_token);
-        localStorage.setItem('token', res.data.access_token);
+        onLoginSuccess(res.data.access_token);
       }
     } catch (err) {
       setAuthMessage({
