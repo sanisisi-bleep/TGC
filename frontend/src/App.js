@@ -37,10 +37,38 @@ const sanitizeTelemetryPayload = (event) => {
   }
 };
 
+function TgcBootstrapPanel({ activeGame, error, onRetry }) {
+  const isEmptyCatalog = !error;
+
+  return (
+    <div className={`page-shell ${activeGame.palette}`}>
+      <section className="page-hero">
+        <div>
+          <span className="eyebrow">{activeGame.eyebrow}</span>
+          <h1>{error ? 'No se pudo preparar el catalogo' : `Preparando ${activeGame.shortName}`}</h1>
+          <p>
+            {error
+              ? `No pudimos cargar la configuracion de ${activeGame.shortName}. Reintenta sin tener que refrescar toda la pagina.`
+              : `Preparando ${activeGame.shortName} para que el buscador entre ya con el juego activo correcto.`}
+          </p>
+        </div>
+        {!isEmptyCatalog ? (
+          <button type="button" className="logout-button" onClick={onRetry}>
+            Reintentar carga
+          </button>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [activeTcgSlug, setActiveTcgSlug] = useState(localStorage.getItem('activeTcgSlug') || DEFAULT_TCG_SLUG);
   const [tgcBySlug, setTgcBySlug] = useState({});
+  const [loadingTgcs, setLoadingTgcs] = useState(true);
+  const [tgcLoadError, setTgcLoadError] = useState(null);
+  const [tgcReloadNonce, setTgcReloadNonce] = useState(0);
 
   useEffect(() => {
     if (token) {
@@ -75,17 +103,60 @@ function App() {
   }, [activeTcgSlug]);
 
   useEffect(() => {
+    let isCancelled = false;
+
     const fetchTgcs = async () => {
-      try {
-        const response = await axios.get(`${API_BASE}/tgc`);
-        setTgcBySlug(buildTcgMap(Array.isArray(response.data) ? response.data : []));
-      } catch (error) {
-        console.error('Error al cargar TCGs:', error);
+      setLoadingTgcs(true);
+      setTgcLoadError(null);
+
+      let lastError = null;
+
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          const response = await axios.get(`${API_BASE}/tgc`);
+          if (isCancelled) {
+            return;
+          }
+
+          const nextTgcMap = buildTcgMap(Array.isArray(response.data) ? response.data : []);
+          setTgcBySlug(nextTgcMap);
+
+          setLoadingTgcs(false);
+          return;
+        } catch (error) {
+          lastError = error;
+
+          if (attempt < 2) {
+            await new Promise((resolve) => {
+              window.setTimeout(resolve, 350);
+            });
+          }
+        }
+      }
+
+      if (!isCancelled) {
+        console.error('Error al cargar TCGs:', lastError);
+        setTgcLoadError(lastError);
+        setLoadingTgcs(false);
       }
     };
 
     fetchTgcs();
-  }, []);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [token, tgcReloadNonce]);
+
+  useEffect(() => {
+    if (loadingTgcs || tgcBySlug[activeTcgSlug]) {
+      return;
+    }
+
+    const fallbackSlug = Object.keys(tgcBySlug).find((slug) => GAME_CONFIGS[slug]?.available)
+      || DEFAULT_TCG_SLUG;
+    setActiveTcgSlug(fallbackSlug);
+  }, [activeTcgSlug, loadingTgcs, tgcBySlug]);
 
   const logout = () => {
     setToken(null);
@@ -95,6 +166,8 @@ function App() {
 
   const activeGame = getGameConfig(activeTcgSlug);
   const activeTgc = tgcBySlug[activeTcgSlug] || null;
+  const isResolvingActiveTgc = loadingTgcs && !activeTgc;
+  const shouldShowTgcBootstrapPanel = token && !activeTgc;
   const availableGames = Object.values(tgcBySlug)
     .map((item) => ({
       ...getGameConfig(Object.keys(tgcBySlug).find((slug) => tgcBySlug[slug]?.id === item.id) || DEFAULT_TCG_SLUG),
@@ -103,6 +176,13 @@ function App() {
     .filter((game) => game.available);
   const fallbackGames = Object.values(GAME_CONFIGS).filter((game) => game.available);
   const navGames = availableGames.length > 0 ? availableGames : fallbackGames;
+  const protectedCatalogFallback = (
+    <TgcBootstrapPanel
+      activeGame={activeGame}
+      error={tgcLoadError}
+      onRetry={() => setTgcReloadNonce((current) => current + 1)}
+    />
+  );
 
   return (
     <Router>
@@ -156,15 +236,33 @@ function App() {
               />
               <Route
                 path="/search"
-                element={token ? <Search activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} /> : <Navigate to="/" />}
+                element={
+                  token
+                    ? (shouldShowTgcBootstrapPanel && (isResolvingActiveTgc || tgcLoadError || !activeTgc)
+                      ? protectedCatalogFallback
+                      : <Search activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />)
+                    : <Navigate to="/" />
+                }
               />
               <Route
                 path="/collection"
-                element={token ? <Collection activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} /> : <Navigate to="/" />}
+                element={
+                  token
+                    ? (shouldShowTgcBootstrapPanel && (isResolvingActiveTgc || tgcLoadError || !activeTgc)
+                      ? protectedCatalogFallback
+                      : <Collection activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />)
+                    : <Navigate to="/" />
+                }
               />
               <Route
                 path="/decks"
-                element={token ? <Decks activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} /> : <Navigate to="/" />}
+                element={
+                  token
+                    ? (shouldShowTgcBootstrapPanel && (isResolvingActiveTgc || tgcLoadError || !activeTgc)
+                      ? protectedCatalogFallback
+                      : <Decks activeTcgSlug={activeTcgSlug} activeTgc={activeTgc} />)
+                    : <Navigate to="/" />
+                }
               />
               <Route path="/shared-deck/:shareToken" element={<SharedDeck />} />
               <Route path="/settings" element={token ? <Settings /> : <Navigate to="/" />} />

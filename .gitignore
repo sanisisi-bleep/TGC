@@ -88,3 +88,6 @@ backend/app/logs/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local manuals
+DEPLOY_VERCEL_LOCAL.md
