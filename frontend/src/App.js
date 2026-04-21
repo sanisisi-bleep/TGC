@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
@@ -114,38 +114,79 @@ function SiteNavigation({
   onSelectGame,
   onLogout,
 }) {
+  const location = useLocation();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [activeTcgSlug, isAuthenticated, location.pathname]);
+
+  const handleSelectGame = (slug) => {
+    onSelectGame(slug);
+    setIsMobileMenuOpen(false);
+  };
+
+  const handleLogout = () => {
+    setIsMobileMenuOpen(false);
+    onLogout();
+  };
+
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
+  };
+
   return (
     <nav className="navbar">
-      <div className="nav-brand">
-        <Link to="/">Multiverse TCG Manager</Link>
-      </div>
-      {isAuthenticated ? (
-        <div className="nav-session">
-          <div className="nav-game-switcher" aria-label="Juego activo">
-            {navGames.map((game) => (
-              <button
-                key={game.slug}
-                type="button"
-                className={`nav-game-pill ${activeTcgSlug === game.slug ? 'is-active' : ''}`}
-                onClick={() => onSelectGame(game.slug)}
-              >
-                {game.shortName}
-              </button>
-            ))}
-          </div>
-          <ul className="nav-links">
-            <li><Link to="/search">Buscar Cartas</Link></li>
-            <li><Link to="/collection">Mi Coleccion</Link></li>
-            <li><Link to="/decks">Mis Mazos</Link></li>
-            <li><Link to="/settings">Configuracion</Link></li>
-            <li><button className="logout-button" onClick={onLogout}>Cerrar Sesion</button></li>
-          </ul>
+      <div className="nav-header">
+        <div className="nav-brand">
+          <Link to="/" onClick={closeMobileMenu}>Multiverse TCG Manager</Link>
         </div>
-      ) : (
-        <ul className="nav-links">
-          <li><Link to="/">Inicio</Link></li>
-        </ul>
-      )}
+        <button
+          type="button"
+          className={`nav-menu-toggle ${isMobileMenuOpen ? 'is-open' : ''}`}
+          aria-expanded={isMobileMenuOpen}
+          aria-controls="site-navigation-panel"
+          aria-label={isMobileMenuOpen ? 'Cerrar menu' : 'Abrir menu'}
+          onClick={() => setIsMobileMenuOpen((current) => !current)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+      </div>
+
+      <div
+        id="site-navigation-panel"
+        className={`nav-menu-panel ${isMobileMenuOpen ? 'is-open' : ''}`}
+      >
+        {isAuthenticated ? (
+          <div className="nav-session">
+            <div className="nav-game-switcher" aria-label="Juego activo">
+              {navGames.map((game) => (
+                <button
+                  key={game.slug}
+                  type="button"
+                  className={`nav-game-pill ${activeTcgSlug === game.slug ? 'is-active' : ''}`}
+                  onClick={() => handleSelectGame(game.slug)}
+                >
+                  {game.shortName}
+                </button>
+              ))}
+            </div>
+            <ul className="nav-links">
+              <li><Link to="/search" onClick={closeMobileMenu}>Buscar Cartas</Link></li>
+              <li><Link to="/collection" onClick={closeMobileMenu}>Mi Coleccion</Link></li>
+              <li><Link to="/decks" onClick={closeMobileMenu}>Mis Mazos</Link></li>
+              <li><Link to="/settings" onClick={closeMobileMenu}>Configuracion</Link></li>
+              <li><button className="logout-button" onClick={handleLogout}>Cerrar Sesion</button></li>
+            </ul>
+          </div>
+        ) : (
+          <ul className="nav-links">
+            <li><Link to="/" onClick={closeMobileMenu}>Inicio</Link></li>
+          </ul>
+        )}
+      </div>
     </nav>
   );
 }
