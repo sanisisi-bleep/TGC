@@ -12,16 +12,20 @@ import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import {
   MAX_COPIES_PER_CARD,
+  applyDeckAssignmentMutation,
+  applyDeckQuantityMutation,
   buildDeckExportPayload,
   buildDeckListText,
   buildDeckStats,
   copyTextToClipboard,
   downloadJson,
   downloadText,
+  mergeDeckOverviewInList,
   parseDeckListText,
   parseImportedDeckFile,
   safeDeckFilename,
 } from '../utils/deckTools';
+import { fetchSessionProfile } from '../utils/bootstrapCache';
 
 function Decks({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
@@ -117,8 +121,11 @@ function Decks({ activeTcgSlug, activeTgc }) {
   useEffect(() => {
     const fetchPreferences = async () => {
       try {
-        const response = await axios.get(`${API_BASE}/settings/me`);
-        setAdvancedMode(Boolean(response.data?.advanced_mode));
+        const profile = await fetchSessionProfile(
+          () => axios.get(`${API_BASE}/settings/me`).then((response) => response.data || {}),
+          { forceRefresh: false }
+        );
+        setAdvancedMode(Boolean(profile?.advanced_mode));
       } catch (error) {
         shouldRedirectToLogin(error);
       }
@@ -414,8 +421,12 @@ function Decks({ activeTcgSlug, activeTgc }) {
     setUpdatingDeckCardId(cardId);
 
     try {
-      await axios.post(`${API_BASE}/decks/${deckId}/cards/${cardId}/adjust`, { delta });
-      await viewDeckDetails(deckId, { keepCurrentView: true });
+      const response = await axios.post(`${API_BASE}/decks/${deckId}/cards/${cardId}/adjust`, { delta });
+      const payload = response.data || {};
+      setSelectedDeck((current) => applyDeckQuantityMutation(current, cardId, payload));
+      if (payload.deck) {
+        setDecks((current) => mergeDeckOverviewInList(current, payload.deck));
+      }
     } catch (error) {
       handleDeckRequestError(error, 'No se pudo actualizar la cantidad en el mazo.');
     } finally {
@@ -431,8 +442,8 @@ function Decks({ activeTcgSlug, activeTgc }) {
     setUpdatingAssignmentCardId(cardId);
 
     try {
-      await axios.post(`${API_BASE}/decks/${selectedDeck.id}/cards/${cardId}/assignment`, { delta });
-      await viewDeckDetails(selectedDeck.id, { keepCurrentView: true });
+      const response = await axios.post(`${API_BASE}/decks/${selectedDeck.id}/cards/${cardId}/assignment`, { delta });
+      setSelectedDeck((current) => applyDeckAssignmentMutation(current, cardId, response.data || {}));
     } catch (error) {
       handleDeckRequestError(error, 'No se pudo ajustar la cobertura del mazo.');
     } finally {

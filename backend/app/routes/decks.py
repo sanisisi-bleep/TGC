@@ -154,7 +154,14 @@ def share_deck(deck_id: int, db: Session = Depends(get_db), current_user: User =
 def add_card_to_deck(deck_id: int, card: DeckCardCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = _deck_service(db)
     try:
-        return service.add_card_to_deck(deck_id, card.card_id, card.quantity, current_user.id)
+        result = service.add_card_to_deck(deck_id, card.card_id, card.quantity, current_user.id)
+        return _deck_card_payload(
+            "Card added to deck",
+            deck_id,
+            card.card_id,
+            quantity=result["quantity"],
+            assigned_quantity=result["assigned_quantity"],
+        )
     except ValueError as error:
         _raise_deck_http_error(400, error)
 
@@ -168,7 +175,9 @@ def adjust_card_in_deck(deck_id: int, card_id: int, payload: DeckCardAdjust, db:
             "Deck quantity updated",
             deck_id,
             card_id,
-            quantity=result.quantity if result else 0,
+            quantity=result["quantity"],
+            assigned_quantity=result["assigned_quantity"],
+            deck=result["deck"],
         )
     except ValueError as error:
         _raise_deck_http_error(400, error)
@@ -183,8 +192,8 @@ def adjust_card_assignment_in_deck(deck_id: int, card_id: int, payload: DeckCard
             "Deck assignment updated",
             deck_id,
             card_id,
-            assigned_quantity=result.assigned_quantity,
-            quantity=result.quantity,
+            assigned_quantity=result["assigned_quantity"],
+            quantity=result["quantity"],
         )
     except ValueError as error:
         _raise_deck_http_error(400, error)

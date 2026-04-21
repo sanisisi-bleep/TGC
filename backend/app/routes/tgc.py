@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database.connection import get_db
@@ -13,7 +13,8 @@ class TgcCreate(BaseModel):
     description: str = None
 
 @router.get("")
-def get_tgc(db: Session = Depends(get_db)):
+def get_tgc(response: Response, db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "public, max-age=300, s-maxage=1800, stale-while-revalidate=86400"
     service = TgcService(db)
     return service.get_all_tgc()
 

@@ -4,6 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
 import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
+import {
+  clearSessionProfileCache,
+  fetchSessionProfile,
+  fetchTgcCatalog,
+  setSessionProfileCache,
+} from '../utils/bootstrapCache';
 
 const ROLE_OPTIONS = [
   { value: 'player', label: 'Jugador' },
@@ -40,12 +46,20 @@ function Settings() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const [settingsRes, tgcRes] = await Promise.all([
-          axios.get(`${API_BASE}/settings/me`),
-          axios.get(`${API_BASE}/tgc`),
+        const [settingsData, tgcList] = await Promise.all([
+          fetchSessionProfile(
+            () => axios.get(`${API_BASE}/settings/me`).then((response) => response.data || {}),
+            { forceRefresh: false }
+          ),
+          fetchTgcCatalog(
+            () => axios.get(`${API_BASE}/tgc`).then((response) => (
+              Array.isArray(response.data) ? response.data : []
+            )),
+            { forceRefresh: false }
+          ),
         ]);
 
-        const data = settingsRes.data || {};
+        const data = settingsData || {};
         setProfile({
           username: data.username || '',
           email: data.email || '',
@@ -56,7 +70,7 @@ function Settings() {
           favorite_tgc_id: data.favorite_tgc_id || '',
           default_tgc_id: data.default_tgc_id || '',
         });
-        setTgcs(Array.isArray(tgcRes.data) ? tgcRes.data : []);
+        setTgcs(Array.isArray(tgcList) ? tgcList : []);
 
         if ((data.role || 'player') === 'admin') {
           const usersRes = await axios.get(`${API_BASE}/settings/users`);
@@ -102,6 +116,7 @@ function Settings() {
 
       const response = await axios.patch(`${API_BASE}/settings/me`, payload);
       const data = response.data || {};
+      setSessionProfileCache(data);
       setProfile((current) => ({
         ...current,
         display_name: data.display_name || '',
@@ -199,6 +214,7 @@ function Settings() {
       await axios.delete(`${API_BASE}/settings/me`, {
         data: { password: deletePassword },
       });
+      clearSessionProfileCache();
       localStorage.removeItem('token');
       delete axios.defaults.headers.common.Authorization;
       navigate('/');

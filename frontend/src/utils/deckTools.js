@@ -1,5 +1,6 @@
 export const MAX_COPIES_PER_CARD = 4;
 export const ONE_PIECE_COLORS = ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'];
+const DECK_ROLE_ORDER = { leader: 0, main: 1, don: 2 };
 const DECK_COLOR_TONES = {
   Blue: { solid: '#2d6cdf', border: '#17479c', text: '#ffffff' },
   Green: { solid: '#2f8f5b', border: '#1d6440', text: '#ffffff' },
@@ -131,9 +132,8 @@ export const buildDeckListText = (deck) => (
   (deck?.cards || [])
     .slice()
     .sort((left, right) => {
-      const roleOrder = { leader: 0, main: 1, don: 2 };
-      const leftOrder = roleOrder[left.deck_role] ?? 9;
-      const rightOrder = roleOrder[right.deck_role] ?? 9;
+      const leftOrder = DECK_ROLE_ORDER[left.deck_role] ?? 9;
+      const rightOrder = DECK_ROLE_ORDER[right.deck_role] ?? 9;
       if (leftOrder !== rightOrder) {
         return leftOrder - rightOrder;
       }
@@ -311,6 +311,147 @@ export const buildDeckStats = (deck) => {
     setEntries: toSortedEntries(setMap),
     curveEntries,
     curveChartEntries,
+  };
+};
+
+const normalizeDeckNumber = (value, fallback = 0) => {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : fallback;
+};
+
+const buildDeckCardCoverage = (card, quantity, assignedQuantity, advancedMode) => {
+  const safeQuantity = Math.max(normalizeDeckNumber(quantity, 0), 0);
+  const ownedQuantity = Math.max(normalizeDeckNumber(card?.owned_quantity, 0), 0);
+  const hasManualAssignment = Boolean(
+    advancedMode && assignedQuantity !== null && assignedQuantity !== undefined
+  );
+  const normalizedAssignedQuantity = hasManualAssignment
+    ? Math.max(Math.min(normalizeDeckNumber(assignedQuantity, 0), safeQuantity), 0)
+    : null;
+  const fulfilledQuantity = hasManualAssignment
+    ? Math.min(normalizedAssignedQuantity, safeQuantity, ownedQuantity)
+    : Math.min(safeQuantity, ownedQuantity);
+
+  return {
+    assignedQuantity: normalizedAssignedQuantity,
+    fulfilledQuantity,
+    missingQuantity: Math.max(safeQuantity - fulfilledQuantity, 0),
+    manualAssignmentActive: hasManualAssignment,
+  };
+};
+
+export const sortDeckCards = (cards = []) => (
+  [...cards].sort((left, right) => {
+    const leftOrder = DECK_ROLE_ORDER[left.deck_role] ?? 9;
+    const rightOrder = DECK_ROLE_ORDER[right.deck_role] ?? 9;
+
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+
+    const leftCost = Number.isFinite(left.cost) ? left.cost : normalizeDeckNumber(left.cost, 999);
+    const rightCost = Number.isFinite(right.cost) ? right.cost : normalizeDeckNumber(right.cost, 999);
+    if (leftCost !== rightCost) {
+      return leftCost - rightCost;
+    }
+
+    const leftName = (left.name || '').toLowerCase();
+    const rightName = (right.name || '').toLowerCase();
+    if (leftName !== rightName) {
+      return leftName.localeCompare(rightName);
+    }
+
+    return (left.source_card_id || '').localeCompare(right.source_card_id || '');
+  })
+);
+
+const sumMissingCopies = (cards = []) => (
+  cards.reduce((total, card) => total + Math.max(normalizeDeckNumber(card.missing_quantity, 0), 0), 0)
+);
+
+export const mergeDeckOverviewInList = (decks, deckOverview) => {
+  if (!deckOverview?.id) {
+    return decks;
+  }
+
+  return decks.map((deck) => (
+    deck.id === deckOverview.id
+      ? { ...deck, ...deckOverview }
+      : deck
+  ));
+};
+
+export const applyDeckQuantityMutation = (deck, cardId, payload) => {
+  if (!deck) {
+    return deck;
+  }
+
+  const nextQuantity = Math.max(normalizeDeckNumber(payload?.quantity, 0), 0);
+  const nextAssignedQuantity = payload?.assigned_quantity ?? null;
+  const advancedMode = Boolean(deck.advanced_mode);
+
+  const nextCards = (deck.cards || []).flatMap((card) => {
+    if (card.id !== cardId) {
+      return [card];
+    }
+
+    if (nextQuantity <= 0) {
+      return [];
+    }
+
+    const coverage = buildDeckCardCoverage(card, nextQuantity, nextAssignedQuantity, advancedMode);
+    return [{
+      ...card,
+      quantity: nextQuantity,
+      assigned_quantity: coverage.assignedQuantity,
+      fulfilled_quantity: coverage.fulfilledQuantity,
+      missing_quantity: coverage.missingQuantity,
+      manual_assignment_active: coverage.manualAssignmentActive,
+    }];
+  });
+
+  const sortedCards = sortDeckCards(nextCards);
+  const mergedDeck = {
+    ...deck,
+    ...(payload?.deck || {}),
+    cards: sortedCards,
+  };
+
+  return {
+    ...mergedDeck,
+    missing_copies: sumMissingCopies(sortedCards),
+  };
+};
+
+export const applyDeckAssignmentMutation = (deck, cardId, payload) => {
+  if (!deck) {
+    return deck;
+  }
+
+  const advancedMode = Boolean(deck.advanced_mode);
+  const sortedCards = sortDeckCards((deck.cards || []).map((card) => {
+    if (card.id !== cardId) {
+      return card;
+    }
+
+    const nextQuantity = Math.max(normalizeDeckNumber(payload?.quantity, card.quantity), 0);
+    const nextAssignedQuantity = payload?.assigned_quantity ?? null;
+    const coverage = buildDeckCardCoverage(card, nextQuantity, nextAssignedQuantity, advancedMode);
+
+    return {
+      ...card,
+      quantity: nextQuantity,
+      assigned_quantity: coverage.assignedQuantity,
+      fulfilled_quantity: coverage.fulfilledQuantity,
+      missing_quantity: coverage.missingQuantity,
+      manual_assignment_active: coverage.manualAssignmentActive,
+    };
+  }));
+
+  return {
+    ...deck,
+    cards: sortedCards,
+    missing_copies: sumMissingCopies(sortedCards),
   };
 };
 

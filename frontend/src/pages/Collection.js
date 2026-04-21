@@ -73,7 +73,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
     });
   }, []);
 
-  const updateCollectionState = (updater) => {
+  const updateCollectionState = useCallback((updater) => {
     setCollection((current) => {
       const next = updater(current);
 
@@ -84,31 +84,39 @@ function Collection({ activeTcgSlug, activeTgc }) {
       syncQuantityInputs(next);
       return next;
     });
-  };
+  }, [activeTgc?.id, syncQuantityInputs]);
 
-  const loadCollection = async (forceRefresh = false) => {
-    if (!activeTgc?.id) {
-      setCollection([]);
-      return [];
-    }
+  const updateCollectionAfterDeckAdd = useCallback((deckId, cardId, addedQuantity = 1) => {
+    const deckName = decks.find((deck) => deck.id === deckId)?.name || 'Mazo';
 
-    const cacheKey = String(activeTgc.id);
-    if (!forceRefresh && collectionCacheRef.current.has(cacheKey)) {
-      const cachedItems = collectionCacheRef.current.get(cacheKey);
-      setCollection(cachedItems);
-      syncQuantityInputs(cachedItems);
-      return cachedItems;
-    }
+    updateCollectionState((current) => current.map((item) => {
+      if (item?.card?.id !== cardId) {
+        return item;
+      }
 
-    const res = await axios.get(`${API_BASE}/collection`, {
-      params: { tgc_id: activeTgc.id },
-    });
-    const items = Array.isArray(res.data) ? res.data : [];
-    collectionCacheRef.current.set(cacheKey, items);
-    setCollection(items);
-    syncQuantityInputs(items);
-    return items;
-  };
+      const nextDecks = (item.decks || []).some((deck) => deck.id === deckId)
+        ? (item.decks || []).map((deck) => (
+          deck.id === deckId
+            ? { ...deck, quantity: (Number(deck.quantity) || 0) + addedQuantity }
+            : deck
+        ))
+        : [
+          ...(item.decks || []),
+          { id: deckId, name: deckName, quantity: addedQuantity },
+        ];
+
+      const usedInDecks = nextDecks.reduce(
+        (total, deck) => total + (Number(deck.quantity) || 0),
+        0
+      );
+
+      return {
+        ...item,
+        decks: nextDecks,
+        available_quantity: Math.max((item.total_quantity || 0) - usedInDecks, 0),
+      };
+    }));
+  }, [decks, updateCollectionState]);
 
   useEffect(() => {
     localStorage.setItem('collectionViewMode', collectionView);
@@ -250,7 +258,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
   const addCardToDeck = async (deckId, cardId) => {
     try {
       await axios.post(`${API_BASE}/decks/${deckId}/cards`, { card_id: cardId, quantity: 1 });
-      await loadCollection(true);
+      updateCollectionAfterDeckAdd(deckId, cardId);
       showToast({ type: 'success', message: 'Carta agregada al mazo.' });
     } catch (error) {
       if (error.response?.status === 401) {

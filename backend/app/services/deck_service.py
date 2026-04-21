@@ -8,6 +8,7 @@ from app.models import Card, Deck, DeckCard, Tgc, User, UserCollection
 from app.services.game_rules import (
     GUNDAM_TGC_NAME,
     ONE_PIECE_TCG_NAME,
+    get_gundam_colors,
     get_one_piece_card_role,
     get_one_piece_colors,
     get_tcg_rules,
@@ -97,10 +98,20 @@ class DeckService:
     def _is_one_piece_tgc(self, deck_tgc) -> bool:
         return bool(deck_tgc and deck_tgc.name == ONE_PIECE_TCG_NAME)
 
+    def _is_gundam_tgc(self, deck_tgc) -> bool:
+        return bool(deck_tgc and deck_tgc.name == GUNDAM_TGC_NAME)
+
     def _get_card_role(self, deck_tgc, card: Card) -> str:
         if self._is_one_piece_tgc(deck_tgc):
             return get_one_piece_card_role(card.card_type)
         return "main"
+
+    def _get_card_colors(self, deck_tgc, card: Card) -> set[str]:
+        if self._is_one_piece_tgc(deck_tgc):
+            return set(get_one_piece_colors(card.color))
+        if self._is_gundam_tgc(deck_tgc):
+            return set(get_gundam_colors(card.color))
+        return set()
 
     def _get_card_quantity_limit(self, deck_tgc, rules: dict, card: Card) -> int:
         if self._is_one_piece_tgc(deck_tgc):
@@ -151,6 +162,7 @@ class DeckService:
             self.db.query(DeckCard, Card)
             .join(Card, Card.id == DeckCard.card_id)
             .filter(DeckCard.deck_id == deck_id)
+            .order_by(DeckCard.id.asc(), Card.id.asc())
             .all()
         )
         return [
@@ -213,11 +225,90 @@ class DeckService:
             "missing_don_cards": 0,
             "extra_don_cards": 0,
             "leader_color_labels": [],
+            "deck_color_labels": [],
+            "max_deck_colors": rules.get("max_deck_colors", 0),
             "off_color_cards": [],
             "copy_limit_exceeded_cards": [],
             "color_match_ready": False,
             "is_color_valid": True,
             "is_valid": total_cards >= rules["deck_min_cards"] and total_cards <= rules["deck_max_cards"],
+        }
+
+    def _build_gundam_deck_composition(self, rules: dict, deck_entries: List[dict]):
+        total_cards = sum(entry["quantity"] for entry in deck_entries)
+        max_deck_colors = max(int(rules.get("max_deck_colors") or 0), 0)
+        deck_color_labels = []
+        deck_color_set = set()
+        off_color_cards = []
+        copy_counts_by_code = {}
+        main_card_names = {}
+
+        for entry in deck_entries:
+            card = entry["card"]
+            quantity = entry["quantity"]
+            source_card_id = (card.source_card_id or f"CARD-{card.id}").strip()
+            copy_counts_by_code[source_card_id] = copy_counts_by_code.get(source_card_id, 0) + quantity
+            main_card_names[source_card_id] = card.name
+
+            card_colors = get_gundam_colors(card.color)
+            if not card_colors:
+                continue
+
+            for color in card_colors:
+                if color in deck_color_set:
+                    continue
+                if len(deck_color_labels) < max_deck_colors:
+                    deck_color_labels.append(color)
+                    deck_color_set.add(color)
+
+            overflow_colors = [color for color in card_colors if color not in deck_color_set]
+            if overflow_colors:
+                off_color_cards.append(
+                    {
+                        "id": card.id,
+                        "name": card.name,
+                        "quantity": quantity,
+                        "color": card.color or "",
+                        "overflow_colors": overflow_colors,
+                    }
+                )
+
+        copy_limit_exceeded_cards = [
+            {
+                "source_card_id": source_card_id,
+                "name": main_card_names.get(source_card_id) or source_card_id,
+                "quantity": quantity,
+            }
+            for source_card_id, quantity in copy_counts_by_code.items()
+            if quantity > rules["max_copies_per_card"]
+        ]
+
+        return {
+            "format_mode": "gundam",
+            "leader_cards": 0,
+            "required_leader_cards": 0,
+            "main_deck_cards": total_cards,
+            "required_main_deck_cards": rules["required_main_deck_cards"],
+            "max_main_deck_cards": rules["max_main_deck_cards"],
+            "missing_main_deck_cards": max(rules["required_main_deck_cards"] - total_cards, 0),
+            "extra_main_deck_cards": max(total_cards - rules["max_main_deck_cards"], 0),
+            "don_cards": 0,
+            "recommended_don_cards": 0,
+            "don_is_optional": False,
+            "missing_don_cards": 0,
+            "extra_don_cards": 0,
+            "leader_color_labels": [],
+            "deck_color_labels": deck_color_labels,
+            "max_deck_colors": max_deck_colors,
+            "off_color_cards": off_color_cards,
+            "copy_limit_exceeded_cards": copy_limit_exceeded_cards,
+            "color_match_ready": bool(deck_color_labels),
+            "is_color_valid": not off_color_cards,
+            "is_valid": (
+                total_cards == rules["required_main_deck_cards"]
+                and not off_color_cards
+                and not copy_limit_exceeded_cards
+            ),
         }
 
     def _build_one_piece_deck_composition(self, rules: dict, deck_entries: List[dict]):
@@ -299,6 +390,8 @@ class DeckService:
             "missing_don_cards": missing_don_cards,
             "extra_don_cards": max(don_cards - rules["max_don_cards"], 0),
             "leader_color_labels": leader_color_labels,
+            "deck_color_labels": leader_color_labels,
+            "max_deck_colors": 0,
             "off_color_cards": off_color_cards,
             "copy_limit_exceeded_cards": copy_limit_exceeded_cards,
             "color_match_ready": leader_cards == 1 and bool(leader_color_labels),
@@ -316,6 +409,8 @@ class DeckService:
     def _build_deck_composition(self, deck_tgc, rules: dict, deck_entries: List[dict]):
         if self._is_one_piece_tgc(deck_tgc):
             return self._build_one_piece_deck_composition(rules, deck_entries)
+        if self._is_gundam_tgc(deck_tgc):
+            return self._build_gundam_deck_composition(rules, deck_entries)
         return self._build_generic_deck_composition(rules, deck_entries)
 
     def _validate_generic_quantity_rules(self, deck_tgc, rules: dict, next_quantity: int, next_total: int, card: Card):
@@ -370,20 +465,57 @@ class DeckService:
             if 0 < composition["don_cards"] < rules["max_don_cards"]:
                 raise ValueError("Si anades cartas DON!!, el mazo DON!! debe tener exactamente 10 cartas.")
 
+    def _validate_gundam_composition(self, rules: dict, composition: dict, require_complete: bool):
+        if composition["main_deck_cards"] > rules["max_main_deck_cards"]:
+            raise ValueError("El mazo de Gundam no puede superar 50 cartas.")
+
+        if composition["copy_limit_exceeded_cards"]:
+            exceeded_card = composition["copy_limit_exceeded_cards"][0]
+            raise ValueError(
+                f"En Gundam solo puedes llevar hasta 4 copias del numero {exceeded_card['source_card_id']}."
+            )
+
+        if composition["off_color_cards"]:
+            invalid_card = composition["off_color_cards"][0]
+            locked_colors = composition.get("deck_color_labels") or []
+            if locked_colors:
+                raise ValueError(
+                    "En Gundam un mazo solo puede fijar hasta 2 colores. "
+                    f"Este mazo ya usa {' / '.join(locked_colors)} y {invalid_card['name']} "
+                    f"introduce {' / '.join(invalid_card.get('overflow_colors') or [invalid_card.get('color') or 'otro color'])}."
+                )
+            raise ValueError("En Gundam un mazo solo puede fijar hasta 2 colores.")
+
+        if require_complete and composition["main_deck_cards"] != rules["required_main_deck_cards"]:
+            raise ValueError("Un mazo de Gundam debe tener exactamente 50 cartas.")
+
     def _validate_deck_composition(self, deck_tgc, rules: dict, deck_entries: List[dict], card: Card, is_increase: bool = False, require_complete: bool = False):
         composition = self._build_deck_composition(deck_tgc, rules, deck_entries)
 
         if self._is_one_piece_tgc(deck_tgc):
             self._validate_one_piece_composition(rules, composition, card, is_increase, require_complete)
+        elif self._is_gundam_tgc(deck_tgc):
+            self._validate_gundam_composition(rules, composition, require_complete)
 
         return composition
 
-    def _serialize_shared_deck_card(self, deck_tgc, rules: dict, deck_card: DeckCard, card: Card, leader_colors: set[str]):
+    def _serialize_shared_deck_card(self, deck_tgc, rules: dict, deck_card: DeckCard, card: Card, composition: dict):
         role = self._get_card_role(deck_tgc, card)
-        card_colors = set(get_one_piece_colors(card.color)) if self._is_one_piece_tgc(deck_tgc) else set()
-        color_matches_leader = True
-        if self._is_one_piece_tgc(deck_tgc) and role == "main" and leader_colors:
-            color_matches_leader = not leader_colors.isdisjoint(card_colors)
+        card_colors = self._get_card_colors(deck_tgc, card)
+        color_matches_rule = True
+        color_warning_text = ""
+
+        if self._is_one_piece_tgc(deck_tgc):
+            leader_colors = set(composition.get("leader_color_labels") or [])
+            if role == "main" and leader_colors:
+                color_matches_rule = not leader_colors.isdisjoint(card_colors)
+                if not color_matches_rule:
+                    color_warning_text = "Fuera de color con el Leader"
+        elif self._is_gundam_tgc(deck_tgc):
+            deck_colors = set(composition.get("deck_color_labels") or [])
+            if deck_colors and card_colors and not card_colors.issubset(deck_colors):
+                color_matches_rule = False
+                color_warning_text = "Fuera de los colores fijados del mazo"
 
         return {
             "id": card.id,
@@ -400,13 +532,44 @@ class DeckService:
             "quantity": deck_card.quantity,
             "deck_role": role,
             "max_quantity_allowed": self._get_card_quantity_limit(deck_tgc, rules, card),
-            "color_matches_leader": color_matches_leader,
+            "color_matches_leader": color_matches_rule,
+            "color_warning_text": color_warning_text,
+        }
+
+    def _build_deck_response_base(self, deck: Deck, deck_tgc, rules: dict, composition: dict, total_cards: int):
+        return {
+            "id": deck.id,
+            "name": deck.name,
+            "tgc_id": deck_tgc.id if deck_tgc else None,
+            "tgc_name": deck_tgc.name if deck_tgc else GUNDAM_TGC_NAME,
+            "created_at": deck.created_at,
+            "total_cards": total_cards,
+            "min_cards": rules["deck_min_cards"],
+            "max_cards": rules["deck_max_cards"],
+            "max_copies_per_card": rules["max_copies_per_card"],
+            "remaining_cards": (
+                max(rules["deck_max_cards"] - composition["main_deck_cards"], 0)
+                if self._is_one_piece_tgc(deck_tgc)
+                else max(rules["deck_max_cards"] - total_cards, 0)
+            ),
+            "is_complete": composition["is_valid"],
+            "composition": composition,
+            "leader_cards": composition["leader_cards"],
+            "required_leader_cards": composition["required_leader_cards"],
+            "main_deck_cards": composition["main_deck_cards"],
+            "required_main_deck_cards": composition["required_main_deck_cards"],
+            "don_cards": composition["don_cards"],
+            "recommended_don_cards": composition["recommended_don_cards"],
+            "don_is_optional": composition["don_is_optional"],
+            "leader_color_labels": composition["leader_color_labels"],
+            "deck_color_labels": composition.get("deck_color_labels", []),
+            "max_deck_colors": composition.get("max_deck_colors", 0),
+            "off_color_cards": composition["off_color_cards"],
         }
 
     def _serialize_deck_payload(self, deck: Deck, deck_tgc, rules: dict, user_id: Optional[int] = None, include_share_token: bool = False):
         deck_entries = self._get_deck_entries(deck.id)
         composition = self._build_deck_composition(deck_tgc, rules, deck_entries)
-        leader_colors = set(composition["leader_color_labels"])
         total_cards = sum(entry["quantity"] for entry in deck_entries)
         advanced_mode = self._is_advanced_mode_enabled(user_id) if user_id is not None else False
         owned_quantities = self._get_owned_quantities_map(
@@ -420,7 +583,7 @@ class DeckService:
         for entry in deck_entries:
             deck_card = entry["deck_card"]
             card = entry["card"]
-            base_payload = self._serialize_shared_deck_card(deck_tgc, rules, deck_card, card, leader_colors)
+            base_payload = self._serialize_shared_deck_card(deck_tgc, rules, deck_card, card, composition)
 
             if user_id is not None:
                 owned_quantity = owned_quantities.get(card.id, 0)
@@ -449,34 +612,8 @@ class DeckService:
             )
         )
 
-        response = {
-            "id": deck.id,
-            "name": deck.name,
-            "tgc_id": deck_tgc.id if deck_tgc else None,
-            "tgc_name": deck_tgc.name if deck_tgc else GUNDAM_TGC_NAME,
-            "created_at": deck.created_at,
-            "total_cards": total_cards,
-            "min_cards": rules["deck_min_cards"],
-            "max_cards": rules["deck_max_cards"],
-            "max_copies_per_card": rules["max_copies_per_card"],
-            "remaining_cards": (
-                max(rules["deck_max_cards"] - composition["main_deck_cards"], 0)
-                if self._is_one_piece_tgc(deck_tgc)
-                else max(rules["deck_max_cards"] - total_cards, 0)
-            ),
-            "is_complete": composition["is_valid"],
-            "composition": composition,
-            "leader_cards": composition["leader_cards"],
-            "required_leader_cards": composition["required_leader_cards"],
-            "main_deck_cards": composition["main_deck_cards"],
-            "required_main_deck_cards": composition["required_main_deck_cards"],
-            "don_cards": composition["don_cards"],
-            "recommended_don_cards": composition["recommended_don_cards"],
-            "don_is_optional": composition["don_is_optional"],
-            "leader_color_labels": composition["leader_color_labels"],
-            "off_color_cards": composition["off_color_cards"],
-            "cards": serialized_cards,
-        }
+        response = self._build_deck_response_base(deck, deck_tgc, rules, composition, total_cards)
+        response["cards"] = serialized_cards
 
         if user_id is not None:
             response["missing_copies"] = missing_copies
@@ -681,7 +818,10 @@ class DeckService:
 
         self.db.commit()
         self.db.refresh(deck_card)
-        return deck_card
+        return {
+            "quantity": deck_card.quantity,
+            "assigned_quantity": deck_card.assigned_quantity,
+        }
 
     def adjust_deck_card_quantity(self, deck_id: int, card_id: int, delta: int, user_id: int):
         deck = self._get_user_deck_or_error(deck_id, user_id)
@@ -697,19 +837,41 @@ class DeckService:
             self._validate_generic_quantity_rules(deck_tgc, rules, next_quantity, next_total, card)
 
         candidate_entries = self._build_candidate_deck_entries(deck_id, card, max(next_quantity, 0))
-        self._validate_deck_composition(deck_tgc, rules, candidate_entries, card, is_increase=delta > 0)
+        composition = self._validate_deck_composition(
+            deck_tgc,
+            rules,
+            candidate_entries,
+            card,
+            is_increase=delta > 0,
+        )
+        candidate_total_cards = sum(entry["quantity"] for entry in candidate_entries)
+        deck_overview = self._build_deck_response_base(
+            deck,
+            deck_tgc,
+            rules,
+            composition,
+            candidate_total_cards,
+        )
 
         if next_quantity <= 0:
             self.db.delete(deck_card)
             self.db.commit()
-            return None
+            return {
+                "quantity": 0,
+                "assigned_quantity": None,
+                "deck": deck_overview,
+            }
 
         deck_card.quantity = next_quantity
         if deck_card.assigned_quantity is not None:
             deck_card.assigned_quantity = min(deck_card.assigned_quantity, deck_card.quantity)
         self.db.commit()
         self.db.refresh(deck_card)
-        return deck_card
+        return {
+            "quantity": deck_card.quantity,
+            "assigned_quantity": deck_card.assigned_quantity,
+            "deck": deck_overview,
+        }
 
     def adjust_deck_card_assignment(self, deck_id: int, card_id: int, delta: int, user_id: int):
         self._get_user_deck_or_error(deck_id, user_id)
@@ -731,4 +893,7 @@ class DeckService:
 
         self.db.commit()
         self.db.refresh(deck_card)
-        return deck_card
+        return {
+            "quantity": deck_card.quantity,
+            "assigned_quantity": deck_card.assigned_quantity,
+        }

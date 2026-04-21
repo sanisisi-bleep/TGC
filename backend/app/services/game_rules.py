@@ -4,6 +4,7 @@ GUNDAM_TGC_NAME = "Gundam TGC"
 ONE_PIECE_TCG_NAME = "One Piece TCG"
 MAGIC_TCG_NAME = "Magic: The Gathering"
 
+GUNDAM_COLORS = ("Blue", "Green", "Red", "Purple", "White")
 ONE_PIECE_COLORS = ("Red", "Green", "Blue", "Purple", "Black", "Yellow")
 
 DEFAULT_RULES = {
@@ -16,6 +17,7 @@ DEFAULT_RULES = {
     "max_don_cards": 0,
     "allow_optional_don_deck": False,
     "enforce_color_identity": False,
+    "max_deck_colors": 0,
 }
 
 
@@ -29,7 +31,8 @@ TGC_RULES = {
         "max_main_deck_cards": 50,
         "max_don_cards": 0,
         "allow_optional_don_deck": False,
-        "enforce_color_identity": False,
+        "enforce_color_identity": True,
+        "max_deck_colors": 2,
     },
     ONE_PIECE_TCG_NAME: {
         "deck_min_cards": 50,
@@ -41,6 +44,7 @@ TGC_RULES = {
         "max_don_cards": 10,
         "allow_optional_don_deck": True,
         "enforce_color_identity": True,
+        "max_deck_colors": 0,
     },
     MAGIC_TCG_NAME: {
         "deck_min_cards": 60,
@@ -52,6 +56,7 @@ TGC_RULES = {
         "max_don_cards": 0,
         "allow_optional_don_deck": False,
         "enforce_color_identity": False,
+        "max_deck_colors": 0,
     },
 }
 
@@ -75,13 +80,21 @@ def get_one_piece_card_role(card_type: str | None):
     return "main"
 
 
-def get_one_piece_colors(raw_color: str | None):
+def detect_colors(raw_color: str | None, known_colors: tuple[str, ...]):
     normalized = (raw_color or "").strip()
     if not normalized:
         return []
 
     detected_colors = []
-    for color in ONE_PIECE_COLORS:
+    for color in known_colors:
         if re.search(rf"\b{re.escape(color)}\b", normalized, flags=re.IGNORECASE):
             detected_colors.append(color)
     return detected_colors
+
+
+def get_gundam_colors(raw_color: str | None):
+    return detect_colors(raw_color, GUNDAM_COLORS)
+
+
+def get_one_piece_colors(raw_color: str | None):
+    return detect_colors(raw_color, ONE_PIECE_COLORS)

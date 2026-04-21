@@ -14,6 +14,11 @@ import SharedDeck from './pages/SharedDeck';
 import { ToastProvider } from './context/ToastContext';
 import { buildTcgMap, DEFAULT_TCG_SLUG, GAME_CONFIGS, getGameConfig } from './tcgConfig';
 import API_BASE from './apiBase';
+import {
+  clearSessionProfileCache,
+  fetchSessionProfile,
+  fetchTgcCatalog,
+} from './utils/bootstrapCache';
 
 const TGC_FETCH_RETRY_ATTEMPTS = 2;
 const TGC_FETCH_RETRY_DELAY_MS = 350;
@@ -231,6 +236,7 @@ function App() {
   const clearSession = useCallback(() => {
     delete axios.defaults.headers.common.Authorization;
     localStorage.removeItem('token');
+    clearSessionProfileCache();
     setToken(null);
   }, []);
 
@@ -241,6 +247,7 @@ function App() {
       return;
     }
 
+    clearSessionProfileCache();
     localStorage.setItem('token', nextToken);
     setToken(nextToken);
     setAuthReady(true);
@@ -274,12 +281,15 @@ function App() {
       }
 
       try {
-        await axios.get(`${API_BASE}/settings/me`, {
-          headers: {
-            Authorization: `Bearer ${storedToken}`,
-            Accept: 'application/json',
-          },
-        });
+        await fetchSessionProfile(
+          () => axios.get(`${API_BASE}/settings/me`, {
+            headers: {
+              Authorization: `Bearer ${storedToken}`,
+              Accept: 'application/json',
+            },
+          }).then((response) => response.data || null),
+          { forceRefresh: true }
+        );
 
         if (!isCancelled) {
           setToken(storedToken);
@@ -331,12 +341,17 @@ function App() {
 
       for (let attempt = 1; attempt <= TGC_FETCH_RETRY_ATTEMPTS; attempt += 1) {
         try {
-          const response = await axios.get(`${API_BASE}/tgc`);
+          const tgcList = await fetchTgcCatalog(
+            () => axios.get(`${API_BASE}/tgc`).then((response) => (
+              Array.isArray(response.data) ? response.data : []
+            )),
+            { forceRefresh: tgcReloadNonce > 0 }
+          );
           if (isCancelled) {
             return;
           }
 
-          setTgcBySlug(buildTcgMap(Array.isArray(response.data) ? response.data : []));
+          setTgcBySlug(buildTcgMap(tgcList));
           setLoadingTgcs(false);
           return;
         } catch (error) {
