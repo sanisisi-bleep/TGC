@@ -29,10 +29,7 @@ function DeckCurveChart({ entries }) {
 
         return (
           <article key={entry.label} className="deck-curve-row">
-            <div className="deck-curve-row-header">
-              <span className="deck-curve-cost">{entry.label}</span>
-              <strong>{entry.total}</strong>
-            </div>
+            <span className="deck-curve-cost">{entry.label}</span>
 
             <div className="deck-curve-track" aria-label={`Coste ${entry.label}: ${entry.total} cartas`}>
               <div className="deck-curve-fill" style={{ width: rowWidth }}>
@@ -52,21 +49,7 @@ function DeckCurveChart({ entries }) {
                 })}
               </div>
             </div>
-
-            <div className="deck-curve-legend">
-              {entry.segments.map((segment) => {
-                const presentation = getDeckColorPresentation(segment.label);
-                return (
-                  <span
-                    key={`${entry.label}-legend-${segment.label}`}
-                    className="deck-curve-legend-chip"
-                    style={presentation.style}
-                  >
-                    {segment.label} x{segment.value}
-                  </span>
-                );
-              })}
-            </div>
+            <strong className="deck-curve-total">{entry.total}</strong>
           </article>
         );
       })}
@@ -76,6 +59,25 @@ function DeckCurveChart({ entries }) {
 
 function DeckStatsPanel({ stats }) {
   const [curveDisplayMode, setCurveDisplayMode] = useState(readStoredCurveDisplayMode);
+  const curveLegendEntries = useMemo(() => {
+    const legendMap = new Map();
+
+    (stats?.curveChartEntries || []).forEach((entry) => {
+      entry.segments.forEach((segment) => {
+        legendMap.set(segment.label, (legendMap.get(segment.label) || 0) + segment.value);
+      });
+    });
+
+    return [...legendMap.entries()]
+      .map(([label, value]) => ({ label, value }))
+      .sort((left, right) => {
+        if (right.value !== left.value) {
+          return right.value - left.value;
+        }
+
+        return left.label.localeCompare(right.label);
+      });
+  }, [stats?.curveChartEntries]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
@@ -225,7 +227,25 @@ function DeckStatsPanel({ stats }) {
           </div>
 
           {curveDisplayMode === 'chart' ? (
-            <DeckCurveChart entries={stats.curveChartEntries || []} />
+            <>
+              <DeckCurveChart entries={stats.curveChartEntries || []} />
+              {curveLegendEntries.length > 0 && (
+                <div className="deck-curve-legend deck-curve-legend-global">
+                  {curveLegendEntries.map((entry) => {
+                    const presentation = getDeckColorPresentation(entry.label);
+                    return (
+                      <span
+                        key={`curve-legend-${entry.label}`}
+                        className="deck-curve-legend-chip"
+                        style={presentation.style}
+                      >
+                        {entry.label} x{entry.value}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           ) : (
             <div className="deck-stat-chip-list">
               {stats.curveEntries.map(([label, value]) => (

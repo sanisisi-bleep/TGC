@@ -1914,6 +1914,8 @@ select {
 
 .deck-stat-block.is-curve {
   grid-column: 1 / -1;
+  width: min(100%, 760px);
+  justify-self: center;
 }
 
 .deck-curve-header {
@@ -1927,7 +1929,8 @@ select {
 .deck-curve-copy {
   margin: 0.3rem 0 0;
   color: var(--text-soft);
-  font-size: 0.92rem;
+  font-size: 0.88rem;
+  max-width: 42rem;
 }
 
 .deck-curve-toggle {
@@ -1936,48 +1939,46 @@ select {
 
 .deck-curve-chart {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.6rem;
 }
 
 .deck-curve-row {
   display: grid;
-  gap: 0.55rem;
-  padding: 0.85rem 0.95rem;
-  border-radius: 18px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.65rem 0.8rem;
+  border-radius: 16px;
   background: rgba(247, 250, 255, 0.88);
   border: 1px solid rgba(21, 38, 58, 0.08);
-}
-
-.deck-curve-row-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  align-items: center;
 }
 
 .deck-curve-cost {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 3rem;
-  min-height: 34px;
-  padding: 0.35rem 0.75rem;
+  min-width: 2.7rem;
+  min-height: 32px;
+  padding: 0.3rem 0.65rem;
   border-radius: 999px;
   background: rgba(22, 86, 193, 0.08);
   border: 1px solid rgba(22, 86, 193, 0.12);
   color: var(--primary-deep);
   font-weight: 800;
   font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.88rem;
 }
 
-.deck-curve-row-header strong {
+.deck-curve-total {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 1rem;
+  font-size: 0.96rem;
+  min-width: 2.2rem;
+  text-align: right;
 }
 
 .deck-curve-track {
   width: 100%;
-  min-height: 18px;
+  min-height: 14px;
   border-radius: 999px;
   overflow: hidden;
   background: rgba(19, 38, 63, 0.08);
@@ -1985,14 +1986,14 @@ select {
 
 .deck-curve-fill {
   display: flex;
-  min-height: 18px;
+  min-height: 14px;
   border-radius: 999px;
   overflow: hidden;
   box-shadow: inset 0 0 0 1px rgba(17, 31, 53, 0.08);
 }
 
 .deck-curve-segment {
-  min-height: 18px;
+  min-height: 14px;
   background: var(--deck-color-swatch);
 }
 
@@ -2002,17 +2003,21 @@ select {
   gap: 0.5rem;
 }
 
+.deck-curve-legend-global {
+  margin-top: 0.15rem;
+}
+
 .deck-curve-legend-chip {
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
-  padding: 0.35rem 0.7rem;
+  min-height: 30px;
+  padding: 0.28rem 0.62rem;
   border-radius: 999px;
   background: var(--deck-color-swatch);
   border: 1px solid var(--deck-color-border);
   color: var(--deck-color-text);
   font-weight: 700;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
