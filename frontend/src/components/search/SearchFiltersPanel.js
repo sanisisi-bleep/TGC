@@ -1,4 +1,5 @@
 import React from 'react';
+import FilterAutocomplete from '../filters/FilterAutocomplete';
 
 function SearchFiltersPanel({
   searchTerm,
@@ -55,17 +56,13 @@ function SearchFiltersPanel({
         ))}
       </select>
 
-      <select
+      <FilterAutocomplete
         value={filters.expansion}
-        onChange={(e) => onFilterChange('expansion', e.target.value)}
-      >
-        <option value="">Todas las expansiones</option>
-        {uniqueExpansions.map((expansion) => (
-          <option key={expansion} value={expansion}>
-            {expansion}
-          </option>
-        ))}
-      </select>
+        options={uniqueExpansions}
+        allLabel="Todas las expansiones"
+        placeholder="Escribe una expansion..."
+        onChange={(value) => onFilterChange('expansion', value)}
+      />
     </div>
   );
 }

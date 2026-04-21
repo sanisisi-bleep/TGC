@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import API_BASE from '../apiBase';
+import CardDetailModal from '../components/cards/CardDetailModal';
 
 function SharedDeck() {
   const { shareToken } = useParams();
   const navigate = useNavigate();
   const [deck, setDeck] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selectedCard, setSelectedCard] = useState(null);
 
   useEffect(() => {
     const fetchSharedDeck = async () => {
@@ -99,7 +101,11 @@ function SharedDeck() {
 
         <div className="deck-detail-grid">
           {(deck.cards || []).map((card) => (
-            <article key={`${card.id}-${card.quantity}`} className="deck-card-row">
+            <article
+              key={`${card.id}-${card.quantity}`}
+              className="deck-card-row is-openable"
+              onClick={() => setSelectedCard(card)}
+            >
               <img src={card.image_url} alt={card.name} />
               <div className="deck-card-copy">
                 <h4>{card.name}</h4>
@@ -123,6 +129,12 @@ function SharedDeck() {
           ))}
         </div>
       </section>
+
+      <CardDetailModal
+        card={selectedCard}
+        activeTcgSlug={deck?.composition?.format_mode === 'one-piece' ? 'one-piece' : 'gundam'}
+        onClose={() => setSelectedCard(null)}
+      />
     </div>
   );
 }

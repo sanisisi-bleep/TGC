@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import FilterAutocomplete from '../components/filters/FilterAutocomplete';
+import CardDetailModal from '../components/cards/CardDetailModal';
 import { useToast } from '../context/ToastContext';
 import { getGameConfig } from '../tcgConfig';
 import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
+import { isInteractiveElementTarget } from '../utils/clickTargets';
 
 const buildOrderedOptions = (values, preferredOrder = []) => {
   const available = [...new Set(values.filter(Boolean))];
@@ -57,6 +60,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
   const [collectionView, setCollectionView] = useState(
     () => localStorage.getItem('collectionViewMode') || 'detail'
   );
+  const [selectedCard, setSelectedCard] = useState(null);
   const collectionCacheRef = useRef(new Map());
   const decksCacheRef = useRef(new Map());
   const navigate = useNavigate();
@@ -131,6 +135,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
       set: '',
     });
     setCollectionSort('name-asc');
+    setSelectedCard(null);
   }, [activeTcgSlug, activeTgc?.id]);
 
   useEffect(() => {
@@ -276,6 +281,14 @@ function Collection({ activeTcgSlug, activeTgc }) {
 
   const openDeck = (deckId) => {
     navigate('/decks', { state: { openDeckId: deckId } });
+  };
+
+  const openCollectionCard = (event, card) => {
+    if (isInteractiveElementTarget(event.target)) {
+      return;
+    }
+
+    setSelectedCard(card);
   };
 
   const safeCollection = useMemo(
@@ -499,15 +512,13 @@ function Collection({ activeTcgSlug, activeTgc }) {
             ))}
           </select>
 
-          <select
+          <FilterAutocomplete
             value={collectionFilters.set}
-            onChange={(e) => setCollectionFilters((current) => ({ ...current, set: e.target.value }))}
-          >
-            <option value="">Todos los sets</option>
-            {availableSetOptions.map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
+            options={availableSetOptions}
+            allLabel="Todos los sets"
+            placeholder="Escribe un set..."
+            onChange={(value) => setCollectionFilters((current) => ({ ...current, set: value }))}
+          />
 
           <select
             value={collectionSort}
@@ -540,7 +551,8 @@ function Collection({ activeTcgSlug, activeTgc }) {
           return (
             <article
               key={item.card.id}
-              className={`collection-item ${collectionView !== 'detail' ? 'is-grid' : ''} ${isInventoryView ? 'is-inventory' : ''}`}
+              className={`collection-item ${collectionView !== 'detail' ? 'is-grid' : ''} ${isInventoryView ? 'is-inventory' : ''} is-openable`}
+              onClick={(event) => openCollectionCard(event, item.card)}
             >
               <div className="collection-visual">
                 <img
@@ -690,6 +702,12 @@ function Collection({ activeTcgSlug, activeTgc }) {
           </div>
         )}
       </div>
+
+      <CardDetailModal
+        card={selectedCard}
+        activeTcgSlug={activeTcgSlug}
+        onClose={() => setSelectedCard(null)}
+      />
     </div>
   );
 }

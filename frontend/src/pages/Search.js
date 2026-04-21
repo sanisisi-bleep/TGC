@@ -30,8 +30,8 @@ const SEARCH_CARDS_CACHE_TTL_MS = 5 * 60 * 1000;
 const SEARCH_FACETS_CACHE_TTL_MS = 60 * 60 * 1000;
 const SEARCH_DECKS_CACHE_TTL_MS = 2 * 60 * 1000;
 const SEARCH_CACHE_STORAGE_KEYS = {
-  cards: 'tgc-search-cards-cache-v2',
-  facets: 'tgc-search-facets-cache-v2',
+  cards: 'tgc-search-cards-cache-v3',
+  facets: 'tgc-search-facets-cache-v3',
   decks: 'tgc-search-decks-cache-v2',
   pageSize: 'tgc-search-page-size-v1',
   cardViewMode: 'tgc-search-card-view-mode-v1',

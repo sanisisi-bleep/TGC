@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
+import CardDetailModal from '../components/cards/CardDetailModal';
 import DeckCardRow from '../components/decks/DeckCardRow';
 import DeckDetailActions from '../components/decks/DeckDetailActions';
 import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
@@ -43,6 +44,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
   );
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [loadingDeckList, setLoadingDeckList] = useState(true);
+  const [selectedCard, setSelectedCard] = useState(null);
   const [updatingDeckCardId, setUpdatingDeckCardId] = useState(null);
   const [updatingAssignmentCardId, setUpdatingAssignmentCardId] = useState(null);
   const [editingAssignmentCardId, setEditingAssignmentCardId] = useState(null);
@@ -456,6 +458,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
   };
 
   const closeDeckDetails = () => {
+    setSelectedCard(null);
     setSelectedDeck(null);
   };
 
@@ -656,6 +659,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
                       onToggleAssignmentEditor={toggleAssignmentEditor}
                       onAdjustCoverage={adjustDeckCoverage}
                       onAdjustQuantity={(cardId, delta) => adjustDeckCardQuantity(selectedDeck.id, cardId, delta)}
+                      onOpenCard={setSelectedCard}
                     />
                   ))}
                 </div>
@@ -670,6 +674,12 @@ function Decks({ activeTcgSlug, activeTgc }) {
           </div>
         </div>
       )}
+
+      <CardDetailModal
+        card={selectedCard}
+        activeTcgSlug={activeTcgSlug}
+        onClose={() => setSelectedCard(null)}
+      />
 
       <DeckListPreviewModal
         preview={deckListPreview}

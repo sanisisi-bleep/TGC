@@ -8,13 +8,14 @@ from sqlalchemy.orm import Session
 
 from app.models import Card, UserCollection, Deck, DeckCard, Tgc, User
 from app.database.repositories.card_repository import CardRepository
-from app.services.game_rules import GUNDAM_TGC_NAME
+from app.services.game_rules import GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME, get_one_piece_card_role
 from app.services.image_service import build_card_thumbnail_url, normalize_card_image_url
 
 class CardService:
     def __init__(self, db: Session):
         self.db = db
         self.card_repo = CardRepository(db)
+        self._tgc_name_cache = {}
 
     def serialize_card(self, card: Card):
         image_url = normalize_card_image_url(card.image_url)
@@ -30,7 +31,7 @@ class CardService:
             "hp": card.hp,
             "color": self._normalize_card_value(card.color),
             "rarity": self._normalize_card_value(card.rarity),
-            "set_name": self._normalize_card_value(card.set_name),
+            "set_name": self._normalize_set_name(card.set_name, card.card_type, card.tgc_id),
             "version": self._normalize_card_value(card.version),
             "block": card.block,
             "traits": card.traits,
@@ -54,6 +55,35 @@ class CardService:
         normalized = self._normalize_card_value(value)
         return normalized or None
 
+    def _get_tgc_name(self, tgc_id: Optional[int]) -> Optional[str]:
+        if tgc_id is None:
+            return None
+
+        if tgc_id not in self._tgc_name_cache:
+            self._tgc_name_cache[tgc_id] = (
+                self.db.query(Tgc.name)
+                .filter(Tgc.id == tgc_id)
+                .scalar()
+            )
+
+        return self._tgc_name_cache[tgc_id]
+
+    def _is_one_piece_tgc(self, tgc_id: Optional[int]) -> bool:
+        return self._get_tgc_name(tgc_id) == ONE_PIECE_TCG_NAME
+
+    def _normalize_set_name(
+        self,
+        set_name: Optional[str],
+        card_type: Optional[str],
+        tgc_id: Optional[int],
+    ) -> Optional[str]:
+        normalized_set_name = self._normalize_card_value(set_name)
+
+        if self._is_one_piece_tgc(tgc_id) and get_one_piece_card_role(card_type) == "don":
+            return "DON!!"
+
+        return normalized_set_name
+
     def _escape_like_pattern(self, value: str) -> str:
         return (
             value
@@ -75,6 +105,9 @@ class CardService:
         normalized_value = self._normalize_filter_value(value)
         if not normalized_value:
             return query
+
+        if column.key == "set_name" and normalized_value == "DON!!" and self._is_one_piece_tgc(tgc_id):
+            return query.filter(self._normalized_sql_value(Card.card_type).like("%don%"))
 
         return query.filter(self._normalized_sql_value(column) == normalized_value.lower())
 
@@ -179,12 +212,32 @@ class CardService:
 
         return sorted(normalized_values.values(), key=lambda value: value.lower())
 
+    def _get_normalized_distinct_set_names(self, tgc_id: Optional[int] = None):
+        query = (
+            self.db.query(Card.set_name, Card.card_type, Card.tgc_id)
+            .filter(Card.set_name.isnot(None), Card.set_name != "")
+        )
+
+        if tgc_id is not None:
+            query = query.filter(Card.tgc_id == tgc_id)
+
+        normalized_values = {}
+
+        for raw_set_name, raw_card_type, raw_tgc_id in query.distinct().all():
+            normalized_set_name = self._normalize_set_name(raw_set_name, raw_card_type, raw_tgc_id)
+            if not normalized_set_name:
+                continue
+
+            normalized_values.setdefault(normalized_set_name.lower(), normalized_set_name)
+
+        return sorted(normalized_values.values(), key=lambda value: value.lower())
+
     def get_card_facets(self, tgc_id: Optional[int] = None):
         return {
             "card_types": self._get_normalized_distinct_card_values(Card.card_type, tgc_id),
             "colors": self._get_normalized_distinct_card_values(Card.color, tgc_id),
             "rarities": self._get_normalized_distinct_card_values(Card.rarity, tgc_id),
-            "set_names": self._get_normalized_distinct_card_values(Card.set_name, tgc_id),
+            "set_names": self._get_normalized_distinct_set_names(tgc_id),
         }
 
     def create_card(self, tgc_id: int, name: str, card_type: str = None, lv: int = None, cost: int = None, ap: int = None, hp: int = None, color: str = None, rarity: str = None, set_name: str = None, version: str = None, abilities: str = None, description: str = None, image_url: str = None) -> Card:

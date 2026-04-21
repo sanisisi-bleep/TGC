@@ -1,4 +1,5 @@
 import React from 'react';
+import { isInteractiveElementTarget } from '../../utils/clickTargets';
 
 function DeckCardRow({
   card,
@@ -11,6 +12,7 @@ function DeckCardRow({
   onToggleAssignmentEditor,
   onAdjustCoverage,
   onAdjustQuantity,
+  onOpenCard,
 }) {
   const isInventoryView = deckCardView === 'inventory';
   const isGridView = deckCardView !== 'detail';
@@ -29,10 +31,18 @@ function DeckCardRow({
     card.color || 'Sin color',
     card.rarity || 'Sin rareza',
   ].join(' | ');
+  const handleOpenCard = (event) => {
+    if (!onOpenCard || isInteractiveElementTarget(event.target)) {
+      return;
+    }
+
+    onOpenCard(card);
+  };
 
   return (
     <article
-      className={`deck-card-row ${card.missing_quantity > 0 ? 'has-missing-copies' : ''} ${isGridView ? 'is-grid' : ''} ${isInventoryView ? 'is-inventory' : ''}`}
+      className={`deck-card-row ${card.missing_quantity > 0 ? 'has-missing-copies' : ''} ${isGridView ? 'is-grid' : ''} ${isInventoryView ? 'is-inventory' : ''} ${onOpenCard ? 'is-openable' : ''}`.trim()}
+      onClick={handleOpenCard}
     >
       <img
         src={card.image_url}
