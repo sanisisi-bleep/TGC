@@ -57,6 +57,15 @@ const compareCollectionCards = (leftCard, rightCard, direction = 'asc') => {
     return versionDifference * directionMultiplier;
   }
 
+  const sourceCodeDifference = compareCollectionCodes(
+    leftCard?.source_card_id,
+    rightCard?.source_card_id
+  );
+
+  if (sourceCodeDifference !== 0) {
+    return sourceCodeDifference * directionMultiplier;
+  }
+
   return normalizeText(leftCard?.name).localeCompare(normalizeText(rightCard?.name));
 };
 
@@ -551,8 +560,8 @@ function Collection({ activeTcgSlug, activeTgc }) {
             onChange={(e) => setCollectionSort(e.target.value)}
           >
             <option value="name-asc">Orden: Nombre</option>
-            <option value="collection-asc">Orden: Coleccion ascendente</option>
-            <option value="collection-desc">Orden: Coleccion descendente</option>
+            <option value="collection-asc">Orden: Codigo ascendente</option>
+            <option value="collection-desc">Orden: Codigo descendente</option>
             <option value="rarity-asc">Orden: Rareza</option>
             <option value="quantity-desc">Orden: Total copias</option>
             <option value="available-desc">Orden: Disponibles</option>

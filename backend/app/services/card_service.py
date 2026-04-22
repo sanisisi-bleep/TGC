@@ -175,6 +175,7 @@ class CardService:
         if normalized_sort == "collection-asc":
             return query.order_by(
                 func.coalesce(Card.version, "").asc(),
+                func.coalesce(Card.source_card_id, "").asc(),
                 func.coalesce(Card.set_name, "").asc(),
                 Card.name.asc(),
                 Card.id.asc(),
@@ -183,9 +184,10 @@ class CardService:
         if normalized_sort == "collection-desc":
             return query.order_by(
                 func.coalesce(Card.version, "").desc(),
+                func.coalesce(Card.source_card_id, "").desc(),
                 func.coalesce(Card.set_name, "").desc(),
-                Card.name.asc(),
-                Card.id.asc(),
+                Card.name.desc(),
+                Card.id.desc(),
             )
 
         return query.order_by(Card.name.asc(), Card.id.asc())

@@ -31,8 +31,8 @@ const DEFAULT_ACTION_QUANTITY = 1;
 const MAX_ACTION_QUANTITY = 99;
 const SEARCH_SORT_OPTIONS = [
   { value: 'name-asc', label: 'Nombre' },
-  { value: 'collection-asc', label: 'Coleccion ascendente' },
-  { value: 'collection-desc', label: 'Coleccion descendente' },
+  { value: 'collection-asc', label: 'Codigo ascendente' },
+  { value: 'collection-desc', label: 'Codigo descendente' },
 ];
 const SEARCH_CARDS_CACHE_TTL_MS = 5 * 60 * 1000;
 const SEARCH_FACETS_CACHE_TTL_MS = 60 * 60 * 1000;
