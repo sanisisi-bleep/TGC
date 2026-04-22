@@ -7,7 +7,7 @@ function SearchFiltersPanel({
   availableTypeOptions,
   availableColorOptions,
   availableRarityOptions,
-  uniqueExpansions,
+  availableExpansionOptions,
   onSearchChange,
   onFilterChange,
 }) {
@@ -15,7 +15,7 @@ function SearchFiltersPanel({
     <div className="search-controls">
       <input
         type="text"
-        placeholder="Buscar por nombre o codigo..."
+        placeholder="Buscar por nombre, codigo o version..."
         value={searchTerm}
         onChange={(e) => onSearchChange(e.target.value)}
       />
@@ -58,9 +58,9 @@ function SearchFiltersPanel({
 
       <FilterAutocomplete
         value={filters.expansion}
-        options={uniqueExpansions}
+        options={availableExpansionOptions}
         allLabel="Todas las expansiones"
-        placeholder="Escribe una expansion..."
+        placeholder="Escribe una expansion o codigo..."
         onChange={(value) => onFilterChange('expansion', value)}
       />
     </div>

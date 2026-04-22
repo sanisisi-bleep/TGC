@@ -8,6 +8,12 @@ import { getGameConfig } from '../tcgConfig';
 import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { isInteractiveElementTarget } from '../utils/clickTargets';
+import {
+  buildSetFilterOptions,
+  compareCollectionCodes,
+  matchesCollectionCodeQuery,
+  normalizeText,
+} from '../utils/setFilters';
 
 const buildOrderedOptions = (values, preferredOrder = []) => {
   const available = [...new Set(values.filter(Boolean))];
@@ -19,7 +25,6 @@ const buildOrderedOptions = (values, preferredOrder = []) => {
   return [...preferred, ...extra];
 };
 
-const normalizeText = (value) => (value || '').toString().trim().toLowerCase();
 const normalizeCollectionCardType = (cardType, tcgSlug) => {
   const normalizedType = (cardType || '').toString().trim();
   if (!normalizedType) {
@@ -41,8 +46,23 @@ const buildCollectionMeta = (card, tcgSlug) => (
   ].join(' | ')
 );
 
+const compareCollectionCards = (leftCard, rightCard, direction = 'asc') => {
+  const directionMultiplier = direction === 'desc' ? -1 : 1;
+  const versionDifference = compareCollectionCodes(
+    leftCard?.version || leftCard?.set_name,
+    rightCard?.version || rightCard?.set_name
+  );
+
+  if (versionDifference !== 0) {
+    return versionDifference * directionMultiplier;
+  }
+
+  return normalizeText(leftCard?.name).localeCompare(normalizeText(rightCard?.name));
+};
+
 function Collection({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
+  const collectionTitle = activeGame.collectionTitle || 'Mi Coleccion';
   const { showToast } = useToast();
   const [collection, setCollection] = useState([]);
   const [decks, setDecks] = useState([]);
@@ -318,7 +338,11 @@ function Collection({ activeTcgSlug, activeTgc }) {
   );
 
   const availableSetOptions = useMemo(
-    () => buildOrderedOptions(safeCollection.map((item) => item.card.set_name)),
+    () => buildSetFilterOptions(safeCollection.map((item) => ({
+      value: item.card.set_name,
+      label: item.card.set_name,
+      version: item.card.version,
+    }))),
     [safeCollection]
   );
 
@@ -332,11 +356,12 @@ function Collection({ activeTcgSlug, activeTgc }) {
         const matchesSearch = [
           card.name,
           card.source_card_id,
+          card.version,
           card.set_name,
           normalizedCardType,
         ].some((value) => normalizeText(value).includes(normalizedSearch));
 
-        if (!matchesSearch) {
+        if (!matchesSearch && !matchesCollectionCodeQuery(normalizedSearch, card.version)) {
           return false;
         }
       }
@@ -363,9 +388,10 @@ function Collection({ activeTcgSlug, activeTgc }) {
       const rightCard = right.card;
 
       switch (collectionSort) {
-        case 'set-asc':
-          return normalizeText(leftCard.set_name).localeCompare(normalizeText(rightCard.set_name))
-            || normalizeText(leftCard.name).localeCompare(normalizeText(rightCard.name));
+        case 'collection-asc':
+          return compareCollectionCards(leftCard, rightCard, 'asc');
+        case 'collection-desc':
+          return compareCollectionCards(leftCard, rightCard, 'desc');
         case 'rarity-asc':
           return normalizeText(leftCard.rarity).localeCompare(normalizeText(rightCard.rarity))
             || normalizeText(leftCard.name).localeCompare(normalizeText(rightCard.name));
@@ -410,7 +436,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
         <section className="page-hero collection-hero">
           <div>
             <span className="eyebrow">{activeGame.eyebrow}</span>
-            <h1>{activeTcgSlug === 'one-piece' ? 'Mi Tripulacion' : 'Mi Coleccion'}</h1>
+            <h1>{collectionTitle}</h1>
             <p>Cargando tu inventario de {activeGame.shortName}...</p>
           </div>
         </section>
@@ -423,7 +449,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
       <section className="page-hero collection-hero">
         <div>
           <span className="eyebrow">{activeGame.eyebrow}</span>
-          <h1>{activeTcgSlug === 'one-piece' ? 'Mi Tripulacion' : 'Mi Coleccion'}</h1>
+          <h1>{collectionTitle}</h1>
           <p>
             Controla tus copias de {activeGame.shortName}, revisa cuantas siguen libres
             para construir mazos y ajusta cantidades sin salir de esta vista.
@@ -477,7 +503,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
         <div className="collection-controls">
           <input
             type="text"
-            placeholder="Buscar por nombre, codigo o set..."
+            placeholder="Buscar por nombre, codigo, version o set..."
             value={collectionSearchTerm}
             onChange={(e) => setCollectionSearchTerm(e.target.value)}
           />
@@ -516,7 +542,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
             value={collectionFilters.set}
             options={availableSetOptions}
             allLabel="Todos los sets"
-            placeholder="Escribe un set..."
+            placeholder="Escribe un set o codigo..."
             onChange={(value) => setCollectionFilters((current) => ({ ...current, set: value }))}
           />
 
@@ -525,7 +551,8 @@ function Collection({ activeTcgSlug, activeTgc }) {
             onChange={(e) => setCollectionSort(e.target.value)}
           >
             <option value="name-asc">Orden: Nombre</option>
-            <option value="set-asc">Orden: Set</option>
+            <option value="collection-asc">Orden: Coleccion ascendente</option>
+            <option value="collection-desc">Orden: Coleccion descendente</option>
             <option value="rarity-asc">Orden: Rareza</option>
             <option value="quantity-desc">Orden: Total copias</option>
             <option value="available-desc">Orden: Disponibles</option>

@@ -23,7 +23,7 @@ export const GAME_CONFIGS = {
     name: 'One Piece Card Game',
     shortName: 'One Piece',
     searchTitle: 'Buscar Cartas de One Piece',
-    collectionTitle: 'Tripulacion de One Piece',
+    collectionTitle: 'Mi Coleccion',
     decksTitle: 'Mazos de One Piece',
     eyebrow: 'Tripulacion',
     accentClass: 'game-card-onepiece',

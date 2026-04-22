@@ -1,6 +1,36 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const normalizeText = (value) => (value || '').toString().trim().toLowerCase();
+const normalizeOption = (option) => {
+  if (typeof option === 'string') {
+    return {
+      value: option,
+      label: option,
+      searchTokens: [normalizeText(option)],
+    };
+  }
+
+  const value = option?.value || option?.label || '';
+  const label = option?.label || value;
+  const rawSearchTokens = [
+    label,
+    value,
+    ...(Array.isArray(option?.searchTokens) ? option.searchTokens : []),
+    ...(Array.isArray(option?.aliases) ? option.aliases : []),
+    ...(Array.isArray(option?.versions) ? option.versions : []),
+  ];
+  const searchTokens = [...new Set(
+    rawSearchTokens
+      .map((token) => normalizeText(token))
+      .filter(Boolean)
+  )];
+
+  return {
+    value,
+    label,
+    searchTokens,
+  };
+};
 
 function FilterAutocomplete({
   value,
@@ -32,7 +62,22 @@ function FilterAutocomplete({
   }, []);
 
   const availableOptions = useMemo(
-    () => [...new Set((options || []).filter(Boolean))],
+    () => {
+      const uniqueOptions = new Map();
+
+      (options || [])
+        .filter(Boolean)
+        .map(normalizeOption)
+        .forEach((option) => {
+          if (!option.value || uniqueOptions.has(option.value)) {
+            return;
+          }
+
+          uniqueOptions.set(option.value, option);
+        });
+
+      return [...uniqueOptions.values()];
+    },
     [options]
   );
   const normalizedQuery = normalizeText(query);
@@ -41,10 +86,14 @@ function FilterAutocomplete({
       return availableOptions;
     }
 
-    return availableOptions.filter((option) => normalizeText(option).includes(normalizedQuery));
+    return availableOptions.filter((option) => (
+      option.searchTokens.some((token) => token.includes(normalizedQuery))
+    ));
   }, [availableOptions, normalizedQuery]);
   const exactMatch = useMemo(
-    () => availableOptions.find((option) => normalizeText(option) === normalizedQuery) || null,
+    () => availableOptions.find((option) => (
+      option.searchTokens.some((token) => token === normalizedQuery)
+    )) || null,
     [availableOptions, normalizedQuery]
   );
 
@@ -87,12 +136,12 @@ function FilterAutocomplete({
     event.preventDefault();
 
     if (exactMatch) {
-      commitValue(exactMatch);
+      commitValue(exactMatch.value);
       return;
     }
 
     if (filteredOptions.length === 1) {
-      commitValue(filteredOptions[0]);
+      commitValue(filteredOptions[0].value);
       return;
     }
 
@@ -119,7 +168,7 @@ function FilterAutocomplete({
       }
 
       if (exactMatch) {
-        commitValue(exactMatch);
+        commitValue(exactMatch.value);
         return;
       }
 
@@ -166,15 +215,15 @@ function FilterAutocomplete({
           {filteredOptions.length > 0 ? (
             filteredOptions.map((option) => (
               <button
-                key={option}
+                key={option.value}
                 type="button"
-                className={`filter-autocomplete-option ${value === option ? 'is-active' : ''}`.trim()}
+                className={`filter-autocomplete-option ${value === option.value ? 'is-active' : ''}`.trim()}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => commitValue(option)}
+                onClick={() => commitValue(option.value)}
                 role="option"
-                aria-selected={value === option}
+                aria-selected={value === option.value}
               >
-                {option}
+                {option.label}
               </button>
             ))
           ) : (

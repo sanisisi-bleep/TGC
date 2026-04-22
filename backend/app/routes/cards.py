@@ -42,6 +42,7 @@ def get_cards(
     color: Optional[str] = Query(None, max_length=20),
     rarity: Optional[str] = Query(None, max_length=20),
     set_name: Optional[str] = Query(None, max_length=255),
+    sort: str = Query("name-asc", max_length=32),
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -55,6 +56,7 @@ def get_cards(
         color=color,
         rarity=rarity,
         set_name=set_name,
+        sort=sort,
         page=page,
         limit=limit,
     )

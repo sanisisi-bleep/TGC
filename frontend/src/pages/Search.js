@@ -11,6 +11,7 @@ import { useToast } from '../context/ToastContext';
 import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { getNewDeckCreationPlan } from '../utils/deckTools';
+import { buildSetFilterOptions } from '../utils/setFilters';
 import {
   readCacheMap,
   readStoredEnumValue,
@@ -28,12 +29,17 @@ const SEARCH_CARD_VIEW_MODES = ['detail', 'compact'];
 const SEARCH_INPUT_DELAY_MS = 280;
 const DEFAULT_ACTION_QUANTITY = 1;
 const MAX_ACTION_QUANTITY = 99;
+const SEARCH_SORT_OPTIONS = [
+  { value: 'name-asc', label: 'Nombre' },
+  { value: 'collection-asc', label: 'Coleccion ascendente' },
+  { value: 'collection-desc', label: 'Coleccion descendente' },
+];
 const SEARCH_CARDS_CACHE_TTL_MS = 5 * 60 * 1000;
 const SEARCH_FACETS_CACHE_TTL_MS = 60 * 60 * 1000;
 const SEARCH_DECKS_CACHE_TTL_MS = 2 * 60 * 1000;
 const SEARCH_CACHE_STORAGE_KEYS = {
   cards: 'tgc-search-cards-cache-v3',
-  facets: 'tgc-search-facets-cache-v3',
+  facets: 'tgc-search-facets-cache-v4',
   decks: 'tgc-search-decks-cache-v2',
   pageSize: 'tgc-search-page-size-v1',
   cardViewMode: 'tgc-search-card-view-mode-v1',
@@ -52,6 +58,7 @@ const EMPTY_FACETS = {
   colors: [],
   rarities: [],
   set_names: [],
+  set_options: [],
 };
 const EMPTY_CARDS = [];
 const EMPTY_DECKS = [];
@@ -82,6 +89,7 @@ const buildCardsRequestParams = ({
   pageSize,
   searchTerm,
   filters,
+  sort,
 }) => {
   if (!tgcId) {
     return null;
@@ -108,6 +116,9 @@ const buildCardsRequestParams = ({
   }
   if (filters.expansion) {
     params.set_name = filters.expansion;
+  }
+  if (sort) {
+    params.sort = sort;
   }
 
   return params;
@@ -138,6 +149,7 @@ const normalizeFacetsPayload = (payload) => ({
   colors: Array.isArray(payload?.colors) ? payload.colors : [],
   rarities: Array.isArray(payload?.rarities) ? payload.rarities : [],
   set_names: Array.isArray(payload?.set_names) ? payload.set_names : [],
+  set_options: Array.isArray(payload?.set_options) ? payload.set_options : [],
 });
 
 const isValidFacetsPayload = (payload) => (
@@ -148,6 +160,7 @@ const isValidFacetsPayload = (payload) => (
   && Array.isArray(payload.colors)
   && Array.isArray(payload.rarities)
   && Array.isArray(payload.set_names)
+  && Array.isArray(payload.set_options)
 );
 
 const normalizeDeckList = (payload) => (Array.isArray(payload) ? payload : EMPTY_DECKS);
@@ -222,6 +235,7 @@ function Search({ activeTcgSlug, activeTgc }) {
   const [submittingDeckAction, setSubmittingDeckAction] = useState(false);
   const [actionQuantityDrafts, setActionQuantityDrafts] = useState({});
   const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState('name-asc');
   const [pageSize, setPageSize] = useState(() => readStoredEnumValue(
     SEARCH_CACHE_STORAGE_KEYS.pageSize,
     SEARCH_PAGE_SIZE_OPTIONS,
@@ -251,8 +265,9 @@ function Search({ activeTcgSlug, activeTgc }) {
       pageSize,
       searchTerm: debouncedSearchTerm,
       filters,
+      sort: sortBy,
     }),
-    [activeTgc?.id, debouncedSearchTerm, filters, page, pageSize]
+    [activeTgc?.id, debouncedSearchTerm, filters, page, pageSize, sortBy]
   );
 
   const cardsCacheKey = useMemo(
@@ -314,6 +329,7 @@ function Search({ activeTcgSlug, activeTgc }) {
       expansion: '',
     });
     setPage(1);
+    setSortBy('name-asc');
     setCards(EMPTY_CARDS);
     setPagination((current) => createEmptyResults(current.limit || DEFAULT_PAGE_SIZE));
     setFacets(EMPTY_FACETS);
@@ -771,7 +787,18 @@ function Search({ activeTcgSlug, activeTgc }) {
     setPagination(createEmptyResults(nextPageSize));
   };
 
-  const uniqueExpansions = useMemo(() => facets.set_names, [facets.set_names]);
+  const handleSortChange = (value) => {
+    if (!SEARCH_SORT_OPTIONS.some((option) => option.value === value)) {
+      return;
+    }
+
+    setPage(1);
+    setSortBy(value);
+  };
+
+  const availableExpansionOptions = useMemo(() => (
+    buildSetFilterOptions(facets.set_options.length > 0 ? facets.set_options : facets.set_names)
+  ), [facets.set_names, facets.set_options]);
 
   const availableTypeOptions = useMemo(
     () => buildOrderedOptions(facets.card_types, activeGame.filters.types),
@@ -853,7 +880,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         availableTypeOptions={availableTypeOptions}
         availableColorOptions={availableColorOptions}
         availableRarityOptions={availableRarityOptions}
-        uniqueExpansions={uniqueExpansions}
+        availableExpansionOptions={availableExpansionOptions}
         onSearchChange={handleSearchChange}
         onFilterChange={handleFilterChange}
       />
@@ -865,9 +892,12 @@ function Search({ activeTcgSlug, activeTgc }) {
         loadingCards={loadingCards}
         pageSize={pageSize}
         pageSizeOptions={SEARCH_PAGE_SIZE_OPTIONS}
+        sortBy={sortBy}
+        sortOptions={SEARCH_SORT_OPTIONS}
         visiblePageNumbers={visiblePageNumbers}
         cardViewMode={effectiveCardViewMode}
         onPageSizeChange={handlePageSizeChange}
+        onSortChange={handleSortChange}
         onPageChange={setPage}
         onPreviousPage={() => setPage((current) => Math.max(1, current - 1))}
         onNextPage={() => setPage((current) => current + 1)}

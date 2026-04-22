@@ -7,9 +7,12 @@ function SearchResultsToolbar({
   loadingCards,
   pageSize,
   pageSizeOptions,
+  sortBy,
+  sortOptions,
   visiblePageNumbers,
   cardViewMode,
   onPageSizeChange,
+  onSortChange,
   onPageChange,
   onPreviousPage,
   onNextPage,
@@ -39,6 +42,21 @@ function SearchResultsToolbar({
             {pageSizeOptions.map((option) => (
               <option key={option} value={option}>
                 {option}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="page-size-control">
+          <span>Orden</span>
+          <select
+            value={sortBy}
+            onChange={(e) => onSortChange(e.target.value)}
+            disabled={loadingCards}
+          >
+            {sortOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>

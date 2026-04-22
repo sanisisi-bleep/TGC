@@ -11,6 +11,8 @@ from app.database.repositories.card_repository import CardRepository
 from app.services.game_rules import GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME, get_one_piece_card_role
 from app.services.image_service import build_card_thumbnail_url, normalize_card_image_url
 
+SUPPORTED_CARD_SORTS = {"name-asc", "collection-asc", "collection-desc"}
+
 class CardService:
     def __init__(self, db: Session):
         self.db = db
@@ -92,6 +94,45 @@ class CardService:
             .replace("_", "\\_")
         )
 
+    def _normalize_collection_code(self, value: Optional[str]) -> Optional[str]:
+        normalized_value = self._normalize_card_value(value)
+        if not normalized_value:
+            return None
+
+        compact_value = re.sub(r"[^A-Za-z0-9]+", "", normalized_value).upper()
+        return compact_value or None
+
+    def _build_collection_code_aliases(self, value: Optional[str]):
+        normalized_code = self._normalize_collection_code(value)
+        if not normalized_code:
+            return []
+
+        aliases = {normalized_code}
+        match = re.fullmatch(r"([A-Z]+)0*(\d+)", normalized_code)
+
+        if match:
+            prefix, raw_digits = match.groups()
+            numeric_value = int(raw_digits)
+            aliases.add(f"{prefix}{numeric_value}")
+            aliases.add(f"{prefix}{numeric_value:02d}")
+
+        return sorted(aliases)
+
+    def _natural_sort_key(self, value: Optional[str]):
+        normalized_value = self._normalize_collection_code(value) or self._normalize_card_value(value) or ""
+        tokens = re.findall(r"[A-Z]+|\d+", normalized_value.upper())
+
+        if not tokens:
+            return ((0, ""),)
+
+        sort_key = []
+        for token in tokens:
+            if token.isdigit():
+                sort_key.append((1, int(token)))
+            else:
+                sort_key.append((0, token))
+        return tuple(sort_key)
+
     def _normalized_sql_value(self, column):
         normalized_column = func.trim(column)
         bind = self.db.get_bind()
@@ -111,6 +152,44 @@ class CardService:
 
         return query.filter(self._normalized_sql_value(column) == normalized_value.lower())
 
+    def _apply_set_filter(self, query, value: Optional[str], tgc_id: Optional[int] = None):
+        normalized_value = self._normalize_filter_value(value)
+        if not normalized_value:
+            return query
+
+        if normalized_value == "DON!!" and self._is_one_piece_tgc(tgc_id):
+            return query.filter(self._normalized_sql_value(Card.card_type).like("%don%"))
+
+        conditions = [
+            self._normalized_sql_value(Card.set_name) == normalized_value.lower(),
+        ]
+
+        for alias in self._build_collection_code_aliases(normalized_value):
+            conditions.append(func.upper(func.trim(Card.version)) == alias)
+
+        return query.filter(or_(*conditions))
+
+    def _apply_sort(self, query, sort: Optional[str]):
+        normalized_sort = sort if sort in SUPPORTED_CARD_SORTS else "name-asc"
+
+        if normalized_sort == "collection-asc":
+            return query.order_by(
+                func.coalesce(Card.version, "").asc(),
+                func.coalesce(Card.set_name, "").asc(),
+                Card.name.asc(),
+                Card.id.asc(),
+            )
+
+        if normalized_sort == "collection-desc":
+            return query.order_by(
+                func.coalesce(Card.version, "").desc(),
+                func.coalesce(Card.set_name, "").desc(),
+                Card.name.asc(),
+                Card.id.asc(),
+            )
+
+        return query.order_by(Card.name.asc(), Card.id.asc())
+
     def _build_cards_query(
         self,
         tgc_id: Optional[int] = None,
@@ -128,17 +207,24 @@ class CardService:
         normalized_search = self._normalize_filter_value(search)
         if normalized_search:
             pattern = f"%{self._escape_like_pattern(normalized_search)}%"
+            search_conditions = [
+                Card.name.ilike(pattern, escape="\\"),
+                Card.source_card_id.ilike(pattern, escape="\\"),
+                Card.set_name.ilike(pattern, escape="\\"),
+                Card.version.ilike(pattern, escape="\\"),
+            ]
+
+            for alias in self._build_collection_code_aliases(normalized_search):
+                search_conditions.append(func.upper(func.trim(Card.version)) == alias)
+
             query = query.filter(
-                or_(
-                    Card.name.ilike(pattern, escape="\\"),
-                    Card.source_card_id.ilike(pattern, escape="\\"),
-                )
+                or_(*search_conditions)
             )
 
         query = self._apply_normalized_exact_filter(query, Card.card_type, card_type, tgc_id)
         query = self._apply_normalized_exact_filter(query, Card.color, color, tgc_id)
         query = self._apply_normalized_exact_filter(query, Card.rarity, rarity, tgc_id)
-        query = self._apply_normalized_exact_filter(query, Card.set_name, set_name, tgc_id)
+        query = self._apply_set_filter(query, set_name, tgc_id)
 
         return query
 
@@ -156,6 +242,7 @@ class CardService:
         color: Optional[str] = None,
         rarity: Optional[str] = None,
         set_name: Optional[str] = None,
+        sort: Optional[str] = None,
         page: int = 1,
         limit: int = 100,
     ):
@@ -174,7 +261,7 @@ class CardService:
         offset = (current_page - 1) * limit
 
         items = (
-            query.order_by(Card.name.asc(), Card.id.asc())
+            self._apply_sort(query, sort)
             .offset(offset)
             .limit(limit)
             .all()
@@ -213,8 +300,11 @@ class CardService:
         return sorted(normalized_values.values(), key=lambda value: value.lower())
 
     def _get_normalized_distinct_set_names(self, tgc_id: Optional[int] = None):
+        return [option["label"] for option in self._get_set_options(tgc_id)]
+
+    def _get_set_options(self, tgc_id: Optional[int] = None):
         query = (
-            self.db.query(Card.set_name, Card.card_type, Card.tgc_id)
+            self.db.query(Card.set_name, Card.version, Card.card_type, Card.tgc_id)
             .filter(Card.set_name.isnot(None), Card.set_name != "")
         )
 
@@ -223,14 +313,43 @@ class CardService:
 
         normalized_values = {}
 
-        for raw_set_name, raw_card_type, raw_tgc_id in query.distinct().all():
+        for raw_set_name, raw_version, raw_card_type, raw_tgc_id in query.distinct().all():
             normalized_set_name = self._normalize_set_name(raw_set_name, raw_card_type, raw_tgc_id)
             if not normalized_set_name:
                 continue
 
-            normalized_values.setdefault(normalized_set_name.lower(), normalized_set_name)
+            option_key = normalized_set_name.lower()
+            option = normalized_values.setdefault(
+                option_key,
+                {
+                    "value": normalized_set_name,
+                    "label": normalized_set_name,
+                    "versions": set(),
+                },
+            )
 
-        return sorted(normalized_values.values(), key=lambda value: value.lower())
+            normalized_version = self._normalize_collection_code(raw_version)
+            if normalized_version:
+                option["versions"].add(normalized_version)
+
+        options = []
+        for option in normalized_values.values():
+            versions = sorted(option["versions"], key=self._natural_sort_key)
+            options.append(
+                {
+                    "value": option["value"],
+                    "label": option["label"],
+                    "versions": versions,
+                }
+            )
+
+        return sorted(
+            options,
+            key=lambda option: (
+                self._natural_sort_key(option["versions"][0] if option["versions"] else option["label"]),
+                option["label"].lower(),
+            ),
+        )
 
     def get_card_facets(self, tgc_id: Optional[int] = None):
         return {
@@ -238,6 +357,7 @@ class CardService:
             "colors": self._get_normalized_distinct_card_values(Card.color, tgc_id),
             "rarities": self._get_normalized_distinct_card_values(Card.rarity, tgc_id),
             "set_names": self._get_normalized_distinct_set_names(tgc_id),
+            "set_options": self._get_set_options(tgc_id),
         }
 
     def create_card(self, tgc_id: int, name: str, card_type: str = None, lv: int = None, cost: int = None, ap: int = None, hp: int = None, color: str = None, rarity: str = None, set_name: str = None, version: str = None, abilities: str = None, description: str = None, image_url: str = None) -> Card:
