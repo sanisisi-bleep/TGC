@@ -1,5 +1,10 @@
 import React from 'react';
-import { getOnePieceColorLabels, getOnePieceDeckRole } from '../../utils/deckTools';
+import {
+  getDeckCardRole,
+  getDeckRuleSummary,
+  getNewDeckCreationPlan,
+  getSearchDeckOptionState,
+} from '../../utils/deckTools';
 import SearchQuantityControl from './SearchQuantityControl';
 
 function SearchDeckPickerModal({
@@ -23,82 +28,10 @@ function SearchDeckPickerModal({
     return null;
   }
 
-  const cardRole = getOnePieceDeckRole(deckPickerCard.card_type);
-  const cardColors = getOnePieceColorLabels(deckPickerCard.color);
-  const isOnePiece = activeGame?.slug === 'one-piece';
-  const isLeaderCard = cardRole === 'leader';
-  const isDonCard = cardRole === 'don';
-  const quantityLabel = actionQuantity === 1 ? '1 copia' : `${actionQuantity} copias`;
-  const canCreateDeckAndAdd = !isOnePiece || (
-    (isLeaderCard && actionQuantity <= 1) || (isDonCard && actionQuantity <= 10)
-  );
-  const getDeckOptionState = (deck) => {
-    if (!isOnePiece) {
-      return {
-        disabled: false,
-        summary: `Anadir ${quantityLabel} a este mazo`,
-        helper: '',
-      };
-    }
-
-    const leaderCards = Number(deck.leader_cards) || 0;
-    const requiredLeaderCards = Number(deck.required_leader_cards) || 1;
-    const mainDeckCards = Number(deck.main_deck_cards) || 0;
-    const requiredMainDeckCards = Number(deck.required_main_deck_cards) || 50;
-    const donCards = Number(deck.don_cards) || 0;
-    const recommendedDonCards = Number(deck.recommended_don_cards) || 10;
-    const leaderColors = deck.leader_color_labels || [];
-    const sharesLeaderColor = leaderColors.length > 0 && cardColors.some((color) => leaderColors.includes(color));
-    const summary = `Leader ${leaderCards}/${requiredLeaderCards} | Main ${mainDeckCards}/${requiredMainDeckCards} | DON ${donCards}/${recommendedDonCards}`;
-
-    if (cardRole === 'leader' && leaderCards + actionQuantity > requiredLeaderCards) {
-      return {
-        disabled: true,
-        summary,
-        helper: 'Ese mazo ya no admite mas Leaders.',
-      };
-    }
-
-    if (cardRole === 'main' && leaderCards === 0) {
-      return {
-        disabled: true,
-        summary,
-        helper: 'Anade primero el Leader para poder meter cartas del mazo principal.',
-      };
-    }
-
-    if (cardRole === 'main' && leaderColors.length > 0 && cardColors.length > 0 && !sharesLeaderColor) {
-      return {
-        disabled: true,
-        summary,
-        helper: `No coincide con el color del Leader (${leaderColors.join(' / ')}).`,
-      };
-    }
-
-    if (cardRole === 'main' && mainDeckCards + actionQuantity > requiredMainDeckCards) {
-      return {
-        disabled: true,
-        summary,
-        helper: `Con ${quantityLabel} superarias las 50 cartas del mazo principal.`,
-      };
-    }
-
-    if (cardRole === 'don' && donCards + actionQuantity > recommendedDonCards) {
-      return {
-        disabled: true,
-        summary,
-        helper: `Con ${quantityLabel} superarias el limite de 10 DON!!.`,
-      };
-    }
-
-    return {
-      disabled: false,
-      summary,
-      helper: cardRole === 'main'
-        ? `Encaja con el Leader ${leaderColors.join(' / ') || 'del mazo'}.`
-        : `Anadir ${quantityLabel} a este mazo`,
-    };
-  };
+  const activeTcgSlug = activeGame?.slug || 'gundam';
+  const cardRole = getDeckCardRole(activeTcgSlug, deckPickerCard.card_type);
+  const creationPlan = getNewDeckCreationPlan(activeTcgSlug, deckPickerCard, actionQuantity);
+  const ruleSummary = getDeckRuleSummary(activeTcgSlug);
 
   return (
     <div className="card-modal" onClick={() => !submittingDeckAction && onClose()}>
@@ -106,11 +39,7 @@ function SearchDeckPickerModal({
         <div className="settings-panel-header">
           <h2>Anadir a mazo</h2>
           <p>Elige un mazo existente o crea uno nuevo para {deckPickerCard.name}.</p>
-          {isOnePiece && (
-            <p>
-              Regla rapida de One Piece: 1 Leader, 50 cartas del mismo color y un mazo DON!! opcional de 10.
-            </p>
-          )}
+          {ruleSummary ? <p>{ruleSummary}</p> : null}
         </div>
 
         <SearchQuantityControl
@@ -130,7 +59,12 @@ function SearchDeckPickerModal({
               <p className="collection-empty-text">Cargando mazos...</p>
             ) : decks.length > 0 ? (
               decks.map((deck) => {
-                const option = getDeckOptionState(deck);
+                const option = getSearchDeckOptionState({
+                  activeTcgSlug,
+                  deck,
+                  card: deckPickerCard,
+                  quantity: actionQuantity,
+                });
                 return (
                   <button
                     key={deck.id}
@@ -167,18 +101,19 @@ function SearchDeckPickerModal({
             <button
               type="button"
               onClick={onCreateDeckAndAddCard}
-              disabled={submittingDeckAction || !canCreateDeckAndAdd}
+              disabled={submittingDeckAction || !creationPlan.canCreate}
             >
-              {submittingDeckAction ? 'Procesando...' : 'Crear y anadir'}
+              {submittingDeckAction ? 'Procesando...' : creationPlan.buttonLabel}
             </button>
           </div>
-          {isOnePiece && !canCreateDeckAndAdd && (
+          {creationPlan.helper && (
             <p className="collection-empty-text">
-              {isLeaderCard
-                ? 'En un mazo nuevo de One Piece solo puedes empezar con 1 Leader.'
-                : isDonCard
-                  ? 'En un mazo nuevo de One Piece el mazo DON!! admite hasta 10 cartas.'
-                  : 'En un mazo nuevo de One Piece conviene empezar por el Leader o por los DON!!.'}
+              {creationPlan.helper}
+            </p>
+          )}
+          {activeTcgSlug === 'one-piece' && cardRole === 'main' && creationPlan.canCreate && (
+            <p className="collection-empty-text">
+              Si empiezas desde una carta del mazo principal, se creara el mazo y se abrira para que anadas primero el Leader.
             </p>
           )}
         </div>

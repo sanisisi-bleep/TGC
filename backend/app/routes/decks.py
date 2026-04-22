@@ -90,7 +90,8 @@ def get_shared_deck(share_token: str, db: Session = Depends(get_db)):
 @router.post("")
 def create_deck(deck: DeckCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = _deck_service(db)
-    return service.create_deck(current_user.id, deck.name, deck.tgc_id)
+    created_deck = service.create_deck(current_user.id, deck.name, deck.tgc_id)
+    return service.get_deck_summary(created_deck.id, current_user.id)
 
 
 @router.post("/import")

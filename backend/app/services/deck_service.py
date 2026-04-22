@@ -646,6 +646,11 @@ class DeckService:
         deck_tgc, rules = self._get_rules_for_deck(deck)
         return self._serialize_deck_payload(deck, deck_tgc, rules, user_id=user_id)
 
+    def get_deck_summary(self, deck_id: int, user_id: int):
+        deck = self._get_user_deck_or_error(deck_id, user_id)
+        deck_tgc, rules = self._get_rules_for_deck(deck)
+        return self._serialize_deck_payload(deck, deck_tgc, rules)
+
     def create_deck(self, user_id: int, name: str, tgc_id: Optional[int] = None) -> Deck:
         resolved_tgc_id = tgc_id
         if resolved_tgc_id is None:

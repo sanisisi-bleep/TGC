@@ -1,5 +1,56 @@
 export const MAX_COPIES_PER_CARD = 4;
+export const GUNDAM_COLORS = ['Blue', 'Green', 'Red', 'Purple', 'White'];
 export const ONE_PIECE_COLORS = ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'];
+const DEFAULT_DECK_RULES = {
+  deckMinCards: 0,
+  deckMaxCards: 999,
+  maxCopiesPerCard: 999,
+  requiredLeaderCards: 0,
+  requiredMainDeckCards: 0,
+  maxMainDeckCards: 999,
+  maxDonCards: 0,
+  allowOptionalDonDeck: false,
+  enforceColorIdentity: false,
+  maxDeckColors: 0,
+};
+export const TCG_DECK_RULES = {
+  gundam: {
+    deckMinCards: 50,
+    deckMaxCards: 50,
+    maxCopiesPerCard: 4,
+    requiredLeaderCards: 0,
+    requiredMainDeckCards: 50,
+    maxMainDeckCards: 50,
+    maxDonCards: 0,
+    allowOptionalDonDeck: false,
+    enforceColorIdentity: true,
+    maxDeckColors: 2,
+  },
+  'one-piece': {
+    deckMinCards: 50,
+    deckMaxCards: 50,
+    maxCopiesPerCard: 4,
+    requiredLeaderCards: 1,
+    requiredMainDeckCards: 50,
+    maxMainDeckCards: 50,
+    maxDonCards: 10,
+    allowOptionalDonDeck: true,
+    enforceColorIdentity: true,
+    maxDeckColors: 0,
+  },
+  magic: {
+    deckMinCards: 60,
+    deckMaxCards: 999,
+    maxCopiesPerCard: 4,
+    requiredLeaderCards: 0,
+    requiredMainDeckCards: 60,
+    maxMainDeckCards: 999,
+    maxDonCards: 0,
+    allowOptionalDonDeck: false,
+    enforceColorIdentity: false,
+    maxDeckColors: 0,
+  },
+};
 const DECK_ROLE_ORDER = { leader: 0, main: 1, don: 2 };
 const DECK_COLOR_TONES = {
   Blue: { solid: '#2d6cdf', border: '#17479c', text: '#ffffff' },
@@ -15,6 +66,27 @@ const DEFAULT_DECK_COLOR_TONE = {
   border: '#556273',
   text: '#ffffff',
 };
+
+const buildQuantityLabel = (quantity) => (
+  quantity === 1 ? '1 copia' : `${quantity} copias`
+);
+
+const normalizeSearchDeckQuantity = (quantity) => {
+  const parsedQuantity = Number(quantity);
+  if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+    return 1;
+  }
+
+  return Math.max(1, Math.floor(parsedQuantity));
+};
+
+const formatDeckColorList = (colorLabels = []) => (
+  colorLabels.filter(Boolean).join(' / ')
+);
+
+export const getDeckRules = (activeTcgSlug) => (
+  TCG_DECK_RULES[activeTcgSlug] || DEFAULT_DECK_RULES
+);
 
 export const getOnePieceDeckRole = (cardType) => {
   const normalizedCardType = (cardType || '').trim().toLowerCase();
@@ -36,6 +108,301 @@ export const getOnePieceColorLabels = (rawColor) => {
   return ONE_PIECE_COLORS.filter((color) => (
     new RegExp(`\\b${color}\\b`, 'i').test(normalizedColor)
   ));
+};
+
+export const getDeckCardRole = (activeTcgSlug, cardType) => {
+  if (activeTcgSlug === 'one-piece') {
+    return getOnePieceDeckRole(cardType);
+  }
+
+  return 'main';
+};
+
+export const getDeckCardColorLabels = (activeTcgSlug, rawColor) => {
+  if (activeTcgSlug === 'one-piece') {
+    return getOnePieceColorLabels(rawColor);
+  }
+
+  if (activeTcgSlug === 'gundam') {
+    return GUNDAM_COLORS.filter((color) => (
+      new RegExp(`\\b${color}\\b`, 'i').test((rawColor || '').trim())
+    ));
+  }
+
+  return getDeckColorLabels(rawColor);
+};
+
+export const getDeckRuleSummary = (activeTcgSlug) => {
+  if (activeTcgSlug === 'one-piece') {
+    return 'Regla rapida de One Piece: 1 Leader, 50 cartas del mismo color y un mazo DON!! opcional de 10.';
+  }
+
+  if (activeTcgSlug === 'gundam') {
+    return 'Regla rapida de Gundam: 50 cartas, hasta 4 copias por numero y un maximo de 2 colores por mazo.';
+  }
+
+  return '';
+};
+
+const buildOnePieceSearchDeckSummary = (deck, rules) => {
+  const leaderCards = Number(deck?.leader_cards) || 0;
+  const mainDeckCards = Number(deck?.main_deck_cards) || 0;
+  const donCards = Number(deck?.don_cards) || 0;
+  const requiredLeaderCards = Number(deck?.required_leader_cards) || rules.requiredLeaderCards || 1;
+  const requiredMainDeckCards = Number(deck?.required_main_deck_cards) || rules.requiredMainDeckCards || 50;
+  const recommendedDonCards = Number(deck?.recommended_don_cards) || rules.maxDonCards || 10;
+
+  return `Leader ${leaderCards}/${requiredLeaderCards} | Main ${mainDeckCards}/${requiredMainDeckCards} | DON ${donCards}/${recommendedDonCards}`;
+};
+
+const buildGundamSearchDeckSummary = (deck, rules) => {
+  const totalCards = Number(deck?.main_deck_cards ?? deck?.total_cards) || 0;
+  const requiredMainDeckCards = Number(deck?.required_main_deck_cards) || rules.requiredMainDeckCards || 50;
+  const deckColorLabels = Array.isArray(deck?.deck_color_labels) ? deck.deck_color_labels : [];
+  const colorSummary = formatDeckColorList(deckColorLabels) || 'sin fijar';
+
+  return `Main ${totalCards}/${requiredMainDeckCards} | Colores ${colorSummary}`;
+};
+
+const buildGenericSearchDeckSummary = (deck, rules) => {
+  const totalCards = Number(deck?.total_cards) || 0;
+  const maxCards = Number(deck?.max_cards) || rules.deckMaxCards || 999;
+
+  return `${totalCards}/${maxCards} cartas`;
+};
+
+export const getNewDeckCreationPlan = (activeTcgSlug, card, quantity) => {
+  const rules = getDeckRules(activeTcgSlug);
+  const normalizedQuantity = normalizeSearchDeckQuantity(quantity);
+  const cardRole = getDeckCardRole(activeTcgSlug, card?.card_type);
+  const cardColors = getDeckCardColorLabels(activeTcgSlug, card?.color);
+  const quantityLabel = buildQuantityLabel(normalizedQuantity);
+
+  if (activeTcgSlug === 'one-piece') {
+    if (cardRole === 'leader') {
+      if (normalizedQuantity > rules.requiredLeaderCards) {
+        return {
+          canCreate: false,
+          shouldAddCardAfterCreate: false,
+          buttonLabel: 'Crear y anadir',
+          helper: 'En un mazo nuevo de One Piece solo puedes empezar con 1 Leader.',
+        };
+      }
+
+      if (cardColors.length === 0) {
+        return {
+          canCreate: false,
+          shouldAddCardAfterCreate: false,
+          buttonLabel: 'Crear y anadir',
+          helper: 'No se han podido detectar los colores de ese Leader.',
+        };
+      }
+
+      return {
+        canCreate: true,
+        shouldAddCardAfterCreate: true,
+        buttonLabel: 'Crear y anadir',
+        helper: `Empezaras el mazo con su Leader ${formatDeckColorList(cardColors)}.`,
+      };
+    }
+
+    if (cardRole === 'don') {
+      if (normalizedQuantity > rules.maxDonCards) {
+        return {
+          canCreate: false,
+          shouldAddCardAfterCreate: false,
+          buttonLabel: 'Crear y anadir',
+          helper: `En un mazo nuevo de One Piece el mazo DON!! admite hasta ${rules.maxDonCards} cartas.`,
+        };
+      }
+
+      return {
+        canCreate: true,
+        shouldAddCardAfterCreate: true,
+        buttonLabel: 'Crear y anadir',
+        helper: `Se creara el mazo y se anadiran ${quantityLabel} al bloque DON!! opcional.`,
+      };
+    }
+
+    return {
+      canCreate: true,
+      shouldAddCardAfterCreate: false,
+      buttonLabel: 'Crear mazo',
+      helper: 'En One Piece primero hay que fijar 1 Leader. La carta no se anadira todavia.',
+      postCreateMessage: 'Mazo creado. En One Piece anade primero 1 Leader antes de meter cartas del mazo principal.',
+    };
+  }
+
+  if (normalizedQuantity > rules.maxCopiesPerCard) {
+    return {
+      canCreate: false,
+      shouldAddCardAfterCreate: false,
+      buttonLabel: 'Crear y anadir',
+      helper: `No puedes empezar un mazo con mas de ${rules.maxCopiesPerCard} copias de la misma carta.`,
+    };
+  }
+
+  if (rules.maxDeckColors > 0 && cardColors.length > rules.maxDeckColors) {
+    return {
+      canCreate: false,
+      shouldAddCardAfterCreate: false,
+      buttonLabel: 'Crear y anadir',
+      helper: `Esta carta supera el maximo de ${rules.maxDeckColors} colores permitidos para ese mazo.`,
+    };
+  }
+
+  if (activeTcgSlug === 'gundam') {
+    return {
+      canCreate: true,
+      shouldAddCardAfterCreate: true,
+      buttonLabel: 'Crear y anadir',
+      helper: cardColors.length > 0
+        ? `El mazo arrancara con los colores ${formatDeckColorList(cardColors)}.`
+        : 'El mazo se creara y podras completarlo hasta 50 cartas.',
+    };
+  }
+
+  return {
+    canCreate: true,
+    shouldAddCardAfterCreate: true,
+    buttonLabel: 'Crear y anadir',
+    helper: '',
+  };
+};
+
+export const getSearchDeckOptionState = ({ activeTcgSlug, deck, card, quantity }) => {
+  const rules = getDeckRules(activeTcgSlug);
+  const normalizedQuantity = normalizeSearchDeckQuantity(quantity);
+  const quantityLabel = buildQuantityLabel(normalizedQuantity);
+  const cardRole = getDeckCardRole(activeTcgSlug, card?.card_type);
+  const cardColors = getDeckCardColorLabels(activeTcgSlug, card?.color);
+
+  if (activeTcgSlug === 'one-piece') {
+    const leaderCards = Number(deck?.leader_cards) || 0;
+    const requiredLeaderCards = Number(deck?.required_leader_cards) || rules.requiredLeaderCards || 1;
+    const mainDeckCards = Number(deck?.main_deck_cards) || 0;
+    const requiredMainDeckCards = Number(deck?.required_main_deck_cards) || rules.requiredMainDeckCards || 50;
+    const donCards = Number(deck?.don_cards) || 0;
+    const recommendedDonCards = Number(deck?.recommended_don_cards) || rules.maxDonCards || 10;
+    const leaderColors = Array.isArray(deck?.leader_color_labels) ? deck.leader_color_labels : [];
+    const sharesLeaderColor = leaderColors.length > 0 && cardColors.some((color) => leaderColors.includes(color));
+    const summary = buildOnePieceSearchDeckSummary(deck, rules);
+
+    if (cardRole === 'leader' && leaderCards + normalizedQuantity > requiredLeaderCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: 'Ese mazo ya no admite mas Leaders.',
+      };
+    }
+
+    if (cardRole === 'leader' && cardColors.length === 0) {
+      return {
+        disabled: true,
+        summary,
+        helper: 'No se han podido detectar los colores de ese Leader.',
+      };
+    }
+
+    if (cardRole === 'main' && leaderCards === 0) {
+      return {
+        disabled: true,
+        summary,
+        helper: 'Anade primero el Leader para poder meter cartas del mazo principal.',
+      };
+    }
+
+    if (cardRole === 'main' && leaderCards > 0 && leaderColors.length === 0) {
+      return {
+        disabled: true,
+        summary,
+        helper: 'Ese mazo tiene un Leader sin colores detectables. Revisa el Leader antes de anadir mas cartas.',
+      };
+    }
+
+    if (cardRole === 'main' && leaderColors.length > 0 && cardColors.length > 0 && !sharesLeaderColor) {
+      return {
+        disabled: true,
+        summary,
+        helper: `No coincide con el color del Leader (${leaderColors.join(' / ')}).`,
+      };
+    }
+
+    if (cardRole === 'main' && mainDeckCards + normalizedQuantity > requiredMainDeckCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: `Con ${quantityLabel} superarias las 50 cartas del mazo principal.`,
+      };
+    }
+
+    if (cardRole === 'don' && donCards + normalizedQuantity > recommendedDonCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: `Con ${quantityLabel} superarias el limite de 10 DON!!.`,
+      };
+    }
+
+    return {
+      disabled: false,
+      summary,
+      helper: cardRole === 'main'
+        ? `Encaja con el Leader ${leaderColors.join(' / ') || 'del mazo'}.`
+        : `Anadir ${quantityLabel} a este mazo`,
+    };
+  }
+
+  if (activeTcgSlug === 'gundam') {
+    const mainDeckCards = Number(deck?.main_deck_cards ?? deck?.total_cards) || 0;
+    const maxMainDeckCards = Number(deck?.max_cards) || rules.maxMainDeckCards || 50;
+    const deckColorLabels = Array.isArray(deck?.deck_color_labels) ? deck.deck_color_labels : [];
+    const maxDeckColors = Number(deck?.max_deck_colors) || rules.maxDeckColors || 2;
+    const nextDeckColors = [...new Set([...deckColorLabels, ...cardColors])];
+    const summary = buildGundamSearchDeckSummary(deck, rules);
+
+    if (mainDeckCards + normalizedQuantity > maxMainDeckCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: `Con ${quantityLabel} superarias las ${maxMainDeckCards} cartas del mazo.`,
+      };
+    }
+
+    if (maxDeckColors > 0 && nextDeckColors.length > maxDeckColors) {
+      const currentColorsLabel = formatDeckColorList(deckColorLabels);
+      const incomingColorsLabel = formatDeckColorList(cardColors) || 'esta carta';
+      return {
+        disabled: true,
+        summary,
+        helper: currentColorsLabel
+          ? `Ese mazo ya usa ${currentColorsLabel} y ${incomingColorsLabel} haria que pasara de ${maxDeckColors} colores.`
+          : `Esta carta supera el maximo de ${maxDeckColors} colores permitidos para el mazo.`,
+      };
+    }
+
+    return {
+      disabled: false,
+      summary,
+      helper: deckColorLabels.length > 0
+        ? (
+          nextDeckColors.length === deckColorLabels.length
+            ? `Encaja con los colores ${formatDeckColorList(deckColorLabels)} del mazo.`
+            : `Encaja y dejara el mazo en ${formatDeckColorList(nextDeckColors)}.`
+        )
+        : (
+          cardColors.length > 0
+            ? `Anadir ${quantityLabel} fijara los colores ${formatDeckColorList(cardColors)} para arrancar el mazo.`
+            : `Anadir ${quantityLabel} a este mazo`
+        ),
+    };
+  }
+
+  return {
+    disabled: false,
+    summary: buildGenericSearchDeckSummary(deck, rules),
+    helper: `Anadir ${quantityLabel} a este mazo`,
+  };
 };
 
 export const getDeckColorLabels = (rawColor) => {

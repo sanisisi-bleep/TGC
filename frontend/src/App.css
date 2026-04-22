@@ -14,6 +14,21 @@
   --accent: #e04545;
   --accent-soft: #ffe2a8;
   --shadow: 0 24px 60px rgba(17, 40, 84, 0.14);
+  --surface-border: rgba(255, 255, 255, 0.58);
+  --surface-border-soft: rgba(255, 255, 255, 0.45);
+  --surface-muted: rgba(21, 38, 58, 0.06);
+  --surface-muted-border: rgba(21, 38, 58, 0.08);
+  --surface-elevated: rgba(255, 255, 255, 0.98);
+  --input-bg: rgba(255, 255, 255, 0.86);
+  --input-bg-strong: rgba(255, 255, 255, 0.92);
+  --input-border: rgba(21, 38, 58, 0.12);
+  --input-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  --focus-ring: rgba(28, 99, 213, 0.12);
+  --nav-surface: linear-gradient(90deg, color-mix(in srgb, var(--surface-dark) 96%, transparent), color-mix(in srgb, var(--primary) 82%, #16304f));
+  --nav-border: rgba(255, 255, 255, 0.08);
+  --nav-chip-bg: rgba(255, 255, 255, 0.08);
+  --nav-chip-border: rgba(255, 255, 255, 0.14);
+  --nav-text: #eef6ff;
   --radius-xl: 28px;
   --radius-lg: 20px;
   --radius-md: 14px;
@@ -51,6 +66,76 @@
   --shadow: 0 24px 60px rgba(57, 44, 19, 0.16);
 }
 
+.App.theme-dark {
+  color-scheme: dark;
+}
+
+.App.theme-light {
+  color-scheme: light;
+}
+
+.App.theme-dark.theme-gundam {
+  --bg: #060911;
+  --bg-soft: #0b1018;
+  --surface: rgba(10, 14, 24, 0.9);
+  --surface-strong: #121927;
+  --surface-dark: #060b12;
+  --text: #edf3ff;
+  --text-soft: #9ca9c0;
+  --line: rgba(154, 175, 214, 0.15);
+  --primary: #7f9cff;
+  --primary-deep: #dbe4ff;
+  --accent: #d9a13e;
+  --accent-soft: #36230d;
+  --shadow: 0 28px 70px rgba(0, 0, 0, 0.4);
+  --surface-border: rgba(139, 160, 201, 0.16);
+  --surface-border-soft: rgba(139, 160, 201, 0.12);
+  --surface-muted: rgba(127, 156, 255, 0.08);
+  --surface-muted-border: rgba(127, 156, 255, 0.12);
+  --surface-elevated: rgba(16, 23, 36, 0.98);
+  --input-bg: rgba(9, 13, 22, 0.96);
+  --input-bg-strong: rgba(12, 17, 27, 0.98);
+  --input-border: rgba(139, 160, 201, 0.16);
+  --input-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  --focus-ring: rgba(127, 156, 255, 0.18);
+  --nav-surface: linear-gradient(90deg, rgba(7, 11, 18, 0.97), rgba(15, 27, 47, 0.95) 56%, rgba(50, 18, 24, 0.92));
+  --nav-border: rgba(154, 175, 214, 0.12);
+  --nav-chip-bg: rgba(255, 255, 255, 0.045);
+  --nav-chip-border: rgba(154, 175, 214, 0.14);
+  --nav-text: #f5f8ff;
+}
+
+.App.theme-dark.theme-one-piece {
+  --bg: #0d0911;
+  --bg-soft: #15101b;
+  --surface: rgba(18, 13, 23, 0.92);
+  --surface-strong: #211828;
+  --surface-dark: #0a0710;
+  --text: #f7f0fb;
+  --text-soft: #bbaed0;
+  --line: rgba(169, 132, 255, 0.16);
+  --primary: #8f68ff;
+  --primary-deep: #e1d6ff;
+  --accent: #d8b35c;
+  --accent-soft: #433315;
+  --shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
+  --surface-border: rgba(169, 132, 255, 0.16);
+  --surface-border-soft: rgba(169, 132, 255, 0.12);
+  --surface-muted: rgba(143, 104, 255, 0.08);
+  --surface-muted-border: rgba(143, 104, 255, 0.12);
+  --surface-elevated: rgba(24, 18, 31, 0.98);
+  --input-bg: rgba(16, 11, 20, 0.97);
+  --input-bg-strong: rgba(20, 14, 25, 0.98);
+  --input-border: rgba(169, 132, 255, 0.16);
+  --input-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  --focus-ring: rgba(143, 104, 255, 0.2);
+  --nav-surface: linear-gradient(90deg, rgba(10, 7, 14, 0.98), rgba(27, 18, 40, 0.96) 48%, rgba(55, 21, 29, 0.94));
+  --nav-border: rgba(169, 132, 255, 0.12);
+  --nav-chip-bg: rgba(255, 255, 255, 0.045);
+  --nav-chip-border: rgba(169, 132, 255, 0.14);
+  --nav-text: #fdf7ff;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -63,12 +148,27 @@ body {
     radial-gradient(circle at top right, rgba(224, 69, 69, 0.1), transparent 22%),
     linear-gradient(180deg, #fafcff 0%, #eef3f9 54%, #e2eaf5 100%);
   color: var(--text);
+  transition: background 0.25s ease, color 0.25s ease;
+}
+
+body.theme-dark {
+  background:
+    radial-gradient(circle at top left, rgba(80, 123, 203, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(201, 90, 73, 0.14), transparent 22%),
+    linear-gradient(180deg, #111725 0%, #0b1120 54%, #080d17 100%);
+  color: #e7edf8;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--text-soft) 88%, transparent);
 }
 
 .App {
@@ -78,6 +178,87 @@ select {
     radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 18%, transparent), transparent 28%),
     radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 20%, transparent), transparent 24%),
     linear-gradient(180deg, var(--bg-soft) 0%, var(--bg) 54%, color-mix(in srgb, var(--bg) 72%, #d6e0ee) 100%);
+}
+
+.App.theme-dark.theme-gundam {
+  background:
+    radial-gradient(circle at 12% 10%, rgba(127, 156, 255, 0.18), transparent 24%),
+    radial-gradient(circle at 88% 12%, rgba(217, 161, 62, 0.11), transparent 18%),
+    radial-gradient(circle at 84% 84%, rgba(123, 38, 48, 0.16), transparent 24%),
+    linear-gradient(180deg, #0b1018 0%, #070b12 55%, #05070d 100%);
+}
+
+.App.theme-dark.theme-one-piece {
+  background:
+    radial-gradient(circle at 10% 12%, rgba(143, 104, 255, 0.2), transparent 24%),
+    radial-gradient(circle at 86% 10%, rgba(216, 179, 92, 0.12), transparent 18%),
+    radial-gradient(circle at 82% 82%, rgba(110, 29, 40, 0.17), transparent 24%),
+    linear-gradient(180deg, #140f1a 0%, #0f0b14 55%, #08060c 100%);
+}
+
+.App.theme-dark.theme-gundam .page-hero::after {
+  background: radial-gradient(circle, rgba(217, 161, 62, 0.24), transparent 70%);
+}
+
+.App.theme-dark.theme-one-piece .page-hero::after {
+  background: radial-gradient(circle, rgba(143, 104, 255, 0.24), transparent 62%);
+}
+
+.App.theme-dark.theme-gundam .eyebrow {
+  background: rgba(217, 161, 62, 0.16);
+  color: #f0c56c;
+}
+
+.App.theme-dark.theme-one-piece .eyebrow {
+  background: rgba(143, 104, 255, 0.16);
+  color: #e7dbff;
+}
+
+.App.theme-dark.theme-gundam .hero-stat {
+  background: linear-gradient(145deg, rgba(38, 54, 88, 0.98), rgba(14, 23, 39, 0.96));
+  border: 1px solid rgba(217, 161, 62, 0.18);
+}
+
+.App.theme-dark.theme-one-piece .hero-stat {
+  background: linear-gradient(145deg, rgba(53, 26, 70, 0.98), rgba(18, 11, 24, 0.96));
+  border: 1px solid rgba(216, 179, 92, 0.18);
+}
+
+.App.theme-dark.theme-gundam .card-item::before,
+.App.theme-dark.theme-gundam .deck-item::before {
+  background: linear-gradient(90deg, #6f8df6 0 58%, #c74e52 58% 80%, #d9a13e 80% 100%);
+}
+
+.App.theme-dark.theme-one-piece .card-item::before,
+.App.theme-dark.theme-one-piece .deck-item::before {
+  background: linear-gradient(90deg, #8f68ff 0 60%, #531d2d 60% 82%, #d8b35c 82% 100%);
+}
+
+.App.theme-dark.theme-gundam .collection-item::before {
+  background: linear-gradient(180deg, #6f8df6 0%, #1f2a3d 56%, #c74e52 80%, #d9a13e 100%);
+}
+
+.App.theme-dark.theme-one-piece .collection-item::before {
+  background: linear-gradient(180deg, #8f68ff 0%, #22152c 56%, #531d2d 82%, #d8b35c 100%);
+}
+
+.App.theme-dark.theme-gundam .deck-summary-card {
+  background:
+    radial-gradient(circle at top right, rgba(217, 161, 62, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(18, 25, 38, 0.96), rgba(11, 16, 26, 0.92));
+}
+
+.App.theme-dark.theme-one-piece .deck-summary-card {
+  background:
+    radial-gradient(circle at top right, rgba(143, 104, 255, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(29, 20, 37, 0.96), rgba(17, 12, 22, 0.92));
+}
+
+.App.theme-dark.theme-one-piece .card-item img,
+.App.theme-dark.theme-one-piece .collection-item img,
+.App.theme-dark.theme-one-piece .deck-card-row img {
+  background: linear-gradient(180deg, rgba(28, 20, 34, 0.98), rgba(16, 11, 20, 0.94));
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.28);
 }
 
 .navbar {
@@ -90,8 +271,8 @@ select {
   gap: 1rem;
   padding: 1rem 2rem;
   backdrop-filter: blur(18px);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--surface-dark) 96%, transparent), color-mix(in srgb, var(--primary) 82%, #16304f));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--nav-surface);
+  border-bottom: 1px solid var(--nav-border);
 }
 
 .nav-header {
@@ -103,7 +284,7 @@ select {
 }
 
 .nav-brand a {
-  color: #f7fbff;
+  color: var(--nav-text);
   text-decoration: none;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 1.4rem;
@@ -121,15 +302,15 @@ select {
   padding: 0.7rem;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--nav-chip-bg);
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
 .nav-menu-toggle:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.24);
+  background: color-mix(in srgb, var(--nav-chip-bg) 70%, rgba(255, 255, 255, 0.18));
+  border-color: color-mix(in srgb, var(--nav-chip-border) 76%, rgba(255, 255, 255, 0.24));
 }
 
 .nav-menu-toggle span {
@@ -137,7 +318,7 @@ select {
   width: 100%;
   height: 2px;
   border-radius: 999px;
-  background: #eef6ff;
+  background: var(--nav-text);
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
@@ -182,8 +363,8 @@ select {
   gap: 0.45rem;
   padding: 0.35rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--nav-chip-bg);
+  border: 1px solid var(--nav-chip-border);
 }
 
 .nav-game-pill {
@@ -192,7 +373,7 @@ select {
   min-height: 36px;
   padding: 0.6rem 0.95rem;
   background: transparent;
-  color: #eef6ff;
+  color: var(--nav-text);
   cursor: pointer;
   font-weight: 700;
   transition: background-color 0.2s ease, transform 0.2s ease;
@@ -207,12 +388,60 @@ select {
   transform: translateY(-1px);
 }
 
+.nav-theme-toggle {
+  border: 1px solid var(--nav-chip-border);
+  border-radius: 999px;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 0;
+  background: var(--nav-chip-bg);
+  color: var(--nav-text);
+  cursor: pointer;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.nav-theme-toggle:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--nav-chip-bg) 65%, rgba(255, 255, 255, 0.18));
+  border-color: color-mix(in srgb, var(--nav-chip-border) 76%, rgba(255, 255, 255, 0.24));
+}
+
+.nav-theme-toggle[aria-pressed='true'] {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 74%, #ffffff), var(--primary));
+  color: #f7fbff;
+}
+
+.nav-theme-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .nav-links a,
 .nav-links button {
-  color: #eef6ff;
+  color: var(--nav-text);
   text-decoration: none;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--nav-chip-bg);
+  border: 1px solid var(--nav-chip-border);
   padding: 0.65rem 1rem;
   min-height: 42px;
   cursor: pointer;
@@ -228,8 +457,8 @@ select {
 .nav-links a:hover,
 .nav-links button:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.22);
+  background: color-mix(in srgb, var(--nav-chip-bg) 65%, rgba(255, 255, 255, 0.18));
+  border-color: color-mix(in srgb, var(--nav-chip-border) 76%, rgba(255, 255, 255, 0.24));
 }
 
 .logout-button {
@@ -332,7 +561,7 @@ select {
 .password-form,
 .auth-container {
   background: var(--surface);
-  border: 1px solid rgba(255, 255, 255, 0.58);
+  border: 1px solid var(--surface-border);
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
 }
@@ -439,8 +668,8 @@ select {
   gap: 0.45rem;
   padding: 0.35rem;
   border-radius: 999px;
-  background: rgba(21, 38, 58, 0.06);
-  border: 1px solid rgba(21, 38, 58, 0.08);
+  background: var(--surface-muted);
+  border: 1px solid var(--surface-muted-border);
 }
 
 .view-toggle button {
@@ -542,8 +771,12 @@ select {
   min-height: 240px;
   padding: 1.4rem;
   border-radius: 24px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(236, 243, 255, 0.9));
-  border: 1px solid rgba(255, 255, 255, 0.58);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-strong) 96%, transparent),
+    color-mix(in srgb, var(--surface) 94%, var(--bg))
+  );
+  border: 1px solid var(--surface-border);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -702,7 +935,7 @@ select {
   grid-template-columns: repeat(2, 1fr);
   margin-bottom: 1.2rem;
   padding: 0.35rem;
-  background: rgba(21, 38, 58, 0.06);
+  background: var(--surface-muted);
   border-radius: 999px;
 }
 
@@ -730,10 +963,11 @@ select {
 .password-form input {
   width: 100%;
   padding: 0.95rem 1rem;
-  border: 1px solid rgba(21, 38, 58, 0.12);
+  border: 1px solid var(--input-border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.86);
+  background: var(--input-bg);
   color: var(--text);
+  box-shadow: var(--input-shadow);
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
@@ -745,8 +979,8 @@ select {
 .collection-controls select:focus,
 .create-deck-form input:focus,
 .password-form input:focus {
-  border-color: rgba(28, 99, 213, 0.45);
-  box-shadow: 0 0 0 4px rgba(28, 99, 213, 0.12);
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  box-shadow: 0 0 0 4px var(--focus-ring);
   transform: translateY(-1px);
 }
 
@@ -840,8 +1074,8 @@ select {
   gap: 1rem;
   padding: 1.2rem;
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid var(--surface-border-soft);
   box-shadow: var(--shadow);
 }
 
@@ -865,9 +1099,9 @@ select {
   max-height: 260px;
   padding: 0.45rem;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(21, 38, 58, 0.1);
-  box-shadow: 0 20px 34px rgba(17, 40, 84, 0.12);
+  background: var(--surface-elevated);
+  border: 1px solid var(--surface-muted-border);
+  box-shadow: var(--shadow);
   overflow-y: auto;
 }
 
@@ -1372,10 +1606,14 @@ select {
 }
 
 .deck-picker-option {
-  border: 1px solid rgba(22, 86, 193, 0.14);
+  border: 1px solid var(--surface-muted-border);
   border-radius: 18px;
   padding: 0.95rem 1rem;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(236, 243, 255, 0.86));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-strong) 96%, transparent),
+    color-mix(in srgb, var(--surface) 94%, var(--bg))
+  );
   color: var(--text);
   text-align: left;
   cursor: pointer;
@@ -1411,16 +1649,17 @@ select {
 .deck-picker-create input {
   width: 100%;
   padding: 0.95rem 1rem;
-  border: 1px solid rgba(21, 38, 58, 0.12);
+  border: 1px solid var(--input-border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--input-bg-strong);
   color: var(--text);
+  box-shadow: var(--input-shadow);
   outline: none;
 }
 
 .deck-picker-create input:focus {
-  border-color: rgba(28, 99, 213, 0.45);
-  box-shadow: 0 0 0 4px rgba(28, 99, 213, 0.12);
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  box-shadow: 0 0 0 4px var(--focus-ring);
 }
 
 .deck-picker-create button {
@@ -1435,7 +1674,11 @@ select {
   border-radius: 28px;
   padding: 1.4rem;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 244, 252, 0.9)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-strong) 96%, transparent),
+      color-mix(in srgb, var(--surface) 94%, var(--bg))
+    ),
     radial-gradient(circle at top right, rgba(22, 86, 193, 0.1), transparent 26%);
   position: relative;
   overflow: hidden;
@@ -1814,7 +2057,11 @@ select {
 .decks-hero,
 .collection-hero {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.97), rgba(236, 243, 255, 0.9)),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--surface-strong) 97%, transparent),
+      color-mix(in srgb, var(--surface) 95%, var(--bg))
+    ),
     radial-gradient(circle at right top, rgba(22, 86, 193, 0.18), transparent 30%),
     radial-gradient(circle at left bottom, rgba(224, 69, 69, 0.08), transparent 24%);
 }
@@ -1866,17 +2113,18 @@ select {
   min-width: min(100%, 320px);
   flex: 1 1 280px;
   padding: 0.85rem 1rem;
-  border: 1px solid rgba(21, 38, 58, 0.12);
+  border: 1px solid var(--input-border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--input-bg-strong);
   color: var(--text);
+  box-shadow: var(--input-shadow);
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .deck-title-edit input:focus {
-  border-color: rgba(28, 99, 213, 0.45);
-  box-shadow: 0 0 0 4px rgba(28, 99, 213, 0.12);
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  box-shadow: 0 0 0 4px var(--focus-ring);
   transform: translateY(-1px);
 }
 
@@ -1891,7 +2139,7 @@ select {
   display: inline-flex;
   font-size: 0.82rem;
   color: var(--text-soft);
-  background: rgba(21, 38, 58, 0.06);
+  background: var(--surface-muted);
   border-radius: 999px;
   padding: 0.35rem 0.65rem;
 }
@@ -1901,7 +2149,11 @@ select {
   padding: 1.1rem 1.1rem 1.2rem;
   background:
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.78), transparent 32%),
-    linear-gradient(180deg, rgba(255, 252, 247, 0.96), rgba(248, 244, 236, 0.9));
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-strong) 96%, transparent),
+      color-mix(in srgb, var(--surface) 92%, var(--bg))
+    );
 }
 
 .deck-summary-card h3 {
@@ -2390,8 +2642,8 @@ select {
   min-height: 300px;
   padding: 1rem;
   border-radius: 18px;
-  border: 1px solid rgba(21, 38, 58, 0.12);
-  background: rgba(247, 250, 255, 0.92);
+  border: 1px solid var(--input-border);
+  background: var(--input-bg-strong);
   color: var(--text);
   font: 600 0.95rem/1.55 'Space Grotesk', sans-serif;
   resize: vertical;
@@ -2449,7 +2701,11 @@ select {
   align-items: center;
   padding: 0.9rem;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(238, 243, 249, 0.78), rgba(255, 255, 255, 0.97));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface) 90%, var(--bg)),
+    color-mix(in srgb, var(--surface-strong) 97%, transparent)
+  );
   border: 1px solid var(--line);
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
@@ -2487,8 +2743,8 @@ select {
   justify-items: center;
   padding: 0.95rem 1rem;
   border-radius: 18px;
-  background: rgba(18, 48, 98, 0.08);
-  border: 1px solid rgba(18, 48, 98, 0.12);
+  background: var(--surface-muted);
+  border: 1px solid var(--surface-muted-border);
 }
 
 .deck-card-quantity-display strong {
@@ -2498,7 +2754,11 @@ select {
 }
 
 .deck-card-row.has-missing-copies {
-  background: linear-gradient(180deg, rgba(255, 243, 241, 0.88), rgba(255, 255, 255, 0.97));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 16%, var(--surface)),
+    color-mix(in srgb, var(--surface-strong) 96%, transparent)
+  );
 }
 
 .deck-card-row img {
@@ -2843,18 +3103,19 @@ select {
 .settings-field textarea {
   width: 100%;
   padding: 0.95rem 1rem;
-  border: 1px solid rgba(21, 38, 58, 0.12);
+  border: 1px solid var(--input-border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.86);
+  background: var(--input-bg);
   color: var(--text);
+  box-shadow: var(--input-shadow);
   outline: none;
   resize: vertical;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .settings-field textarea:focus {
-  border-color: rgba(28, 99, 213, 0.45);
-  box-shadow: 0 0 0 4px rgba(28, 99, 213, 0.12);
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  box-shadow: 0 0 0 4px var(--focus-ring);
   transform: translateY(-1px);
 }
 
@@ -2896,7 +3157,11 @@ select {
   grid-column: 1 / -1;
   border: 1px solid rgba(201, 59, 47, 0.2);
   background:
-    linear-gradient(180deg, rgba(255, 251, 250, 0.96), rgba(255, 243, 241, 0.92));
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent) 10%, var(--surface-strong)),
+      color-mix(in srgb, var(--accent) 8%, var(--surface))
+    );
 }
 
 .settings-admin-list {
@@ -2911,7 +3176,7 @@ select {
   align-items: center;
   padding: 1rem;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
   border: 1px solid var(--line);
 }
 
@@ -2931,20 +3196,23 @@ select {
 .settings-admin-role select {
   width: 100%;
   padding: 0.8rem 1rem;
-  border: 1px solid rgba(22, 86, 193, 0.16);
+  border: 1px solid var(--input-border);
   border-radius: 16px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(236, 243, 255, 0.88));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--input-bg-strong) 96%, transparent),
+    color-mix(in srgb, var(--surface) 94%, var(--bg))
+  );
   color: var(--text);
   font-weight: 700;
   outline: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  box-shadow: var(--input-shadow);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .settings-admin-role select:focus {
-  border-color: rgba(28, 99, 213, 0.42);
-  box-shadow: 0 0 0 4px rgba(28, 99, 213, 0.12);
+  border-color: color-mix(in srgb, var(--primary) 42%, transparent);
+  box-shadow: 0 0 0 4px var(--focus-ring);
   transform: translateY(-1px);
 }
 
@@ -2967,13 +3235,17 @@ select {
 .settings-panel .settings-field input:disabled,
 .settings-panel .settings-field select:disabled,
 .settings-panel .settings-field textarea:disabled {
-  background: linear-gradient(180deg, rgba(244, 247, 252, 0.96), rgba(236, 241, 248, 0.88));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface) 92%, var(--bg-soft)),
+    color-mix(in srgb, var(--surface) 84%, var(--bg))
+  );
   color: color-mix(in srgb, var(--text) 70%, #7f8ea1);
 }
 
 .settings-panel .settings-field input:not(:disabled),
 .settings-panel .settings-field select:not(:disabled) {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  box-shadow: var(--input-shadow);
 }
 
 @media (max-width: 900px) {
@@ -3144,6 +3416,10 @@ select {
 
   .nav-links a,
   .nav-links button {
+    width: 100%;
+  }
+
+  .nav-theme-toggle {
     width: 100%;
   }
 

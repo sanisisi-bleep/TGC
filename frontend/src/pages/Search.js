@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import SearchCardDetailModal from '../components/search/SearchCardDetailModal';
 import SearchCardTile from '../components/search/SearchCardTile';
@@ -9,6 +10,7 @@ import { getGameConfig } from '../tcgConfig';
 import { useToast } from '../context/ToastContext';
 import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
+import { getNewDeckCreationPlan } from '../utils/deckTools';
 import {
   readCacheMap,
   readStoredEnumValue,
@@ -203,6 +205,7 @@ const useDebouncedValue = (value, delay) => {
 function Search({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [cards, setCards] = useState([]);
   const [decks, setDecks] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -677,30 +680,62 @@ function Search({ activeTcgSlug, activeTgc }) {
 
     try {
       const quantity = commitActionQuantity(deckPickerCard.id);
+      const creationPlan = getNewDeckCreationPlan(activeGame.slug, deckPickerCard, quantity);
+      if (!creationPlan.canCreate) {
+        showToast({
+          type: 'error',
+          message: creationPlan.helper || 'No se puede crear el mazo con esa carta inicial.',
+        });
+        return;
+      }
+
       const createResponse = await axios.post(`${API_BASE}/decks`, {
         name: trimmedDeckName,
         tgc_id: activeTgc.id,
       });
 
-      const deckId = createResponse.data?.id;
+      const deckId = createResponse.data?.id || createResponse.data?.deck_id;
       if (!deckId) {
         throw new Error('Deck creation did not return an id');
       }
 
-      await axios.post(`${API_BASE}/decks/${deckId}/cards`, {
-        card_id: deckPickerCard.id,
-        quantity,
-      });
-
       invalidateDeckPickerCache();
-      showToast({
-        type: 'success',
-        message: quantity === 1
-          ? 'Mazo creado y 1 copia agregada.'
-          : `Mazo creado y ${quantity} copias agregadas.`,
-      });
-      setDeckPickerCard(null);
-      setNewDeckName('');
+
+      if (!creationPlan.shouldAddCardAfterCreate) {
+        setDeckPickerCard(null);
+        setNewDeckName('');
+        showToast({
+          type: 'info',
+          message: creationPlan.postCreateMessage || 'Mazo creado. Completa primero los requisitos del formato antes de anadir esa carta.',
+        });
+        navigate('/decks', { state: { openDeckId: deckId } });
+        return;
+      }
+
+      try {
+        await axios.post(`${API_BASE}/decks/${deckId}/cards`, {
+          card_id: deckPickerCard.id,
+          quantity,
+        });
+
+        showToast({
+          type: 'success',
+          message: quantity === 1
+            ? 'Mazo creado y 1 copia agregada.'
+            : `Mazo creado y ${quantity} copias agregadas.`,
+        });
+        setDeckPickerCard(null);
+        setNewDeckName('');
+      } catch (error) {
+        showToast({
+          type: 'error',
+          message: getApiErrorMessage(
+            error,
+            'El mazo se creo, pero no se pudo anadir la carta inicial.'
+          ),
+        });
+        navigate('/decks', { state: { openDeckId: deckId } });
+      }
     } catch (error) {
       showToast({
         type: 'error',

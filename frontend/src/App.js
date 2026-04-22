@@ -24,6 +24,28 @@ axios.defaults.withCredentials = true;
 
 const TGC_FETCH_RETRY_ATTEMPTS = 2;
 const TGC_FETCH_RETRY_DELAY_MS = 350;
+const THEME_MODE_STORAGE_KEY = 'tgc-theme-mode-v1';
+
+const getPreferredThemeMode = () => {
+  if (typeof window === 'undefined') {
+    return 'light';
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(THEME_MODE_STORAGE_KEY);
+    if (storedValue === 'light' || storedValue === 'dark') {
+      return storedValue;
+    }
+  } catch (_error) {
+    // Ignore storage access issues and fall back to system preference.
+  }
+
+  if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    return 'dark';
+  }
+
+  return 'light';
+};
 
 const sanitizeTelemetryPayload = (event) => {
   if (!event?.url) {
@@ -118,7 +140,9 @@ function SiteNavigation({
   isAuthenticated,
   navGames,
   activeTcgSlug,
+  themeMode,
   onSelectGame,
+  onToggleTheme,
   onLogout,
 }) {
   const location = useLocation();
@@ -141,6 +165,11 @@ function SiteNavigation({
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
   };
+
+  const themeToggleLabel = themeMode === 'dark'
+    ? 'Cambiar a modo claro'
+    : 'Cambiar a modo oscuro';
+  const themeToggleIcon = themeMode === 'dark' ? '☀' : '☾';
 
   return (
     <nav className="navbar">
@@ -185,13 +214,41 @@ function SiteNavigation({
               <li><Link to="/collection" onClick={closeMobileMenu}>Mi Coleccion</Link></li>
               <li><Link to="/decks" onClick={closeMobileMenu}>Mis Mazos</Link></li>
               <li><Link to="/settings" onClick={closeMobileMenu}>Configuracion</Link></li>
+              <li>
+                <button
+                  type="button"
+                  className="nav-theme-toggle"
+                  aria-pressed={themeMode === 'dark'}
+                  aria-label={themeToggleLabel}
+                  title={themeToggleLabel}
+                  onClick={onToggleTheme}
+                >
+                  <span aria-hidden="true" className="nav-theme-toggle-icon">{themeToggleIcon}</span>
+                  <span className="sr-only">{themeToggleLabel}</span>
+                </button>
+              </li>
               <li><button className="logout-button" onClick={handleLogout}>Cerrar Sesion</button></li>
             </ul>
           </div>
         ) : (
-          <ul className="nav-links">
-            <li><Link to="/" onClick={closeMobileMenu}>Inicio</Link></li>
-          </ul>
+          <div className="nav-session nav-session-public">
+            <ul className="nav-links">
+              <li><Link to="/" onClick={closeMobileMenu}>Inicio</Link></li>
+              <li>
+                <button
+                  type="button"
+                  className="nav-theme-toggle"
+                  aria-pressed={themeMode === 'dark'}
+                  aria-label={themeToggleLabel}
+                  title={themeToggleLabel}
+                  onClick={onToggleTheme}
+                >
+                  <span aria-hidden="true" className="nav-theme-toggle-icon">{themeToggleIcon}</span>
+                  <span className="sr-only">{themeToggleLabel}</span>
+                </button>
+              </li>
+            </ul>
+          </div>
         )}
       </div>
     </nav>
@@ -223,6 +280,7 @@ function ProtectedGameRoute({
 function App() {
   const [token, setToken] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [themeMode, setThemeMode] = useState(getPreferredThemeMode);
   const [activeTcgSlug, setActiveTcgSlug] = useState(localStorage.getItem('activeTcgSlug') || DEFAULT_TCG_SLUG);
   const [tgcBySlug, setTgcBySlug] = useState({});
   const [loadingTgcs, setLoadingTgcs] = useState(true);
@@ -249,6 +307,22 @@ function App() {
   const retryTgcLoad = useCallback(() => {
     setTgcReloadNonce((current) => current + 1);
   }, []);
+
+  const toggleThemeMode = useCallback(() => {
+    setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
+    } catch (_error) {
+      // Ignore storage issues and keep the theme only in memory.
+    }
+
+    document.body.classList.toggle('theme-dark', themeMode === 'dark');
+    document.body.classList.toggle('theme-light', themeMode !== 'dark');
+    document.documentElement.style.colorScheme = themeMode;
+  }, [themeMode]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -391,7 +465,7 @@ function App() {
   return (
     <Router>
       <ToastProvider>
-        <div className={`App ${activeGame.palette}`}>
+        <div className={`App ${activeGame.palette} ${themeMode === 'dark' ? 'theme-dark' : 'theme-light'}`}>
           {!authReady ? (
             <main className="main-content">
               <SessionBootstrapPanel />
@@ -402,7 +476,9 @@ function App() {
                 isAuthenticated={isAuthenticated}
                 navGames={navGames}
                 activeTcgSlug={activeTcgSlug}
+                themeMode={themeMode}
                 onSelectGame={updateActiveTcgSlug}
+                onToggleTheme={toggleThemeMode}
                 onLogout={logout}
               />
 
