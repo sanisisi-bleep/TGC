@@ -77,8 +77,8 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
         setRegisterData({ username: '', email: '', password: '' });
         setIsRegister(false);
       } else {
-        const res = await axios.post(`${API_BASE}/auth/token`, loginData);
-        onLoginSuccess(res.data.access_token);
+        await axios.post(`${API_BASE}/auth/token`, loginData);
+        onLoginSuccess();
       }
     } catch (err) {
       setAuthMessage({

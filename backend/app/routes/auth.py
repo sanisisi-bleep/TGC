@@ -1,12 +1,19 @@
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 from app.database.connection import get_db
+from app.rate_limit import RateLimitPolicy, enforce_rate_limit
 from app.models import User
-from app.services.auth_service import authenticate_user, create_access_token, get_password_hash
+from app.services.auth_service import (
+    authenticate_user,
+    clear_auth_cookie,
+    create_access_token,
+    get_password_hash,
+    set_auth_cookie,
+)
 from app.database.repositories.user_repository import UserRepository
 from app.logger import logger
 
@@ -14,6 +21,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+LOGIN_IP_POLICY = RateLimitPolicy(bucket="auth-login-ip", limit=12, window_seconds=10 * 60)
+LOGIN_IDENTIFIER_POLICY = RateLimitPolicy(bucket="auth-login-identifier", limit=6, window_seconds=10 * 60)
+REGISTER_IP_POLICY = RateLimitPolicy(bucket="auth-register-ip", limit=5, window_seconds=30 * 60)
+REGISTER_IDENTIFIER_POLICY = RateLimitPolicy(bucket="auth-register-identifier", limit=3, window_seconds=60 * 60)
+
+
+def _apply_no_store(response: Response):
+    response.headers["Cache-Control"] = "no-store"
 
 
 class UserCreate(BaseModel):
@@ -59,7 +74,10 @@ class UserLogin(BaseModel):
         return value
 
 @router.post("/register")
-def register(user: UserCreate, db: Session = Depends(get_db)):
+def register(user: UserCreate, request: Request, response: Response, db: Session = Depends(get_db)):
+    enforce_rate_limit(request, REGISTER_IP_POLICY)
+    enforce_rate_limit(request, REGISTER_IDENTIFIER_POLICY, key_fragment=user.email)
+    _apply_no_store(response)
     logger.info(
         "Registering user",
         extra={"event": "auth_register_attempt", "username": user.username},
@@ -98,7 +116,9 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/token")
-def login(user: UserLogin, db: Session = Depends(get_db)):
+def login(user: UserLogin, request: Request, response: Response, db: Session = Depends(get_db)):
+    enforce_rate_limit(request, LOGIN_IP_POLICY)
+    enforce_rate_limit(request, LOGIN_IDENTIFIER_POLICY, key_fragment=user.username)
     logger.info(
         "Login attempt",
         extra={"event": "auth_login_attempt", "identifier": user.username},
@@ -111,6 +131,7 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
         )
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     access_token = create_access_token(data={"sub": user_obj.username})
+    set_auth_cookie(response, access_token)
     logger.info(
         "Login successful",
         extra={
@@ -119,4 +140,10 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
             "username": user_obj.username,
         },
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"message": "Login successful", "authenticated": True}
+
+
+@router.post("/logout")
+def logout(response: Response):
+    clear_auth_cookie(response)
+    return {"message": "Logout successful"}

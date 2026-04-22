@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timedelta
 
 from jose import JWTError, jwt
-from fastapi import HTTPException, Depends
+from fastapi import Depends, HTTPException, Request, Response
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
@@ -30,10 +30,52 @@ def resolve_secret_key():
 SECRET_KEY = resolve_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "tgc_session").strip() or "tgc_session"
+AUTH_COOKIE_SAMESITE = (os.getenv("AUTH_COOKIE_SAMESITE", "lax").strip().lower() or "lax")
+AUTH_COOKIE_MAX_AGE_SECONDS = max(ACCESS_TOKEN_EXPIRE_MINUTES, 1) * 60
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def _is_cookie_secure():
+    raw_value = os.getenv("AUTH_COOKIE_SECURE")
+    if raw_value is None:
+        return os.getenv("VERCEL") == "1"
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_cookie_samesite():
+    if AUTH_COOKIE_SAMESITE in {"lax", "strict", "none"}:
+        return AUTH_COOKIE_SAMESITE
+    return "lax"
+
+
+def _apply_auth_response_headers(response: Response):
+    response.headers["Cache-Control"] = "no-store"
+
+
+def set_auth_cookie(response: Response, access_token: str):
+    _apply_auth_response_headers(response)
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=_is_cookie_secure(),
+        samesite=_resolve_cookie_samesite(),
+        max_age=AUTH_COOKIE_MAX_AGE_SECONDS,
+        expires=AUTH_COOKIE_MAX_AGE_SECONDS,
+        path="/",
+    )
+
+
+def clear_auth_cookie(response: Response):
+    _apply_auth_response_headers(response)
+    response.delete_cookie(
+        key=AUTH_COOKIE_NAME,
+        path="/",
+    )
 
 def verify_password(plain_password, hashed_password):
     plain_password = plain_password[:72]  # Truncate to match hash
@@ -54,7 +96,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "iat": datetime.utcnow(), "type": "access"})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -77,16 +119,32 @@ def authenticate_user(db: Session, identifier: str, password: str):
     logger.info(f"Authentication successful for user: {user.username}")
     return user
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+def _resolve_request_token(request: Request, bearer_token: str | None):
+    if bearer_token:
+        return bearer_token
+    return request.cookies.get(AUTH_COOKIE_NAME)
+
+
+def get_current_user(
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    resolved_token = _resolve_request_token(request, token)
+    if not resolved_token:
+        raise credentials_exception
+
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(resolved_token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        if username is None:
+        token_type = payload.get("type")
+        if username is None or token_type != "access":
             raise credentials_exception
     except JWTError:
         raise credentials_exception

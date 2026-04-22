@@ -9,6 +9,7 @@ from app.logger import bind_log_context, logger, reset_log_context
 
 
 SENSITIVE_HEADERS = {"authorization", "cookie", "set-cookie"}
+TOKENIZED_PATH_PREFIXES = ("/decks/shared/", "/shared-deck/")
 
 
 def _is_enabled(name: str, default: str = "false") -> bool:
@@ -20,6 +21,17 @@ def _sanitize_headers(headers):
         key: ("<redacted>" if key.lower() in SENSITIVE_HEADERS else value)
         for key, value in headers.items()
     }
+
+
+def _sanitize_path(path: str) -> str:
+    sanitized_path = path or "/"
+
+    for prefix in TOKENIZED_PATH_PREFIXES:
+        if prefix in sanitized_path:
+            head, _, _tail = sanitized_path.partition(prefix)
+            return f"{head}{prefix}[token]"
+
+    return sanitized_path
 
 
 def _resolve_request_id(request: Request) -> str:
@@ -67,7 +79,7 @@ class LoggerMiddleware(BaseHTTPMiddleware):
         context_tokens = bind_log_context(
             request_id=request_id,
             method=request.method,
-            path=request.url.path,
+            path=_sanitize_path(request.url.path),
             client_ip=client_ip,
         )
 

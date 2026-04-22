@@ -214,9 +214,8 @@ function Settings() {
       await axios.delete(`${API_BASE}/settings/me`, {
         data: { password: deletePassword },
       });
+      await axios.post(`${API_BASE}/auth/logout`).catch(() => undefined);
       clearSessionProfileCache();
-      localStorage.removeItem('token');
-      delete axios.defaults.headers.common.Authorization;
       navigate('/');
       window.location.reload();
     } catch (error) {

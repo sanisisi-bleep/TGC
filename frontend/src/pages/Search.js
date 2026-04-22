@@ -576,13 +576,6 @@ function Search({ activeTcgSlug, activeTgc }) {
 
   const handleAddToCollection = async (cardId, quantityOverride = null) => {
     try {
-      const token = localStorage.getItem('token');
-
-      if (!token) {
-        showToast({ type: 'error', message: 'Debes iniciar sesion para agregar cartas a tu coleccion.' });
-        return;
-      }
-
       const parsedCardId = Number(cardId);
 
       if (!Number.isInteger(parsedCardId) || parsedCardId <= 0) {
@@ -609,7 +602,6 @@ function Search({ activeTcgSlug, activeTgc }) {
         requestData,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
             Accept: 'application/json',
           },
@@ -620,7 +612,6 @@ function Search({ activeTcgSlug, activeTgc }) {
     } catch (error) {
       if (error.response?.status === 401) {
         showToast({ type: 'error', message: 'Sesion expirada. Por favor, inicia sesion de nuevo.' });
-        localStorage.removeItem('token');
         return;
       }
       showToast({

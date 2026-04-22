@@ -20,6 +20,8 @@ import {
   fetchTgcCatalog,
 } from './utils/bootstrapCache';
 
+axios.defaults.withCredentials = true;
+
 const TGC_FETCH_RETRY_ATTEMPTS = 2;
 const TGC_FETCH_RETRY_DELAY_MS = 350;
 
@@ -234,57 +236,28 @@ function App() {
   }, []);
 
   const clearSession = useCallback(() => {
-    delete axios.defaults.headers.common.Authorization;
-    localStorage.removeItem('token');
     clearSessionProfileCache();
     setToken(null);
   }, []);
 
-  const handleLoginSuccess = useCallback((nextToken) => {
-    if (!nextToken) {
-      clearSession();
-      setAuthReady(true);
-      return;
-    }
-
+  const handleLoginSuccess = useCallback(() => {
     clearSessionProfileCache();
-    localStorage.setItem('token', nextToken);
-    setToken(nextToken);
+    setToken('cookie-session');
     setAuthReady(true);
-  }, [clearSession]);
+  }, []);
 
   const retryTgcLoad = useCallback(() => {
     setTgcReloadNonce((current) => current + 1);
   }, []);
 
   useEffect(() => {
-    if (token) {
-      axios.defaults.headers.common.Authorization = `Bearer ${token}`;
-      return;
-    }
-
-    delete axios.defaults.headers.common.Authorization;
-  }, [token]);
-
-  useEffect(() => {
     let isCancelled = false;
 
     const bootstrapSession = async () => {
-      const storedToken = localStorage.getItem('token');
-
-      if (!storedToken) {
-        if (!isCancelled) {
-          setToken(null);
-          setAuthReady(true);
-        }
-        return;
-      }
-
       try {
         await fetchSessionProfile(
           () => axios.get(`${API_BASE}/settings/me`, {
             headers: {
-              Authorization: `Bearer ${storedToken}`,
               Accept: 'application/json',
             },
           }).then((response) => response.data || null),
@@ -292,11 +265,10 @@ function App() {
         );
 
         if (!isCancelled) {
-          setToken(storedToken);
+          setToken('cookie-session');
         }
       } catch (_error) {
         if (!isCancelled) {
-          localStorage.removeItem('token');
           setToken(null);
         }
       } finally {
@@ -387,9 +359,15 @@ function App() {
     updateActiveTcgSlug(fallbackSlug);
   }, [activeTcgSlug, loadingTgcs, tgcBySlug, updateActiveTcgSlug]);
 
-  const logout = useCallback(() => {
-    clearSession();
-    setAuthReady(true);
+  const logout = useCallback(async () => {
+    try {
+      await axios.post(`${API_BASE}/auth/logout`);
+    } catch (_error) {
+      // The local session still needs to be cleared even if the network request fails.
+    } finally {
+      clearSession();
+      setAuthReady(true);
+    }
   }, [clearSession]);
 
   const isAuthenticated = authReady && Boolean(token);
