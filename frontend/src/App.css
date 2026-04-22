@@ -2606,6 +2606,118 @@ textarea::placeholder {
   border-color: rgba(201, 59, 47, 0.3) !important;
 }
 
+.App.theme-dark .page-size-control select,
+.App.theme-dark .pagination-button:not(.is-active),
+.App.theme-dark .search-quantity-input,
+.App.theme-dark .deck-list-preview-content {
+  background: var(--input-bg-strong);
+  border-color: var(--input-border);
+  color: var(--text);
+  box-shadow: var(--input-shadow);
+}
+
+.App.theme-dark .search-card-tag,
+.App.theme-dark .card-detail-text-block,
+.App.theme-dark .deck-action-group,
+.App.theme-dark .deck-action-button.is-neutral,
+.App.theme-dark .deck-rule-meter,
+.App.theme-dark .deck-stat-block {
+  background: var(--surface-muted);
+  border-color: var(--surface-muted-border);
+  color: var(--text);
+}
+
+.App.theme-dark .search-quantity-panel,
+.App.theme-dark .search-quantity-panel.is-compact,
+.App.theme-dark .card-detail-fact,
+.App.theme-dark .collection-actions,
+.App.theme-dark .deck-stats-panel,
+.App.theme-dark .deck-stat-card,
+.App.theme-dark .deck-curve-chart {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-elevated) 96%, transparent),
+      color-mix(in srgb, var(--surface) 92%, var(--bg))
+    );
+  border-color: var(--surface-muted-border);
+}
+
+.App.theme-dark .collection-item img {
+  border-color: var(--surface-border-soft);
+}
+
+.App.theme-dark .card-chip {
+  background: rgba(216, 179, 92, 0.16);
+  color: #f0cf86;
+  box-shadow: none;
+}
+
+.App.theme-dark .card-chip-secondary,
+.App.theme-dark .deck-progress-chip,
+.App.theme-dark .deck-curve-average-copy,
+.App.theme-dark .deck-stat-chip {
+  background: rgba(127, 156, 255, 0.14);
+  border-color: rgba(127, 156, 255, 0.24);
+  color: var(--primary-deep);
+}
+
+.App.theme-dark .deck-action-button.is-soft {
+  background: var(--surface-elevated);
+  color: var(--text);
+  border-color: var(--surface-muted-border);
+  box-shadow: none;
+}
+
+.App.theme-dark .deck-action-button.is-danger,
+.App.theme-dark .danger-ghost-button {
+  background: rgba(201, 59, 47, 0.14) !important;
+  color: #ffb8b1 !important;
+  border-color: rgba(201, 59, 47, 0.28) !important;
+}
+
+.App.theme-dark .deck-action-button.is-ghost-danger {
+  background: linear-gradient(180deg, rgba(74, 27, 30, 0.96), rgba(43, 18, 20, 0.92));
+  color: #ffd6d0;
+  border-color: rgba(201, 59, 47, 0.24);
+}
+
+.App.theme-dark .deck-status-chip.is-complete,
+.App.theme-dark .deck-stat-chip.is-ok {
+  background: rgba(34, 153, 84, 0.18);
+  border-color: rgba(34, 153, 84, 0.24);
+  color: #94e0b2;
+}
+
+.App.theme-dark .deck-status-chip.is-incomplete,
+.App.theme-dark .deck-stat-chip.is-warning {
+  background: rgba(216, 179, 92, 0.18);
+  border-color: rgba(216, 179, 92, 0.24);
+  color: #f0cf86;
+}
+
+.App.theme-dark .deck-missing-chip,
+.App.theme-dark .deck-stat-chip.is-danger {
+  background: rgba(201, 59, 47, 0.18);
+  border-color: rgba(201, 59, 47, 0.24);
+  color: #ffb8b1;
+}
+
+.App.theme-dark .deck-rule-meter.is-danger {
+  background: linear-gradient(180deg, rgba(73, 27, 31, 0.95), rgba(39, 18, 21, 0.9));
+  border-color: rgba(201, 59, 47, 0.22);
+}
+
+.App.theme-dark .deck-stat-card.is-valid {
+  background: linear-gradient(180deg, rgba(18, 50, 36, 0.95), rgba(15, 27, 21, 0.9));
+  border-color: rgba(34, 153, 84, 0.2);
+}
+
+.App.theme-dark .deck-stat-card.is-warning {
+  background: linear-gradient(180deg, rgba(70, 53, 23, 0.95), rgba(38, 29, 15, 0.9));
+  border-color: rgba(216, 179, 92, 0.22);
+}
+
 .deck-list-preview-modal {
   width: min(760px, 100%);
   display: grid;

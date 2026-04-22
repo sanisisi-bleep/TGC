@@ -92,3 +92,6 @@ Desktop.ini
 # Local manuals
 DEPLOY_VERCEL_LOCAL.md
 backend/populate_gundam_exburst.py
+
+# Temporary research / verification artifacts
+tmp/
