@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
@@ -18,6 +18,77 @@ const ROLE_OPTIONS = [
   { value: 'organizer', label: 'Organizador' },
   { value: 'admin', label: 'Admin' },
 ];
+
+const FEEDBACK_STORAGE_KEY = 'tgc-feedback-draft-v1';
+const FEEDBACK_CATEGORIES = [
+  { value: 'idea', label: 'Idea o mejora' },
+  { value: 'ux', label: 'Interfaz o usabilidad' },
+  { value: 'data', label: 'Datos, cartas o sets' },
+  { value: 'bug', label: 'Error o comportamiento raro' },
+  { value: 'other', label: 'Otro tema' },
+];
+
+const DEFAULT_FEEDBACK_DRAFT = {
+  category: 'idea',
+  subject: '',
+  message: '',
+  allowContact: true,
+};
+
+const readFeedbackDraft = () => {
+  if (typeof window === 'undefined') {
+    return DEFAULT_FEEDBACK_DRAFT;
+  }
+
+  try {
+    const rawDraft = window.localStorage.getItem(FEEDBACK_STORAGE_KEY);
+    if (!rawDraft) {
+      return DEFAULT_FEEDBACK_DRAFT;
+    }
+
+    const parsedDraft = JSON.parse(rawDraft);
+    return {
+      ...DEFAULT_FEEDBACK_DRAFT,
+      ...(parsedDraft || {}),
+      allowContact: Boolean(parsedDraft?.allowContact),
+    };
+  } catch (_error) {
+    return DEFAULT_FEEDBACK_DRAFT;
+  }
+};
+
+const buildFeedbackPreview = (draft, profile) => {
+  const categoryLabel = FEEDBACK_CATEGORIES.find((item) => item.value === draft.category)?.label || 'General';
+  const authorName = profile.display_name || profile.username || 'Usuario sin nombre visible';
+  const lines = [
+    'Buzon de sugerencias - Multiverse TCG Manager',
+    `Categoria: ${categoryLabel}`,
+    `Asunto: ${draft.subject.trim() || 'Sin asunto'}`,
+    draft.allowContact ? `Contacto: ${authorName} (${profile.email || 'sin email'})` : 'Contacto: no mostrar datos personales',
+    '',
+    'Mensaje:',
+    draft.message.trim() || 'Sin detalles todavia.',
+  ];
+
+  return lines.join('\n');
+};
+
+const copyTextToClipboard = async (text) => {
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', '');
+  textArea.style.position = 'absolute';
+  textArea.style.left = '-9999px';
+  document.body.appendChild(textArea);
+  textArea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textArea);
+};
 
 function Settings() {
   const navigate = useNavigate();
@@ -42,6 +113,15 @@ function Settings() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [updatingRoleUserId, setUpdatingRoleUserId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [feedbackDraft, setFeedbackDraft] = useState(readFeedbackDraft);
+
+  const feedbackPreview = useMemo(
+    () => buildFeedbackPreview(feedbackDraft, profile),
+    [feedbackDraft, profile]
+  );
+  const hasFeedbackContent = Boolean(
+    feedbackDraft.subject.trim() || feedbackDraft.message.trim()
+  );
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -94,8 +174,23 @@ function Settings() {
     loadSettings();
   }, [navigate, showToast]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FEEDBACK_STORAGE_KEY, JSON.stringify(feedbackDraft));
+    } catch (_error) {
+      // Ignore storage failures and keep the draft in memory.
+    }
+  }, [feedbackDraft]);
+
   const updateField = (field, value) => {
     setProfile((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const updateFeedbackField = (field, value) => {
+    setFeedbackDraft((current) => ({
       ...current,
       [field]: value,
     }));
@@ -233,6 +328,55 @@ function Settings() {
     }
   };
 
+  const copyFeedbackDraft = async () => {
+    if (!hasFeedbackContent) {
+      showToast({
+        type: 'error',
+        message: 'Escribe al menos un asunto o un mensaje antes de copiar la sugerencia.',
+      });
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(feedbackPreview);
+      showToast({
+        type: 'success',
+        message: 'Sugerencia copiada. Ya la puedes enviar al admin por el canal que prefieras.',
+      });
+    } catch (_error) {
+      showToast({
+        type: 'error',
+        message: 'No se pudo copiar la sugerencia en este navegador.',
+      });
+    }
+  };
+
+  const openFeedbackEmail = () => {
+    if (!hasFeedbackContent) {
+      showToast({
+        type: 'error',
+        message: 'Escribe algo en el borrador antes de abrirlo en correo.',
+      });
+      return;
+    }
+
+    const subject = feedbackDraft.subject.trim() || 'Sugerencia sobre Multiverse TCG Manager';
+    const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(feedbackPreview)}`;
+    window.location.href = mailtoUrl;
+  };
+
+  const clearFeedbackDraft = () => {
+    setFeedbackDraft(DEFAULT_FEEDBACK_DRAFT);
+
+    try {
+      window.localStorage.removeItem(FEEDBACK_STORAGE_KEY);
+    } catch (_error) {
+      // Ignore storage issues and keep the state cleared in memory.
+    }
+
+    showToast({ type: 'info', message: 'Borrador de sugerencia limpiado.' });
+  };
+
   if (loading) {
     return (
       <div className="settings page-shell">
@@ -290,7 +434,11 @@ function Settings() {
 
             <label className="settings-field">
               <span>Rol</span>
-              <input type="text" value={ROLE_OPTIONS.find((option) => option.value === profile.role)?.label || profile.role} disabled />
+              <input
+                type="text"
+                value={ROLE_OPTIONS.find((option) => option.value === profile.role)?.label || profile.role}
+                disabled
+              />
             </label>
 
             <div className="settings-field settings-switch-field">
@@ -305,7 +453,7 @@ function Settings() {
                 <strong>{profile.advanced_mode ? 'Activados' : 'Desactivados'}</strong>
               </label>
               <small>
-                Permite marcar copias como faltantes directamente dentro del mazo sin tocar tu colección.
+                Permite marcar copias como faltantes directamente dentro del mazo sin tocar tu coleccion.
               </small>
             </div>
 
@@ -346,7 +494,7 @@ function Settings() {
                 onChange={(e) => updateField('bio', e.target.value)}
                 rows={4}
                 maxLength={500}
-                placeholder="Cuéntanos qué juegas, coleccionas o gestionas."
+                placeholder="Cuentanos que juegas, coleccionas o gestionas."
               />
             </label>
           </div>
@@ -393,6 +541,88 @@ function Settings() {
             </button>
           </div>
         </form>
+
+        <section className="panel settings-panel settings-feedback-panel">
+          <div className="settings-panel-header">
+            <h2>Sugerencias para admin</h2>
+            <p>
+              Este buzon no envia nada al backend de momento. Guarda tu borrador en local y te lo
+              deja listo para copiar o abrirlo en correo.
+            </p>
+          </div>
+
+          <div className="settings-form-grid settings-feedback-grid">
+            <label className="settings-field">
+              <span>Categoria</span>
+              <select
+                value={feedbackDraft.category}
+                onChange={(e) => updateFeedbackField('category', e.target.value)}
+              >
+                {FEEDBACK_CATEGORIES.map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="settings-field">
+              <span>Asunto</span>
+              <input
+                type="text"
+                value={feedbackDraft.subject}
+                onChange={(e) => updateFeedbackField('subject', e.target.value)}
+                maxLength={120}
+                placeholder="Ejemplo: Mejorar filtros de busqueda"
+              />
+            </label>
+
+            <label className="settings-field settings-field-full">
+              <span>Mensaje</span>
+              <textarea
+                value={feedbackDraft.message}
+                onChange={(e) => updateFeedbackField('message', e.target.value)}
+                rows={5}
+                maxLength={1200}
+                placeholder="Cuenta que te gustaria mejorar, que fallo has visto o que echas en falta."
+              />
+            </label>
+
+            <div className="settings-field settings-field-full settings-switch-field">
+              <span>Permitir contacto</span>
+              <label className="settings-switch">
+                <input
+                  type="checkbox"
+                  checked={Boolean(feedbackDraft.allowContact)}
+                  onChange={(e) => updateFeedbackField('allowContact', e.target.checked)}
+                />
+                <span className="settings-switch-slider" />
+                <strong>{feedbackDraft.allowContact ? 'Si' : 'No'}</strong>
+              </label>
+              <small>
+                Si lo activas, el borrador incluira tu nombre visible y tu email para que el admin
+                pueda responderte.
+              </small>
+            </div>
+          </div>
+
+          <div className="settings-feedback-preview">
+            <strong>Vista previa</strong>
+            <pre>{feedbackPreview}</pre>
+          </div>
+
+          <div className="settings-actions settings-feedback-actions">
+            <button type="button" onClick={copyFeedbackDraft}>
+              Copiar sugerencia
+            </button>
+            <button type="button" className="settings-secondary-button" onClick={openFeedbackEmail}>
+              Abrir en correo
+            </button>
+            <button type="button" className="settings-ghost-button" onClick={clearFeedbackDraft}>
+              Limpiar borrador
+            </button>
+          </div>
+        </section>
 
         <section className="panel settings-panel settings-danger-panel">
           <div className="settings-panel-header">
