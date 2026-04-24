@@ -34,6 +34,113 @@ const getCurveChartScaleMax = (...values) => {
   return Math.ceil(maxValue / 5) * 5;
 };
 
+const formatPercentage = (value) => `${Math.max(value, 0).toFixed(1)}%`;
+
+const buildDensityEntries = (pool, keyName) => {
+  const densityMap = new Map();
+
+  pool.forEach((card) => {
+    const quantity = Number(card.quantity) || 0;
+    if (quantity <= 0) {
+      return;
+    }
+
+    const key = card[keyName] || `Sin ${keyName}`;
+    densityMap.set(key, (densityMap.get(key) || 0) + quantity);
+  });
+
+  return [...densityMap.entries()].sort((left, right) => {
+    if (right[1] !== left[1]) {
+      return right[1] - left[1];
+    }
+
+    return left[0].localeCompare(right[0]);
+  });
+};
+
+const getOpeningFormatLabel = (formatMode) => {
+  if (formatMode === 'one-piece') {
+    return 'One Piece';
+  }
+
+  if (formatMode === 'gundam') {
+    return 'Gundam';
+  }
+
+  return 'este TCG';
+};
+
+const buildExpandedSimulationPool = (pool) => {
+  const expandedPool = [];
+
+  pool.forEach((card) => {
+    const quantity = Number(card.quantity) || 0;
+    for (let copyIndex = 0; copyIndex < quantity; copyIndex += 1) {
+      expandedPool.push({
+        ...card,
+        instanceKey: `${card.id}-${copyIndex}`,
+      });
+    }
+  });
+
+  return expandedPool;
+};
+
+const shuffleSimulationPool = (pool) => {
+  const shuffledPool = [...pool];
+
+  for (let index = shuffledPool.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffledPool[index], shuffledPool[randomIndex]] = [shuffledPool[randomIndex], shuffledPool[index]];
+  }
+
+  return shuffledPool;
+};
+
+const drawCardsFromPool = (pool, handSize) => {
+  const expandedPool = buildExpandedSimulationPool(pool);
+  const shuffledPool = shuffleSimulationPool(expandedPool);
+  return shuffledPool.slice(0, Math.min(handSize, shuffledPool.length));
+};
+
+const buildMulliganHand = (pool, handSize, previousHand, mulliganMode) => {
+  const expandedPool = buildExpandedSimulationPool(pool);
+  if (expandedPool.length === 0) {
+    return [];
+  }
+
+  if (mulliganMode === 'bottom-redraw-shuffle' && previousHand.length > 0) {
+    const previousInstanceKeys = new Set(previousHand.map((card) => card.instanceKey));
+    const remainingDeck = expandedPool.filter((card) => !previousInstanceKeys.has(card.instanceKey));
+    return shuffleSimulationPool(remainingDeck).slice(0, Math.min(handSize, remainingDeck.length));
+  }
+
+  const shuffledPool = shuffleSimulationPool(expandedPool);
+  return shuffledPool.slice(0, Math.min(handSize, shuffledPool.length));
+};
+
+const summarizeOpeningHand = (hand) => {
+  let earlyCards = 0;
+  let totalCurve = 0;
+  let curveCards = 0;
+
+  hand.forEach((card) => {
+    if (card.curveBand === 'early') {
+      earlyCards += 1;
+    }
+
+    if (Number.isFinite(card.curveValue)) {
+      totalCurve += card.curveValue;
+      curveCards += 1;
+    }
+  });
+
+  return {
+    earlyCards,
+    averageCurve: curveCards > 0 ? totalCurve / curveCards : null,
+  };
+};
+
 function DeckCurveChart({ entries, averageCost, legendEntries }) {
   const chartEntries = useMemo(
     () => entries.filter((entry) => entry.label !== '?' || entry.total > 0),
@@ -246,7 +353,244 @@ function DeckCurveChart({ entries, averageCost, legendEntries }) {
   );
 }
 
-function DeckStatsPanel({ stats }) {
+function AdminDeckToolkit({ stats }) {
+  const adminInsights = useMemo(() => stats?.adminInsights || null, [stats?.adminInsights]);
+  const simulatorPool = useMemo(
+    () => adminInsights?.simulatorPool || [],
+    [adminInsights]
+  );
+  const openingRules = adminInsights?.openingRules || null;
+  const openingHandSize = adminInsights?.openingHandSize || 0;
+  const openingFormatLabel = useMemo(
+    () => getOpeningFormatLabel(stats?.formatMode),
+    [stats?.formatMode]
+  );
+  const [openingHand, setOpeningHand] = useState([]);
+  const [mulliganCount, setMulliganCount] = useState(0);
+
+  const typeDensityEntries = useMemo(
+    () => buildDensityEntries(simulatorPool, 'card_type'),
+    [simulatorPool]
+  );
+  const colorDensityEntries = useMemo(
+    () => buildDensityEntries(simulatorPool, 'color'),
+    [simulatorPool]
+  );
+  const handSummary = useMemo(
+    () => summarizeOpeningHand(openingHand),
+    [openingHand]
+  );
+
+  const curveBandEntries = useMemo(() => {
+    const totalMainDeckCards = adminInsights?.totalMainDeckCards || 0;
+    const toEntry = (label, value) => ({
+      label,
+      value,
+      percentage: totalMainDeckCards > 0 ? (value / totalMainDeckCards) * 100 : 0,
+    });
+
+    return [
+      toEntry('Early (0-2)', adminInsights?.earlyGameCards || 0),
+      toEntry('Mid (3-4)', adminInsights?.midGameCards || 0),
+      toEntry('Late (5+)', adminInsights?.lateGameCards || 0),
+      toEntry('Sin curva', adminInsights?.unknownCurveCards || 0),
+    ].filter((entry) => entry.value > 0);
+  }, [adminInsights]);
+
+  const mulliganLimit = openingRules?.mulliganLimit || 0;
+  const canMulligan = openingHand.length > 0 && openingHandSize > 0 && mulliganCount < mulliganLimit;
+
+  useEffect(() => {
+    if (simulatorPool.length === 0 || openingHandSize <= 0) {
+      setOpeningHand([]);
+      setMulliganCount(0);
+      return;
+    }
+
+    setOpeningHand(drawCardsFromPool(simulatorPool, openingHandSize));
+    setMulliganCount(0);
+  }, [openingHandSize, simulatorPool, stats?.deckSignature]);
+
+  if (!adminInsights || adminInsights.totalMainDeckCards <= 0) {
+    return null;
+  }
+
+  const drawFreshHand = () => {
+    setOpeningHand(drawCardsFromPool(simulatorPool, openingHandSize));
+    setMulliganCount(0);
+  };
+
+  const handleMulligan = () => {
+    if (!canMulligan) {
+      return;
+    }
+
+    setOpeningHand(
+      buildMulliganHand(
+        simulatorPool,
+        openingHandSize,
+        openingHand,
+        openingRules?.mulliganMode
+      )
+    );
+    setMulliganCount((current) => current + 1);
+  };
+
+  return (
+    <section className="deck-admin-lab panel">
+      <div className="deck-admin-lab-header">
+        <div>
+          <h3>Laboratorio admin</h3>
+          <p>
+            Simula manos iniciales segun la regla oficial de apertura de {openingFormatLabel}
+            y revisa metricas de consistencia del mazo principal sin tocar la lista real.
+          </p>
+        </div>
+        <span className="deck-admin-badge">Solo admin</span>
+      </div>
+
+      <div className="deck-admin-lab-grid">
+        <article className="deck-admin-card deck-admin-card-simulator">
+          <div className="deck-admin-card-header">
+            <div>
+              <strong>Mano inicial y mulligan</strong>
+              <span>
+                {openingHandSize} cartas | {mulliganLimit} mulligan | {openingRules?.mulliganSummary}
+              </span>
+            </div>
+            <div className="deck-admin-actions">
+              <button type="button" className="ghost-button" onClick={drawFreshHand}>
+                Robar mano
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={handleMulligan}
+                disabled={!canMulligan}
+              >
+                {canMulligan ? 'Mulligan' : 'Mulligan usado'}
+              </button>
+            </div>
+          </div>
+
+          <div className="deck-admin-chip-row">
+            <span className="deck-stat-chip">{openingFormatLabel}</span>
+            <span className="deck-stat-chip">Main {adminInsights.totalMainDeckCards}</span>
+            <span className="deck-stat-chip">Cartas unicas {adminInsights.uniqueMainDeckCards}</span>
+            <span className="deck-stat-chip">Mulligan {mulliganCount}/{mulliganLimit}</span>
+            <span className="deck-stat-chip">
+              Early en mano {handSummary.earlyCards}/{openingHand.length}
+            </span>
+            {Number.isFinite(handSummary.averageCurve) && (
+              <span className="deck-stat-chip">
+                Curva media mano {handSummary.averageCurve.toFixed(2)}
+              </span>
+            )}
+          </div>
+
+          <div className="deck-opening-hand-grid">
+            {openingHand.map((card, index) => (
+              <article key={`${card.instanceKey}-${index}`} className="deck-opening-card">
+                <span className="deck-opening-card-code">{card.source_card_id}</span>
+                <strong>{card.name}</strong>
+                <span>{card.card_type || 'Sin tipo'}</span>
+                <span>
+                  Coste {Number.isFinite(card.curveValue) ? card.curveValue : '?'} | {card.color || 'Sin color'}
+                </span>
+              </article>
+            ))}
+          </div>
+        </article>
+
+        <article className="deck-admin-card">
+          <div className="deck-admin-card-header">
+            <div>
+              <strong>Consistencia</strong>
+              <span>Indicadores rapidos del mazo principal</span>
+            </div>
+          </div>
+
+          <div className="deck-admin-metric-grid">
+            <div className="deck-admin-metric">
+              <span>Copias medias</span>
+              <strong>{adminInsights.averageCopiesPerUnique.toFixed(2)}</strong>
+            </div>
+            <div className="deck-admin-metric">
+              <span>Playsets</span>
+              <strong>{adminInsights.playsetCards}</strong>
+            </div>
+            <div className="deck-admin-metric">
+              <span>Triples</span>
+              <strong>{adminInsights.tripleCards}</strong>
+            </div>
+            <div className="deck-admin-metric">
+              <span>Dobles</span>
+              <strong>{adminInsights.doubleCards}</strong>
+            </div>
+            <div className="deck-admin-metric">
+              <span>Single copies</span>
+              <strong>{adminInsights.singletonCards}</strong>
+            </div>
+            <div className="deck-admin-metric">
+              <span>Abrir 1 early</span>
+              <strong>{formatPercentage(adminInsights.probabilityAtLeastOneEarly * 100)}</strong>
+            </div>
+            <div className="deck-admin-metric">
+              <span>Abrir 2 early</span>
+              <strong>{formatPercentage(adminInsights.probabilityAtLeastTwoEarly * 100)}</strong>
+            </div>
+          </div>
+        </article>
+
+        <article className="deck-admin-card">
+          <div className="deck-admin-card-header">
+            <div>
+              <strong>Estadisticas avanzadas</strong>
+              <span>Curva, tipos y colores con peso real dentro del mazo</span>
+            </div>
+          </div>
+
+          <div className="deck-admin-breakdown-grid">
+            <div className="deck-admin-breakdown-block">
+              <span className="deck-admin-breakdown-title">Curva</span>
+              <div className="deck-stat-chip-list">
+                {curveBandEntries.map((entry) => (
+                  <span key={entry.label} className="deck-stat-chip">
+                    {entry.label}: {entry.value} ({formatPercentage(entry.percentage)})
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="deck-admin-breakdown-block">
+              <span className="deck-admin-breakdown-title">Tipos</span>
+              <div className="deck-stat-chip-list">
+                {typeDensityEntries.slice(0, 8).map(([label, value]) => (
+                  <span key={label} className="deck-stat-chip">
+                    {label}: {value} ({formatPercentage((value / adminInsights.totalMainDeckCards) * 100)})
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="deck-admin-breakdown-block">
+              <span className="deck-admin-breakdown-title">Colores</span>
+              <div className="deck-stat-chip-list">
+                {colorDensityEntries.slice(0, 8).map(([label, value]) => (
+                  <span key={label} className="deck-stat-chip">
+                    {label}: {value} ({formatPercentage((value / adminInsights.totalMainDeckCards) * 100)})
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function DeckStatsPanel({ stats, isAdmin = false }) {
   const [curveDisplayMode, setCurveDisplayMode] = useState(readStoredCurveDisplayMode);
   const curveLegendEntries = useMemo(() => {
     const legendMap = new Map();
@@ -467,8 +811,11 @@ function DeckStatsPanel({ stats }) {
           </div>
         </div>
       </div>
+
+      {isAdmin && <AdminDeckToolkit stats={stats} />}
     </section>
   );
 }
 
 export default DeckStatsPanel;
+

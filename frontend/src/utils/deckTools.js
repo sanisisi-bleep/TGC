@@ -569,6 +569,190 @@ export const copyTextToClipboard = async (text) => {
   }
 };
 
+const DEFAULT_OPENING_HAND_RULES = Object.freeze({
+  handSize: 5,
+  mulliganLimit: 1,
+  mulliganMode: 'reshuffle',
+  mulliganSummary: 'Devuelve la mano al mazo, baraja y roba 5.',
+});
+
+const OPENING_HAND_RULES_BY_FORMAT = Object.freeze({
+  gundam: Object.freeze({
+    handSize: 5,
+    mulliganLimit: 1,
+    mulliganMode: 'bottom-redraw-shuffle',
+    mulliganSummary: 'Devuelve la mano al fondo, roba 5 nuevas y luego baraja.',
+  }),
+  'one-piece': Object.freeze({
+    handSize: 5,
+    mulliganLimit: 1,
+    mulliganMode: 'reshuffle',
+    mulliganSummary: 'Devuelve la mano al mazo, baraja y roba 5 nuevas.',
+  }),
+});
+
+export const getDeckOpeningRules = (formatMode) => (
+  OPENING_HAND_RULES_BY_FORMAT[formatMode] || DEFAULT_OPENING_HAND_RULES
+);
+
+const normalizeCurveValue = (card) => {
+  const rawCurveValue = Number.isFinite(card?.cost) ? card.cost : card?.lv;
+  const parsedCurveValue = Number(rawCurveValue);
+  return Number.isFinite(parsedCurveValue) ? parsedCurveValue : null;
+};
+
+const classifyCurveBand = (curveValue) => {
+  if (!Number.isFinite(curveValue)) {
+    return 'unknown';
+  }
+
+  if (curveValue <= 2) {
+    return 'early';
+  }
+
+  if (curveValue <= 4) {
+    return 'mid';
+  }
+
+  return 'late';
+};
+
+const calculateCombination = (n, k) => {
+  if (!Number.isFinite(n) || !Number.isFinite(k) || k < 0 || k > n) {
+    return 0;
+  }
+
+  if (k === 0 || k === n) {
+    return 1;
+  }
+
+  let result = 1;
+  const limit = Math.min(k, n - k);
+
+  for (let index = 1; index <= limit; index += 1) {
+    result = (result * (n - limit + index)) / index;
+  }
+
+  return result;
+};
+
+const calculateAtLeastHitProbability = (deckSize, successCards, drawSize, minimumHits = 1) => {
+  if (deckSize <= 0 || successCards <= 0 || drawSize <= 0 || minimumHits > drawSize) {
+    return 0;
+  }
+
+  const safeSuccessCards = Math.min(successCards, deckSize);
+  const safeDrawSize = Math.min(drawSize, deckSize);
+  const denominator = calculateCombination(deckSize, safeDrawSize);
+
+  if (!denominator) {
+    return 0;
+  }
+
+  let probability = 0;
+  const maxHits = Math.min(safeSuccessCards, safeDrawSize);
+
+  for (let hits = minimumHits; hits <= maxHits; hits += 1) {
+    probability += (
+      calculateCombination(safeSuccessCards, hits)
+      * calculateCombination(deckSize - safeSuccessCards, safeDrawSize - hits)
+    ) / denominator;
+  }
+
+  return probability;
+};
+
+const buildAdminDeckInsights = (cards = [], formatMode = 'standard') => {
+  const openingRules = getDeckOpeningRules(formatMode);
+  const simulatorPool = [];
+  let totalMainDeckCards = 0;
+  let earlyGameCards = 0;
+  let midGameCards = 0;
+  let lateGameCards = 0;
+  let unknownCurveCards = 0;
+  let playsetCards = 0;
+  let tripleCards = 0;
+  let doubleCards = 0;
+  let singletonCards = 0;
+
+  cards.forEach((card) => {
+    const quantity = Number(card?.quantity) || 0;
+    if (quantity <= 0 || card?.deck_role === 'leader' || card?.deck_role === 'don') {
+      return;
+    }
+
+    totalMainDeckCards += quantity;
+    const curveValue = normalizeCurveValue(card);
+    const curveBand = classifyCurveBand(curveValue);
+
+    if (curveBand === 'early') {
+      earlyGameCards += quantity;
+    } else if (curveBand === 'mid') {
+      midGameCards += quantity;
+    } else if (curveBand === 'late') {
+      lateGameCards += quantity;
+    } else {
+      unknownCurveCards += quantity;
+    }
+
+    if (quantity >= 4) {
+      playsetCards += 1;
+    } else if (quantity === 3) {
+      tripleCards += 1;
+    } else if (quantity === 2) {
+      doubleCards += 1;
+    } else {
+      singletonCards += 1;
+    }
+
+    simulatorPool.push({
+      id: card.id,
+      name: card.name,
+      source_card_id: card.source_card_id,
+      quantity,
+      cost: card.cost,
+      lv: card.lv,
+      color: card.color,
+      card_type: card.card_type,
+      image_url: card.image_url,
+      curveValue,
+      curveBand,
+    });
+  });
+
+  const uniqueMainDeckCards = simulatorPool.length;
+  const openingHandSize = Math.min(openingRules.handSize, totalMainDeckCards);
+
+  return {
+    openingRules,
+    openingHandSize,
+    totalMainDeckCards,
+    uniqueMainDeckCards,
+    averageCopiesPerUnique: uniqueMainDeckCards > 0 ? totalMainDeckCards / uniqueMainDeckCards : 0,
+    earlyGameCards,
+    midGameCards,
+    lateGameCards,
+    unknownCurveCards,
+    playsetCards,
+    tripleCards,
+    doubleCards,
+    singletonCards,
+    probabilityAtLeastOneEarly: calculateAtLeastHitProbability(
+      totalMainDeckCards,
+      earlyGameCards,
+      openingHandSize,
+      1
+    ),
+    probabilityAtLeastTwoEarly: calculateAtLeastHitProbability(
+      totalMainDeckCards,
+      earlyGameCards,
+      openingHandSize,
+      2
+    ),
+    simulatorPool,
+  };
+};
+
 export const buildDeckStats = (deck) => {
   if (!deck) {
     return null;
@@ -585,6 +769,10 @@ export const buildDeckStats = (deck) => {
   let coveredCopies = 0;
   let missingCopies = 0;
   const composition = deck.composition || null;
+  const deckSignature = (deck.cards || [])
+    .map((card) => `${card.id || card.source_card_id}:${card.quantity || 0}`)
+    .sort()
+    .join('|');
 
   const addToMap = (map, key, amount) => {
     map.set(key, (map.get(key) || 0) + amount);
@@ -618,10 +806,7 @@ export const buildDeckStats = (deck) => {
     addToMap(setMap, card.set_name || 'Sin set', quantity);
 
     if (card.deck_role !== 'leader' && card.deck_role !== 'don') {
-      const rawCurveValue = Number.isFinite(card.cost) ? card.cost : card.lv;
-      const normalizedCurveValue = Number.isFinite(rawCurveValue)
-        ? rawCurveValue
-        : Number(rawCurveValue);
+      const normalizedCurveValue = normalizeCurveValue(card);
 
       if (Number.isFinite(normalizedCurveValue)) {
         curveWeightedTotal += normalizedCurveValue * quantity;
@@ -672,9 +857,12 @@ export const buildDeckStats = (deck) => {
         segments: segmentEntries,
       };
     });
+  const formatMode = composition?.format_mode || 'standard';
+  const adminInsights = buildAdminDeckInsights(deck.cards || [], formatMode);
 
   return {
-    formatMode: composition?.format_mode || 'standard',
+    deckSignature,
+    formatMode,
     uniqueCards: deck.cards?.length || 0,
     totalCards: deck.total_cards || 0,
     coveredCopies,
@@ -697,6 +885,7 @@ export const buildDeckStats = (deck) => {
     curveEntries,
     curveChartEntries,
     averageCurveCost: curveWeightedCards > 0 ? curveWeightedTotal / curveWeightedCards : null,
+    adminInsights,
   };
 };
 

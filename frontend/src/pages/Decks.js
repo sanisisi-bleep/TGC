@@ -36,6 +36,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const [selectedDeck, setSelectedDeck] = useState(null);
   const [draftDeckName, setDraftDeckName] = useState('');
   const [advancedMode, setAdvancedMode] = useState(false);
+  const [userRole, setUserRole] = useState('player');
   const [deckCardView, setDeckCardView] = useState(
     () => localStorage.getItem('deckCardViewMode') || 'detail'
   );
@@ -58,6 +59,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const location = useLocation();
   const navigate = useNavigate();
   const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
+  const isAdmin = userRole === 'admin';
   const selectedDeckIsOnePiece = selectedDeck?.composition?.format_mode === 'one-piece';
   const selectedDeckSummary = selectedDeckIsOnePiece
     ? `Leader ${selectedDeck?.leader_cards || 0}/${selectedDeck?.required_leader_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | DON ${selectedDeck?.don_cards || 0}/${selectedDeck?.recommended_don_cards || 10}`
@@ -128,6 +130,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
           { forceRefresh: false }
         );
         setAdvancedMode(Boolean(profile?.advanced_mode));
+        setUserRole((profile?.role || 'player').toLowerCase());
       } catch (error) {
         shouldRedirectToLogin(error);
       }
@@ -643,7 +646,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
                   />
                 </div>
 
-                <DeckStatsPanel stats={deckStats} />
+                <DeckStatsPanel stats={deckStats} isAdmin={isAdmin} />
 
                 <div className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''}`}>
                   {(selectedDeck?.cards || []).map((card) => (
