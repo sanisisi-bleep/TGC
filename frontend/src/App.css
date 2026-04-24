@@ -2791,57 +2791,6 @@ textarea::placeholder {
   color: var(--deck-color-text);
 }
 
-.deck-admin-metric-grid {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-}
-
-.deck-admin-metric {
-  display: grid;
-  gap: 0.28rem;
-  padding: 0.82rem 0.9rem;
-  border-radius: 16px;
-  background: rgba(22, 86, 193, 0.05);
-  border: 1px solid rgba(22, 86, 193, 0.12);
-}
-
-.deck-admin-metric span {
-  color: var(--text-soft);
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.deck-admin-metric strong {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 1.04rem;
-}
-
-.deck-admin-metric small {
-  color: var(--text-soft);
-  font-size: 0.75rem;
-  line-height: 1.35;
-}
-
-.deck-admin-breakdown-grid {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-}
-
-.deck-admin-breakdown-block {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.deck-admin-breakdown-title {
-  color: var(--text-soft);
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
 .deck-stat-chip.is-ok {
   background: rgba(34, 153, 84, 0.12);
   border-color: rgba(34, 153, 84, 0.18);
@@ -2902,8 +2851,7 @@ textarea::placeholder {
 .App.theme-dark .deck-curve-chart,
 .App.theme-dark .deck-admin-lab,
 .App.theme-dark .deck-admin-card,
-.App.theme-dark .deck-opening-card,
-.App.theme-dark .deck-admin-metric {
+.App.theme-dark .deck-opening-card {
   background:
     linear-gradient(
       180deg,

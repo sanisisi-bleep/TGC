@@ -34,30 +34,6 @@ const getCurveChartScaleMax = (...values) => {
   return Math.ceil(maxValue / 5) * 5;
 };
 
-const formatPercentage = (value) => `${Math.max(value, 0).toFixed(1)}%`;
-
-const buildDensityEntries = (pool, keyName) => {
-  const densityMap = new Map();
-
-  pool.forEach((card) => {
-    const quantity = Number(card.quantity) || 0;
-    if (quantity <= 0) {
-      return;
-    }
-
-    const key = card[keyName] || `Sin ${keyName}`;
-    densityMap.set(key, (densityMap.get(key) || 0) + quantity);
-  });
-
-  return [...densityMap.entries()].sort((left, right) => {
-    if (right[1] !== left[1]) {
-      return right[1] - left[1];
-    }
-
-    return left[0].localeCompare(right[0]);
-  });
-};
-
 const getOpeningFormatLabel = (formatMode) => {
   if (formatMode === 'one-piece') {
     return 'One Piece';
@@ -383,72 +359,10 @@ function AdminDeckToolkit({ stats }) {
   );
   const [openingHand, setOpeningHand] = useState([]);
   const [mulliganCount, setMulliganCount] = useState(0);
-
-  const typeDensityEntries = useMemo(
-    () => buildDensityEntries(simulatorPool, 'card_type'),
-    [simulatorPool]
-  );
-  const colorDensityEntries = useMemo(
-    () => buildDensityEntries(simulatorPool, 'color'),
-    [simulatorPool]
-  );
   const handSummary = useMemo(
     () => summarizeOpeningHand(openingHand),
     [openingHand]
   );
-  const copySummaryEntries = useMemo(() => ([
-    {
-      label: 'Copias medias',
-      value: adminInsights?.averageCopiesPerUnique?.toFixed(2) || '0.00',
-      helper: 'Promedio por carta distinta',
-    },
-    {
-      label: 'Cartas x4',
-      value: adminInsights?.playsetCards || 0,
-      helper: 'Playsets completos',
-    },
-    {
-      label: 'Cartas x3',
-      value: adminInsights?.tripleCards || 0,
-      helper: 'Triples en la lista',
-    },
-    {
-      label: 'Cartas x2',
-      value: adminInsights?.doubleCards || 0,
-      helper: 'Dobles en la lista',
-    },
-    {
-      label: 'Cartas x1',
-      value: adminInsights?.singletonCards || 0,
-      helper: 'Singles puntuales',
-    },
-    {
-      label: 'Abrir 1 early',
-      value: formatPercentage((adminInsights?.probabilityAtLeastOneEarly || 0) * 100),
-      helper: 'Ver al menos una salida temprana',
-    },
-    {
-      label: 'Abrir 2 early',
-      value: formatPercentage((adminInsights?.probabilityAtLeastTwoEarly || 0) * 100),
-      helper: 'Ver dos salidas tempranas',
-    },
-  ]), [adminInsights]);
-
-  const curveBandEntries = useMemo(() => {
-    const totalMainDeckCards = adminInsights?.totalMainDeckCards || 0;
-    const toEntry = (label, value) => ({
-      label,
-      value,
-      percentage: totalMainDeckCards > 0 ? (value / totalMainDeckCards) * 100 : 0,
-    });
-
-    return [
-      toEntry('Early (0-2)', adminInsights?.earlyGameCards || 0),
-      toEntry('Mid (3-4)', adminInsights?.midGameCards || 0),
-      toEntry('Late (5+)', adminInsights?.lateGameCards || 0),
-      toEntry('Sin curva', adminInsights?.unknownCurveCards || 0),
-    ].filter((entry) => entry.value > 0);
-  }, [adminInsights]);
 
   const mulliganLimit = openingRules?.mulliganLimit || 0;
   const canMulligan = openingHand.length > 0 && openingHandSize > 0 && mulliganCount < mulliganLimit;
@@ -496,7 +410,7 @@ function AdminDeckToolkit({ stats }) {
           <h3>Laboratorio admin</h3>
           <p>
             Simula manos iniciales segun la regla oficial de apertura de {openingFormatLabel}
-            y revisa la estabilidad del mazo principal sin tocar la lista real.
+            sin tocar la lista real.
           </p>
         </div>
         <span className="deck-admin-badge">Solo admin</span>
@@ -596,69 +510,6 @@ function AdminDeckToolkit({ stats }) {
               No hay suficientes cartas del mazo principal para simular una mano inicial.
             </p>
           )}
-        </article>
-
-        <article className="deck-admin-card">
-          <div className="deck-admin-card-header">
-            <div>
-              <strong>Estabilidad del mazo</strong>
-              <span>Copias clave y probabilidad de una salida inicial solida</span>
-            </div>
-          </div>
-
-          <div className="deck-admin-metric-grid">
-            {copySummaryEntries.map((entry) => (
-              <div key={entry.label} className="deck-admin-metric">
-                <span>{entry.label}</span>
-                <strong>{entry.value}</strong>
-                <small>{entry.helper}</small>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="deck-admin-card">
-          <div className="deck-admin-card-header">
-            <div>
-              <strong>Curva, tipos y colores del mazo</strong>
-              <span>Lectura avanzada de como se reparte realmente la lista</span>
-            </div>
-          </div>
-
-          <div className="deck-admin-breakdown-grid">
-            <div className="deck-admin-breakdown-block">
-              <span className="deck-admin-breakdown-title">Curva</span>
-              <div className="deck-stat-chip-list">
-                {curveBandEntries.map((entry) => (
-                  <span key={entry.label} className="deck-stat-chip">
-                    {entry.label}: {entry.value} ({formatPercentage(entry.percentage)})
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="deck-admin-breakdown-block">
-              <span className="deck-admin-breakdown-title">Tipos</span>
-              <div className="deck-stat-chip-list">
-                {typeDensityEntries.slice(0, 8).map(([label, value]) => (
-                  <span key={label} className="deck-stat-chip">
-                    {label}: {value} ({formatPercentage((value / adminInsights.totalMainDeckCards) * 100)})
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="deck-admin-breakdown-block">
-              <span className="deck-admin-breakdown-title">Colores</span>
-              <div className="deck-stat-chip-list">
-                {colorDensityEntries.slice(0, 8).map(([label, value]) => (
-                  <span key={label} className="deck-stat-chip">
-                    {label}: {value} ({formatPercentage((value / adminInsights.totalMainDeckCards) * 100)})
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
         </article>
       </div>
     </section>
