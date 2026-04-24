@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import axios from 'axios';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
-import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
+import queryKeys from '../queryKeys';
 import {
-  clearSessionProfileCache,
-  fetchSessionProfile,
-  fetchTgcCatalog,
-  setSessionProfileCache,
-} from '../utils/bootstrapCache';
+  changePassword as changePasswordRequest,
+  deleteAccount as deleteAccountRequest,
+  getAdminUsers,
+  getSessionProfile,
+  getTgcCatalog,
+  logoutUser,
+  updateAdminUserRole,
+  updateProfile,
+} from '../services/api';
 
 const ROLE_OPTIONS = [
   { value: 'player', label: 'Jugador' },
@@ -90,8 +94,11 @@ const copyTextToClipboard = async (text) => {
   document.body.removeChild(textArea);
 };
 
+const isUnauthorizedError = (error) => error?.response?.status === 401;
+
 function Settings() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [profile, setProfile] = useState({
     username: '',
@@ -103,18 +110,39 @@ function Settings() {
     favorite_tgc_id: '',
     default_tgc_id: '',
   });
-  const [users, setUsers] = useState([]);
-  const [tgcs, setTgcs] = useState([]);
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [savingPassword, setSavingPassword] = useState(false);
-  const [deletingAccount, setDeletingAccount] = useState(false);
-  const [updatingRoleUserId, setUpdatingRoleUserId] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [feedbackDraft, setFeedbackDraft] = useState(readFeedbackDraft);
 
+  const sessionProfileQuery = useQuery({
+    queryKey: queryKeys.sessionProfile(),
+    queryFn: async () => {
+      try {
+        return await getSessionProfile();
+      } catch (error) {
+        if (isUnauthorizedError(error)) {
+          return null;
+        }
+
+        throw error;
+      }
+    },
+  });
+  const tgcCatalogQuery = useQuery({
+    queryKey: queryKeys.tgcCatalog(),
+    queryFn: getTgcCatalog,
+    staleTime: 30 * 60 * 1000,
+  });
+  const adminUsersQuery = useQuery({
+    queryKey: queryKeys.adminUsers(),
+    queryFn: getAdminUsers,
+    enabled: (sessionProfileQuery.data?.role || 'player') === 'admin',
+  });
+
+  const tgcs = tgcCatalogQuery.data || [];
+  const users = adminUsersQuery.data || [];
+  const loading = sessionProfileQuery.isPending || tgcCatalogQuery.isPending;
   const feedbackPreview = useMemo(
     () => buildFeedbackPreview(feedbackDraft, profile),
     [feedbackDraft, profile]
@@ -124,55 +152,28 @@ function Settings() {
   );
 
   useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const [settingsData, tgcList] = await Promise.all([
-          fetchSessionProfile(
-            () => axios.get(`${API_BASE}/settings/me`).then((response) => response.data || {}),
-            { forceRefresh: false }
-          ),
-          fetchTgcCatalog(
-            () => axios.get(`${API_BASE}/tgc`).then((response) => (
-              Array.isArray(response.data) ? response.data : []
-            )),
-            { forceRefresh: false }
-          ),
-        ]);
+    const data = sessionProfileQuery.data;
+    if (!data) {
+      return;
+    }
 
-        const data = settingsData || {};
-        setProfile({
-          username: data.username || '',
-          email: data.email || '',
-          display_name: data.display_name || '',
-          role: data.role || 'player',
-          bio: data.bio || '',
-          advanced_mode: Boolean(data.advanced_mode),
-          favorite_tgc_id: data.favorite_tgc_id || '',
-          default_tgc_id: data.default_tgc_id || '',
-        });
-        setTgcs(Array.isArray(tgcList) ? tgcList : []);
+    setProfile({
+      username: data.username || '',
+      email: data.email || '',
+      display_name: data.display_name || '',
+      role: data.role || 'player',
+      bio: data.bio || '',
+      advanced_mode: Boolean(data.advanced_mode),
+      favorite_tgc_id: data.favorite_tgc_id || '',
+      default_tgc_id: data.default_tgc_id || '',
+    });
+  }, [sessionProfileQuery.data]);
 
-        if ((data.role || 'player') === 'admin') {
-          const usersRes = await axios.get(`${API_BASE}/settings/users`);
-          setUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
-        }
-      } catch (error) {
-        if (error.response?.status === 401) {
-          navigate('/');
-          return;
-        }
-
-        showToast({
-          type: 'error',
-          message: getApiErrorMessage(error, 'No se pudo cargar la configuracion.'),
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadSettings();
-  }, [navigate, showToast]);
+  useEffect(() => {
+    if (sessionProfileQuery.isSuccess && !sessionProfileQuery.data) {
+      navigate('/');
+    }
+  }, [navigate, sessionProfileQuery.data, sessionProfileQuery.isSuccess]);
 
   useEffect(() => {
     try {
@@ -181,6 +182,112 @@ function Settings() {
       // Ignore storage failures and keep the draft in memory.
     }
   }, [feedbackDraft]);
+
+  useEffect(() => {
+    const error = sessionProfileQuery.error || tgcCatalogQuery.error || adminUsersQuery.error;
+    if (!error || isUnauthorizedError(error)) {
+      return;
+    }
+
+    showToast({
+      type: 'error',
+      message: getApiErrorMessage(error, 'No se pudo cargar la configuracion.'),
+    });
+  }, [adminUsersQuery.error, sessionProfileQuery.error, showToast, tgcCatalogQuery.error]);
+
+  const saveProfileMutation = useMutation({
+    mutationFn: updateProfile,
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.sessionProfile(), data);
+      setProfile((current) => ({
+        ...current,
+        display_name: data.display_name || '',
+        role: data.role || 'player',
+        bio: data.bio || '',
+        advanced_mode: Boolean(data.advanced_mode),
+        favorite_tgc_id: data.favorite_tgc_id || '',
+        default_tgc_id: data.default_tgc_id || '',
+      }));
+      showToast({ type: 'success', message: 'Configuracion guardada.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo guardar la configuracion.'),
+      });
+    },
+  });
+
+  const changePasswordMutation = useMutation({
+    mutationFn: changePasswordRequest,
+    onSuccess: () => {
+      setOldPassword('');
+      setNewPassword('');
+      showToast({ type: 'success', message: 'Contrasena actualizada.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo cambiar la contrasena.'),
+      });
+    },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: ({ userId, role }) => updateAdminUserRole(userId, role),
+    onSuccess: (updatedUser) => {
+      queryClient.setQueryData(queryKeys.adminUsers(), (current) => (
+        Array.isArray(current)
+          ? current.map((user) => (user.id === updatedUser.id ? updatedUser : user))
+          : current
+      ));
+      showToast({ type: 'success', message: 'Rol actualizado.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo actualizar el rol.'),
+      });
+    },
+  });
+
+  const deleteAccountMutation = useMutation({
+    mutationFn: deleteAccountRequest,
+    onSuccess: async () => {
+      await logoutUser().catch(() => undefined);
+      queryClient.setQueryData(queryKeys.sessionProfile(), null);
+      queryClient.removeQueries({
+        predicate: (query) => {
+          const rootKey = Array.isArray(query.queryKey) ? query.queryKey[0] : null;
+          return ['session', 'collection', 'decks', 'cards', 'settings'].includes(rootKey);
+        },
+      });
+      navigate('/');
+      window.location.reload();
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo borrar la cuenta.'),
+      });
+    },
+  });
 
   const updateField = (field, value) => {
     setProfile((current) => ({
@@ -196,100 +303,32 @@ function Settings() {
     }));
   };
 
-  const saveProfile = async (e) => {
+  const saveProfile = (e) => {
     e.preventDefault();
-    setSavingProfile(true);
 
-    try {
-      const payload = {
-        display_name: profile.display_name,
-        bio: profile.bio,
-        advanced_mode: Boolean(profile.advanced_mode),
-        favorite_tgc_id: profile.favorite_tgc_id ? Number(profile.favorite_tgc_id) : null,
-        default_tgc_id: profile.default_tgc_id ? Number(profile.default_tgc_id) : null,
-      };
-
-      const response = await axios.patch(`${API_BASE}/settings/me`, payload);
-      const data = response.data || {};
-      setSessionProfileCache(data);
-      setProfile((current) => ({
-        ...current,
-        display_name: data.display_name || '',
-        role: data.role || 'player',
-        bio: data.bio || '',
-        advanced_mode: Boolean(data.advanced_mode),
-        favorite_tgc_id: data.favorite_tgc_id || '',
-        default_tgc_id: data.default_tgc_id || '',
-      }));
-      showToast({ type: 'success', message: 'Configuracion guardada.' });
-    } catch (error) {
-      if (error.response?.status === 401) {
-        navigate('/');
-        return;
-      }
-
-      showToast({
-        type: 'error',
-        message: getApiErrorMessage(error, 'No se pudo guardar la configuracion.'),
-      });
-    } finally {
-      setSavingProfile(false);
-    }
+    saveProfileMutation.mutate({
+      display_name: profile.display_name,
+      bio: profile.bio,
+      advanced_mode: Boolean(profile.advanced_mode),
+      favorite_tgc_id: profile.favorite_tgc_id ? Number(profile.favorite_tgc_id) : null,
+      default_tgc_id: profile.default_tgc_id ? Number(profile.default_tgc_id) : null,
+    });
   };
 
-  const changePassword = async (e) => {
+  const changePassword = (e) => {
     e.preventDefault();
-    setSavingPassword(true);
 
-    try {
-      await axios.post(`${API_BASE}/settings/password`, {
-        old_password: oldPassword,
-        new_password: newPassword,
-      });
-      setOldPassword('');
-      setNewPassword('');
-      showToast({ type: 'success', message: 'Contrasena actualizada.' });
-    } catch (error) {
-      if (error.response?.status === 401) {
-        navigate('/');
-        return;
-      }
-
-      showToast({
-        type: 'error',
-        message: getApiErrorMessage(error, 'No se pudo cambiar la contrasena.'),
-      });
-    } finally {
-      setSavingPassword(false);
-    }
+    changePasswordMutation.mutate({
+      old_password: oldPassword,
+      new_password: newPassword,
+    });
   };
 
-  const updateUserRole = async (userId, role) => {
-    setUpdatingRoleUserId(userId);
-
-    try {
-      const response = await axios.patch(`${API_BASE}/settings/users/${userId}/role`, { role });
-      const updatedUser = response.data;
-      setUsers((current) =>
-        current.map((user) => (user.id === userId ? updatedUser : user))
-      );
-      showToast({ type: 'success', message: 'Rol actualizado.' });
-    } catch (error) {
-      if (error.response?.status === 401) {
-        navigate('/');
-        return;
-      }
-
-      showToast({
-        type: 'error',
-        message: getApiErrorMessage(error, 'No se pudo actualizar el rol.'),
-      });
-    } finally {
-      setUpdatingRoleUserId(null);
-    }
+  const updateUserRole = (userId, role) => {
+    updateRoleMutation.mutate({ userId, role });
   };
 
-  const deleteAccount = async () => {
+  const deleteAccount = () => {
     const confirmed = window.confirm(
       'Se borrara tu cuenta, tu coleccion y tus mazos. Esta accion no se puede deshacer.'
     );
@@ -303,29 +342,7 @@ function Settings() {
       return;
     }
 
-    setDeletingAccount(true);
-
-    try {
-      await axios.delete(`${API_BASE}/settings/me`, {
-        data: { password: deletePassword },
-      });
-      await axios.post(`${API_BASE}/auth/logout`).catch(() => undefined);
-      clearSessionProfileCache();
-      navigate('/');
-      window.location.reload();
-    } catch (error) {
-      if (error.response?.status === 401) {
-        navigate('/');
-        return;
-      }
-
-      showToast({
-        type: 'error',
-        message: getApiErrorMessage(error, 'No se pudo borrar la cuenta.'),
-      });
-    } finally {
-      setDeletingAccount(false);
-    }
+    deleteAccountMutation.mutate(deletePassword);
   };
 
   const copyFeedbackDraft = async () => {
@@ -500,8 +517,8 @@ function Settings() {
           </div>
 
           <div className="settings-actions">
-            <button type="submit" disabled={savingProfile}>
-              {savingProfile ? 'Guardando...' : 'Guardar configuracion'}
+            <button type="submit" disabled={saveProfileMutation.isPending}>
+              {saveProfileMutation.isPending ? 'Guardando...' : 'Guardar configuracion'}
             </button>
           </div>
         </form>
@@ -536,8 +553,8 @@ function Settings() {
           </div>
 
           <div className="settings-actions">
-            <button type="submit" disabled={savingPassword}>
-              {savingPassword ? 'Actualizando...' : 'Cambiar contrasena'}
+            <button type="submit" disabled={changePasswordMutation.isPending}>
+              {changePasswordMutation.isPending ? 'Actualizando...' : 'Cambiar contrasena'}
             </button>
           </div>
         </form>
@@ -647,9 +664,9 @@ function Settings() {
               type="button"
               className="settings-danger-button"
               onClick={deleteAccount}
-              disabled={deletingAccount}
+              disabled={deleteAccountMutation.isPending}
             >
-              {deletingAccount ? 'Borrando cuenta...' : 'Borrar cuenta'}
+              {deleteAccountMutation.isPending ? 'Borrando cuenta...' : 'Borrar cuenta'}
             </button>
           </div>
         </section>
@@ -674,7 +691,7 @@ function Settings() {
                     <select
                       value={user.role || 'player'}
                       onChange={(e) => updateUserRole(user.id, e.target.value)}
-                      disabled={updatingRoleUserId === user.id}
+                      disabled={updateRoleMutation.isPending && updateRoleMutation.variables?.userId === user.id}
                     >
                       {ROLE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>

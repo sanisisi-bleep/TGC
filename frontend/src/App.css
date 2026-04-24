@@ -3857,6 +3857,67 @@ textarea::placeholder {
 }
 
 @media (max-width: 900px) {
+  .navbar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1rem 1.1rem;
+  }
+
+  .nav-header {
+    width: 100%;
+  }
+
+  .nav-menu-toggle {
+    display: inline-flex;
+  }
+
+  .nav-menu-panel {
+    display: none;
+    width: 100%;
+  }
+
+  .nav-menu-panel.is-open {
+    display: block;
+    margin-top: 0.9rem;
+    padding: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 22px;
+    background: color-mix(in srgb, var(--nav-chip-bg) 74%, rgba(255, 255, 255, 0.05));
+    box-shadow: 0 16px 32px rgba(5, 10, 18, 0.18);
+  }
+
+  .nav-session {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .nav-game-switcher {
+    width: 100%;
+    justify-content: stretch;
+    border-radius: 22px;
+  }
+
+  .nav-game-pill {
+    flex: 1 1 calc(50% - 0.45rem);
+  }
+
+  .nav-links {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .nav-links li {
+    width: 100%;
+  }
+
+  .nav-links a,
+  .nav-links button,
+  .nav-theme-toggle {
+    width: 100%;
+  }
+
   .settings-grid,
   .settings-form-grid {
     grid-template-columns: 1fr;
@@ -3980,67 +4041,6 @@ textarea::placeholder {
   }
 
   .floating-toast-close {
-    width: 100%;
-  }
-
-  .navbar {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 1rem 1.1rem;
-  }
-
-  .nav-header {
-    width: 100%;
-  }
-
-  .nav-menu-toggle {
-    display: inline-flex;
-  }
-
-  .nav-menu-panel {
-    display: none;
-    width: 100%;
-  }
-
-  .nav-menu-panel.is-open {
-    display: block;
-    margin-top: 0.9rem;
-    padding-top: 0.9rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
-  }
-
-  .nav-session {
-    width: 100%;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
-  }
-
-  .nav-game-switcher {
-    width: 100%;
-    justify-content: stretch;
-    border-radius: 22px;
-  }
-
-  .nav-game-pill {
-    flex: 1 1 calc(50% - 0.45rem);
-  }
-
-  .nav-links {
-    width: 100%;
-    flex-direction: column;
-  }
-
-  .nav-links li {
-    width: 100%;
-  }
-
-  .nav-links a,
-  .nav-links button {
-    width: 100%;
-  }
-
-  .nav-theme-toggle {
     width: 100%;
   }
 

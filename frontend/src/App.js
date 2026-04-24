@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import './App.css';
+import apiClient from './apiClient';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import Home from './pages/Home';
 import Search from './pages/Search';
@@ -12,19 +13,13 @@ import Decks from './pages/Decks';
 import Settings from './pages/Settings';
 import SharedDeck from './pages/SharedDeck';
 import { ToastProvider } from './context/ToastContext';
+import queryKeys from './queryKeys';
 import { buildTcgMap, DEFAULT_TCG_SLUG, GAME_CONFIGS, getGameConfig } from './tcgConfig';
-import API_BASE from './apiBase';
-import {
-  clearSessionProfileCache,
-  fetchSessionProfile,
-  fetchTgcCatalog,
-} from './utils/bootstrapCache';
+import { getSessionProfile, getTgcCatalog, logoutUser } from './services/api';
 
-axios.defaults.withCredentials = true;
-
-const TGC_FETCH_RETRY_ATTEMPTS = 2;
-const TGC_FETCH_RETRY_DELAY_MS = 350;
 const THEME_MODE_STORAGE_KEY = 'tgc-theme-mode-v1';
+const SESSION_QUERY_STALE_TIME_MS = 2 * 60 * 1000;
+const TGC_QUERY_STALE_TIME_MS = 30 * 60 * 1000;
 
 const getPreferredThemeMode = () => {
   if (typeof window === 'undefined') {
@@ -69,10 +64,6 @@ const sanitizeTelemetryPayload = (event) => {
     return event;
   }
 };
-
-const wait = (durationMs) => new Promise((resolve) => {
-  window.setTimeout(resolve, durationMs);
-});
 
 const buildAvailableGames = (tgcBySlug) => (
   Object.entries(tgcBySlug)
@@ -169,7 +160,7 @@ function SiteNavigation({
   const themeToggleLabel = themeMode === 'dark'
     ? 'Cambiar a modo claro'
     : 'Cambiar a modo oscuro';
-  const themeToggleIcon = themeMode === 'dark' ? '☀' : '☾';
+  const themeToggleIcon = themeMode === 'dark' ? '\u2600' : '\u263e';
 
   return (
     <nav className="navbar">
@@ -278,14 +269,11 @@ function ProtectedGameRoute({
 }
 
 function App() {
-  const [token, setToken] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
+  const queryClient = useQueryClient();
   const [themeMode, setThemeMode] = useState(getPreferredThemeMode);
-  const [activeTcgSlug, setActiveTcgSlug] = useState(localStorage.getItem('activeTcgSlug') || DEFAULT_TCG_SLUG);
-  const [tgcBySlug, setTgcBySlug] = useState({});
-  const [loadingTgcs, setLoadingTgcs] = useState(true);
-  const [tgcLoadError, setTgcLoadError] = useState(null);
-  const [tgcReloadNonce, setTgcReloadNonce] = useState(0);
+  const [activeTcgSlug, setActiveTcgSlug] = useState(
+    () => localStorage.getItem('activeTcgSlug') || DEFAULT_TCG_SLUG
+  );
 
   const updateActiveTcgSlug = useCallback((nextSlug) => {
     const normalizedSlug = (nextSlug || DEFAULT_TCG_SLUG).trim() || DEFAULT_TCG_SLUG;
@@ -293,20 +281,25 @@ function App() {
     setActiveTcgSlug(normalizedSlug);
   }, []);
 
-  const clearSession = useCallback(() => {
-    clearSessionProfileCache();
-    setToken(null);
-  }, []);
+  const clearProtectedQueryData = useCallback(() => {
+    const protectedRoots = new Set(['session', 'collection', 'decks', 'cards', 'settings']);
 
-  const handleLoginSuccess = useCallback(() => {
-    clearSessionProfileCache();
-    setToken('cookie-session');
-    setAuthReady(true);
-  }, []);
+    queryClient.removeQueries({
+      predicate: (query) => {
+        const rootKey = Array.isArray(query.queryKey) ? query.queryKey[0] : null;
+        return protectedRoots.has(rootKey);
+      },
+    });
+    queryClient.setQueryData(queryKeys.sessionProfile(), null);
+  }, [queryClient]);
+
+  const handleLoginSuccess = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.sessionProfile() });
+  }, [queryClient]);
 
   const retryTgcLoad = useCallback(() => {
-    setTgcReloadNonce((current) => current + 1);
-  }, []);
+    queryClient.invalidateQueries({ queryKey: queryKeys.tgcCatalog() });
+  }, [queryClient]);
 
   const toggleThemeMode = useCallback(() => {
     setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
@@ -325,46 +318,11 @@ function App() {
   }, [themeMode]);
 
   useEffect(() => {
-    let isCancelled = false;
-
-    const bootstrapSession = async () => {
-      try {
-        await fetchSessionProfile(
-          () => axios.get(`${API_BASE}/settings/me`, {
-            headers: {
-              Accept: 'application/json',
-            },
-          }).then((response) => response.data || null),
-          { forceRefresh: true }
-        );
-
-        if (!isCancelled) {
-          setToken('cookie-session');
-        }
-      } catch (_error) {
-        if (!isCancelled) {
-          setToken(null);
-        }
-      } finally {
-        if (!isCancelled) {
-          setAuthReady(true);
-        }
-      }
-    };
-
-    bootstrapSession();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const interceptor = axios.interceptors.response.use(
+    const interceptor = apiClient.interceptors.response.use(
       (response) => response,
       (error) => {
         if (error.response?.status === 401) {
-          clearSession();
+          clearProtectedQueryData();
         }
 
         return Promise.reject(error);
@@ -372,79 +330,59 @@ function App() {
     );
 
     return () => {
-      axios.interceptors.response.eject(interceptor);
+      apiClient.interceptors.response.eject(interceptor);
     };
-  }, [clearSession]);
+  }, [clearProtectedQueryData]);
 
-  useEffect(() => {
-    let isCancelled = false;
-
-    const fetchTgcs = async () => {
-      setLoadingTgcs(true);
-      setTgcLoadError(null);
-
-      let lastError = null;
-
-      for (let attempt = 1; attempt <= TGC_FETCH_RETRY_ATTEMPTS; attempt += 1) {
-        try {
-          const tgcList = await fetchTgcCatalog(
-            () => axios.get(`${API_BASE}/tgc`).then((response) => (
-              Array.isArray(response.data) ? response.data : []
-            )),
-            { forceRefresh: tgcReloadNonce > 0 }
-          );
-          if (isCancelled) {
-            return;
-          }
-
-          setTgcBySlug(buildTcgMap(tgcList));
-          setLoadingTgcs(false);
-          return;
-        } catch (error) {
-          lastError = error;
-
-          if (attempt < TGC_FETCH_RETRY_ATTEMPTS) {
-            await wait(TGC_FETCH_RETRY_DELAY_MS);
-          }
+  const sessionQuery = useQuery({
+    queryKey: queryKeys.sessionProfile(),
+    queryFn: async () => {
+      try {
+        return await getSessionProfile();
+      } catch (error) {
+        if (error.response?.status === 401) {
+          return null;
         }
+
+        throw error;
       }
+    },
+    staleTime: SESSION_QUERY_STALE_TIME_MS,
+  });
 
-      if (!isCancelled) {
-        console.error('Error al cargar TCGs:', lastError);
-        setTgcLoadError(lastError);
-        setLoadingTgcs(false);
-      }
-    };
+  const tgcCatalogQuery = useQuery({
+    queryKey: queryKeys.tgcCatalog(),
+    queryFn: getTgcCatalog,
+    staleTime: TGC_QUERY_STALE_TIME_MS,
+  });
 
-    fetchTgcs();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [token, tgcReloadNonce]);
+  const isAuthenticated = Boolean(sessionQuery.data);
+  const authReady = !sessionQuery.isPending;
+  const tgcBySlug = useMemo(
+    () => buildTcgMap(tgcCatalogQuery.data || []),
+    [tgcCatalogQuery.data]
+  );
 
   useEffect(() => {
-    if (loadingTgcs || tgcBySlug[activeTcgSlug]) {
+    if (tgcCatalogQuery.isPending || tgcBySlug[activeTcgSlug]) {
       return;
     }
 
     const fallbackSlug = Object.keys(tgcBySlug).find((slug) => GAME_CONFIGS[slug]?.available)
       || DEFAULT_TCG_SLUG;
     updateActiveTcgSlug(fallbackSlug);
-  }, [activeTcgSlug, loadingTgcs, tgcBySlug, updateActiveTcgSlug]);
+  }, [activeTcgSlug, tgcBySlug, tgcCatalogQuery.isPending, updateActiveTcgSlug]);
 
   const logout = useCallback(async () => {
     try {
-      await axios.post(`${API_BASE}/auth/logout`);
+      await logoutUser();
     } catch (_error) {
       // The local session still needs to be cleared even if the network request fails.
     } finally {
-      clearSession();
-      setAuthReady(true);
+      clearProtectedQueryData();
     }
-  }, [clearSession]);
+  }, [clearProtectedQueryData]);
 
-  const isAuthenticated = authReady && Boolean(token);
   const activeGame = getGameConfig(activeTcgSlug);
   const activeTgc = tgcBySlug[activeTcgSlug] || null;
   const availableGames = useMemo(() => buildAvailableGames(tgcBySlug), [tgcBySlug]);
@@ -453,6 +391,8 @@ function App() {
     []
   );
   const navGames = availableGames.length > 0 ? availableGames : fallbackGames;
+  const loadingTgcs = tgcCatalogQuery.isPending && !tgcCatalogQuery.data;
+  const tgcLoadError = tgcCatalogQuery.error || null;
   const shouldBlockProtectedGameRoutes = isAuthenticated && (loadingTgcs || !activeTgc || Boolean(tgcLoadError));
   const protectedGameFallback = (
     <TgcBootstrapPanel
@@ -488,7 +428,7 @@ function App() {
                     path="/"
                     element={
                       <Home
-                        token={isAuthenticated ? token : null}
+                        token={isAuthenticated ? 'cookie-session' : null}
                         onLoginSuccess={handleLoginSuccess}
                         activeTcgSlug={activeTcgSlug}
                         setActiveTcgSlug={updateActiveTcgSlug}

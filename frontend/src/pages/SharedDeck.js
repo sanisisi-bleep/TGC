@@ -1,30 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import axios from 'axios';
-import API_BASE from '../apiBase';
 import CardDetailModal from '../components/cards/CardDetailModal';
+import queryKeys from '../queryKeys';
+import { getSharedDeck } from '../services/api';
 
 function SharedDeck() {
   const { shareToken } = useParams();
   const navigate = useNavigate();
-  const [deck, setDeck] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [selectedCard, setSelectedCard] = useState(null);
-
-  useEffect(() => {
-    const fetchSharedDeck = async () => {
-      try {
-        const response = await axios.get(`${API_BASE}/decks/shared/${shareToken}`);
-        setDeck(response.data);
-      } catch (error) {
-        console.error('Error al cargar el mazo compartido:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchSharedDeck();
-  }, [shareToken]);
+  const sharedDeckQuery = useQuery({
+    queryKey: queryKeys.sharedDeck(shareToken),
+    queryFn: ({ signal }) => getSharedDeck(shareToken, signal),
+    enabled: Boolean(shareToken),
+    staleTime: 5 * 60 * 1000,
+  });
+  const deck = sharedDeckQuery.data || null;
+  const loading = sharedDeckQuery.isPending;
 
   if (loading) {
     return (

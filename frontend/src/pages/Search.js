@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import SearchCardDetailModal from '../components/search/SearchCardDetailModal';
 import SearchCardTile from '../components/search/SearchCardTile';
 import SearchDeckPickerModal from '../components/search/SearchDeckPickerModal';
@@ -8,17 +8,22 @@ import SearchFiltersPanel from '../components/search/SearchFiltersPanel';
 import SearchResultsToolbar from '../components/search/SearchResultsToolbar';
 import { getGameConfig } from '../tcgConfig';
 import { useToast } from '../context/ToastContext';
-import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { getNewDeckCreationPlan } from '../utils/deckTools';
+import queryKeys from '../queryKeys';
 import { buildSetFilterOptions } from '../utils/setFilters';
 import {
-  readCacheMap,
   readStoredEnumValue,
-  setLimitedCacheEntry,
-  writeCacheMap,
   writeStoredValue,
 } from '../utils/searchCache';
+import {
+  addCardToCollection,
+  addCardToDeck,
+  createDeck,
+  getCardFacets,
+  getCards,
+  getDecks,
+} from '../services/api';
 
 const SEARCH_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const MOBILE_BREAKPOINT_QUERY = '(max-width: 768px)';
@@ -34,13 +39,7 @@ const SEARCH_SORT_OPTIONS = [
   { value: 'collection-asc', label: 'Codigo ascendente' },
   { value: 'collection-desc', label: 'Codigo descendente' },
 ];
-const SEARCH_CARDS_CACHE_TTL_MS = 5 * 60 * 1000;
-const SEARCH_FACETS_CACHE_TTL_MS = 60 * 60 * 1000;
-const SEARCH_DECKS_CACHE_TTL_MS = 2 * 60 * 1000;
 const SEARCH_CACHE_STORAGE_KEYS = {
-  cards: 'tgc-search-cards-cache-v3',
-  facets: 'tgc-search-facets-cache-v4',
-  decks: 'tgc-search-decks-cache-v2',
   pageSize: 'tgc-search-page-size-v1',
   cardViewMode: 'tgc-search-card-view-mode-v1',
 };
@@ -53,13 +52,6 @@ const createEmptyResults = (limit = DEFAULT_PAGE_SIZE) => ({
   has_previous: false,
   has_next: false,
 });
-const EMPTY_FACETS = {
-  card_types: [],
-  colors: [],
-  rarities: [],
-  set_names: [],
-  set_options: [],
-};
 const EMPTY_CARDS = [];
 const EMPTY_DECKS = [];
 
@@ -137,13 +129,6 @@ const normalizeResultsPayload = (payload, fallbackLimit = DEFAULT_PAGE_SIZE) => 
   };
 };
 
-const isValidResultsPayload = (payload) => (
-  payload
-  && typeof payload === 'object'
-  && !Array.isArray(payload)
-  && Array.isArray(payload.items)
-);
-
 const normalizeFacetsPayload = (payload) => ({
   card_types: Array.isArray(payload?.card_types) ? payload.card_types : [],
   colors: Array.isArray(payload?.colors) ? payload.colors : [],
@@ -152,42 +137,9 @@ const normalizeFacetsPayload = (payload) => ({
   set_options: Array.isArray(payload?.set_options) ? payload.set_options : [],
 });
 
-const isValidFacetsPayload = (payload) => (
-  payload
-  && typeof payload === 'object'
-  && !Array.isArray(payload)
-  && Array.isArray(payload.card_types)
-  && Array.isArray(payload.colors)
-  && Array.isArray(payload.rarities)
-  && Array.isArray(payload.set_names)
-  && Array.isArray(payload.set_options)
-);
-
 const normalizeDeckList = (payload) => (Array.isArray(payload) ? payload : EMPTY_DECKS);
 const normalizeCardList = (payload) => (Array.isArray(payload) ? payload : EMPTY_CARDS);
-
-const readValidatedCacheEntry = (cacheRef, storageKey, cacheKey, validator) => {
-  const cachedPayload = cacheRef.current.get(cacheKey);
-
-  if (!cachedPayload) {
-    return null;
-  }
-
-  if (validator(cachedPayload)) {
-    return cachedPayload;
-  }
-
-  cacheRef.current.delete(cacheKey);
-  writeCacheMap(storageKey, cacheRef.current);
-  return null;
-};
-
-const isRequestCanceled = (error) => (
-  axios.isCancel?.(error)
-  || error?.code === 'ERR_CANCELED'
-  || error?.name === 'CanceledError'
-  || error?.name === 'AbortError'
-);
+const isUnauthorizedError = (error) => error?.response?.status === 401;
 
 const normalizeQuantityInput = (value) => value.replace(/[^\d]/g, '');
 
@@ -219,8 +171,7 @@ function Search({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const [cards, setCards] = useState([]);
-  const [decks, setDecks] = useState([]);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearchTerm = useDebouncedValue(searchTerm, SEARCH_INPUT_DELAY_MS);
   const [filters, setFilters] = useState({
@@ -232,7 +183,6 @@ function Search({ activeTcgSlug, activeTgc }) {
   const [selectedCard, setSelectedCard] = useState(null);
   const [deckPickerCard, setDeckPickerCard] = useState(null);
   const [newDeckName, setNewDeckName] = useState('');
-  const [submittingDeckAction, setSubmittingDeckAction] = useState(false);
   const [actionQuantityDrafts, setActionQuantityDrafts] = useState({});
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState('name-asc');
@@ -247,16 +197,6 @@ function Search({ activeTcgSlug, activeTgc }) {
     SEARCH_CARD_VIEW_MODES,
     'detail'
   ));
-  const [pagination, setPagination] = useState(() => createEmptyResults(pageSize));
-  const [facets, setFacets] = useState(EMPTY_FACETS);
-  const [loadingCards, setLoadingCards] = useState(true);
-  const [hasLoadedCards, setHasLoadedCards] = useState(false);
-  const [hasLoadedFacets, setHasLoadedFacets] = useState(false);
-  const [loadingDecks, setLoadingDecks] = useState(false);
-  const cardsCacheRef = useRef(readCacheMap(SEARCH_CACHE_STORAGE_KEYS.cards));
-  const facetsCacheRef = useRef(readCacheMap(SEARCH_CACHE_STORAGE_KEYS.facets));
-  const decksCacheRef = useRef(readCacheMap(SEARCH_CACHE_STORAGE_KEYS.decks));
-  const decksRequestRef = useRef(new Map());
 
   const cardsRequestParams = useMemo(
     () => buildCardsRequestParams({
@@ -269,27 +209,6 @@ function Search({ activeTcgSlug, activeTgc }) {
     }),
     [activeTgc?.id, debouncedSearchTerm, filters, page, pageSize, sortBy]
   );
-
-  const cardsCacheKey = useMemo(
-    () => JSON.stringify(cardsRequestParams ?? {}),
-    [cardsRequestParams]
-  );
-  const effectiveCardViewMode = isMobileLayout ? cardViewMode : 'detail';
-
-  const persistCardsCache = useCallback((cacheKey, payload) => {
-    setLimitedCacheEntry(cardsCacheRef.current, cacheKey, payload, 24, SEARCH_CARDS_CACHE_TTL_MS);
-    writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.cards, cardsCacheRef.current);
-  }, []);
-
-  const persistFacetsCache = useCallback((cacheKey, payload) => {
-    setLimitedCacheEntry(facetsCacheRef.current, cacheKey, payload, 12, SEARCH_FACETS_CACHE_TTL_MS);
-    writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.facets, facetsCacheRef.current);
-  }, []);
-
-  const persistDecksCache = useCallback((cacheKey, payload) => {
-    setLimitedCacheEntry(decksCacheRef.current, cacheKey, payload, 12, SEARCH_DECKS_CACHE_TTL_MS);
-    writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.decks, decksCacheRef.current);
-  }, []);
 
   useEffect(() => {
     writeStoredValue(SEARCH_CACHE_STORAGE_KEYS.pageSize, pageSize);
@@ -330,149 +249,120 @@ function Search({ activeTcgSlug, activeTgc }) {
     });
     setPage(1);
     setSortBy('name-asc');
-    setCards(EMPTY_CARDS);
-    setPagination((current) => createEmptyResults(current.limit || DEFAULT_PAGE_SIZE));
-    setFacets(EMPTY_FACETS);
-    setDecks(EMPTY_DECKS);
     setSelectedCard(null);
     setDeckPickerCard(null);
     setNewDeckName('');
     setActionQuantityDrafts({});
-    setHasLoadedCards(false);
-    setHasLoadedFacets(false);
-    setLoadingDecks(false);
   }, [activeTcgSlug, activeTgc?.id]);
 
-  useEffect(() => {
-    if (!cardsRequestParams) {
-      setCards(EMPTY_CARDS);
-      setPagination(createEmptyResults(pageSize));
-      setLoadingCards(false);
-      setHasLoadedCards(true);
-      return undefined;
-    }
-
-    const controller = new AbortController();
-    const cachedResults = readValidatedCacheEntry(
-      cardsCacheRef,
-      SEARCH_CACHE_STORAGE_KEYS.cards,
-      cardsCacheKey,
-      isValidResultsPayload
-    );
-
-    if (cachedResults) {
-      const nextPagination = normalizeResultsPayload(cachedResults, pageSize);
-      setCards(nextPagination.items);
-      setPagination(nextPagination);
-      setLoadingCards(false);
-      setHasLoadedCards(true);
-      return () => controller.abort();
-    }
-
-    const fetchCards = async () => {
-      setLoadingCards(true);
-
-      try {
-        const res = await axios.get(`${API_BASE}/cards`, {
-          params: cardsRequestParams,
-          signal: controller.signal,
-          headers: {
-            Accept: 'application/json',
-          },
-        });
-
-        const nextPagination = normalizeResultsPayload(res.data, pageSize);
-        persistCardsCache(cardsCacheKey, nextPagination);
-
-        setCards(nextPagination.items);
-        setPagination(nextPagination);
-
-        if (nextPagination.page !== page) {
-          setPage(nextPagination.page);
-        }
-      } catch (error) {
-        if (isRequestCanceled(error)) {
-          return;
-        }
-
-        console.error('Error al cargar cartas:', error);
-        console.error('Respuesta backend:', error.response?.data);
-
-        if (!hasLoadedCards) {
-          setCards(EMPTY_CARDS);
-          setPagination(createEmptyResults(pageSize));
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setLoadingCards(false);
-          setHasLoadedCards(true);
-        }
-      }
-    };
-
-    fetchCards();
-
-    return () => {
-      controller.abort();
-    };
-  }, [cardsCacheKey, cardsRequestParams, hasLoadedCards, page, pageSize, persistCardsCache]);
+  const cardsQuery = useQuery({
+    queryKey: queryKeys.cardsSearch(cardsRequestParams || { tgc_id: activeTgc?.id || 0 }),
+    queryFn: ({ signal }) => getCards(cardsRequestParams, signal),
+    enabled: Boolean(cardsRequestParams),
+    staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+  const facetsQuery = useQuery({
+    queryKey: queryKeys.cardFacets(activeTgc?.id),
+    queryFn: ({ signal }) => getCardFacets(activeTgc.id, signal),
+    enabled: Boolean(activeTgc?.id),
+    staleTime: 60 * 60 * 1000,
+  });
+  const decksQuery = useQuery({
+    queryKey: queryKeys.decks(activeTgc?.id),
+    queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
+    enabled: Boolean(activeTgc?.id && deckPickerCard),
+    staleTime: 2 * 60 * 1000,
+  });
 
   useEffect(() => {
-    if (!activeTgc?.id) {
-      setFacets(EMPTY_FACETS);
-      setHasLoadedFacets(true);
-      return undefined;
+    const error = cardsQuery.error || facetsQuery.error || decksQuery.error;
+    if (!error || isUnauthorizedError(error)) {
+      return;
     }
 
-    const controller = new AbortController();
-    const facetsCacheKey = String(activeTgc.id);
-    const cachedFacets = readValidatedCacheEntry(
-      facetsCacheRef,
-      SEARCH_CACHE_STORAGE_KEYS.facets,
-      facetsCacheKey,
-      isValidFacetsPayload
-    );
+    showToast({
+      type: 'error',
+      message: getApiErrorMessage(error, 'No se pudieron cargar los datos del buscador.'),
+    });
+  }, [cardsQuery.error, decksQuery.error, facetsQuery.error, showToast]);
 
-    if (cachedFacets) {
-      setFacets(normalizeFacetsPayload(cachedFacets));
-      setHasLoadedFacets(true);
-      return () => controller.abort();
-    }
-
-    const fetchFacets = async () => {
-      try {
-        const res = await axios.get(`${API_BASE}/cards/facets`, {
-          params: { tgc_id: activeTgc.id },
-          signal: controller.signal,
-          headers: {
-            Accept: 'application/json',
-          },
-        });
-
-        const nextFacets = normalizeFacetsPayload(res.data);
-
-        persistFacetsCache(facetsCacheKey, nextFacets);
-        setFacets(nextFacets);
-      } catch (error) {
-        if (isRequestCanceled(error)) {
-          return;
-        }
-
-        console.error('Error al cargar filtros del buscador:', error);
-        setFacets(EMPTY_FACETS);
-      } finally {
-        if (!controller.signal.aborted) {
-          setHasLoadedFacets(true);
-        }
+  const addToCollectionMutation = useMutation({
+    mutationFn: addCardToCollection,
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.collection(activeTgc?.id) });
+      showToast({
+        type: 'success',
+        message: variables.quantity === 1
+          ? '1 copia agregada a la coleccion.'
+          : `${variables.quantity} copias agregadas a la coleccion.`,
+      });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
       }
-    };
 
-    fetchFacets();
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo agregar la carta a la coleccion.'),
+      });
+    },
+  });
 
-    return () => {
-      controller.abort();
-    };
-  }, [activeTgc?.id, persistFacetsCache]);
+  const addToDeckMutation = useMutation({
+    mutationFn: ({ deckId, cardId, quantity }) => addCardToDeck(deckId, {
+      card_id: cardId,
+      quantity,
+    }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      showToast({
+        type: 'success',
+        message: variables.quantity === 1
+          ? '1 copia agregada al mazo.'
+          : `${variables.quantity} copias agregadas al mazo.`,
+      });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo agregar la carta al mazo.'),
+      });
+    },
+  });
+
+  const createDeckMutation = useMutation({
+    mutationFn: createDeck,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+    },
+  });
+
+  const pagination = useMemo(
+    () => normalizeResultsPayload(cardsQuery.data, pageSize),
+    [cardsQuery.data, pageSize]
+  );
+  const facets = useMemo(
+    () => normalizeFacetsPayload(facetsQuery.data),
+    [facetsQuery.data]
+  );
+  const decks = useMemo(
+    () => normalizeDeckList(decksQuery.data),
+    [decksQuery.data]
+  );
+  const effectiveCardViewMode = isMobileLayout ? cardViewMode : 'detail';
+  const cardList = normalizeCardList(pagination.items);
+
+  useEffect(() => {
+    if (pagination.page && pagination.page !== page) {
+      setPage(pagination.page);
+    }
+  }, [page, pagination.page]);
 
   const setActionQuantityDraft = useCallback((cardId, value) => {
     if (!cardId) {
@@ -523,127 +413,34 @@ function Search({ activeTcgSlug, activeTgc }) {
     }));
   }, [getActionQuantity]);
 
-  const getAddedMessage = useCallback((quantity, destinationLabel) => (
-    quantity === 1
-      ? `1 copia agregada a ${destinationLabel}.`
-      : `${quantity} copias agregadas a ${destinationLabel}.`
-  ), []);
+  const handleAddToCollection = async (cardId, quantityOverride = null) => {
+    const parsedCardId = Number(cardId);
 
-  const invalidateDeckPickerCache = useCallback(() => {
-    if (!activeTgc?.id) {
+    if (!Number.isInteger(parsedCardId) || parsedCardId <= 0) {
+      showToast({ type: 'error', message: 'El ID de carta recibido no es valido.' });
       return;
     }
 
-    const decksCacheKey = String(activeTgc.id);
-    decksCacheRef.current.delete(decksCacheKey);
-    writeCacheMap(SEARCH_CACHE_STORAGE_KEYS.decks, decksCacheRef.current);
-    setDecks([]);
-  }, [activeTgc?.id]);
+    const quantity = quantityOverride ?? commitActionQuantity(parsedCardId);
 
-  const loadDecksForPicker = async (forceRefresh = false) => {
-    if (!activeTgc?.id) {
-      setDecks(EMPTY_DECKS);
-      return EMPTY_DECKS;
+    if (quantityOverride !== null) {
+      setActionQuantityDrafts((current) => ({
+        ...current,
+        [parsedCardId]: String(quantityOverride),
+      }));
     }
 
-    const decksCacheKey = String(activeTgc.id);
-    const pendingRequest = decksRequestRef.current.get(decksCacheKey);
-
-    if (!forceRefresh && decksCacheRef.current.has(decksCacheKey)) {
-      const cachedDecks = readValidatedCacheEntry(
-        decksCacheRef,
-        SEARCH_CACHE_STORAGE_KEYS.decks,
-        decksCacheKey,
-        Array.isArray
-      );
-
-      if (cachedDecks) {
-        const nextDecks = normalizeDeckList(cachedDecks);
-        setDecks(nextDecks);
-        return nextDecks;
-      }
-    }
-
-    if (pendingRequest) {
-      return pendingRequest;
-    }
-
-    setLoadingDecks(true);
-
-    const request = axios.get(`${API_BASE}/decks`, {
-      params: { tgc_id: activeTgc.id },
-    }).then((res) => {
-      const deckList = normalizeDeckList(res.data);
-      persistDecksCache(decksCacheKey, deckList);
-      setDecks(deckList);
-      return deckList;
-    }).catch((error) => {
-      console.error('Error al cargar mazos para el buscador:', error);
-      showToast({
-        type: 'error',
-        message: getApiErrorMessage(error, 'No se pudieron cargar tus mazos.'),
-      });
-      return EMPTY_DECKS;
-    }).finally(() => {
-      decksRequestRef.current.delete(decksCacheKey);
-      setLoadingDecks(false);
+    addToCollectionMutation.mutate({
+      card_id: parsedCardId,
+      quantity,
     });
-
-    decksRequestRef.current.set(decksCacheKey, request);
-    return request;
-  };
-
-  const handleAddToCollection = async (cardId, quantityOverride = null) => {
-    try {
-      const parsedCardId = Number(cardId);
-
-      if (!Number.isInteger(parsedCardId) || parsedCardId <= 0) {
-        showToast({ type: 'error', message: 'El ID de carta recibido no es valido.' });
-        return;
-      }
-
-      const quantity = quantityOverride ?? commitActionQuantity(parsedCardId);
-
-      if (quantityOverride !== null) {
-        setActionQuantityDrafts((current) => ({
-          ...current,
-          [parsedCardId]: String(quantityOverride),
-        }));
-      }
-
-      const requestData = {
-        card_id: parsedCardId,
-        quantity,
-      };
-
-      await axios.post(
-        `${API_BASE}/collection`,
-        requestData,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-        }
-      );
-
-      showToast({ type: 'success', message: getAddedMessage(quantity, 'la coleccion') });
-    } catch (error) {
-      if (error.response?.status === 401) {
-        showToast({ type: 'error', message: 'Sesion expirada. Por favor, inicia sesion de nuevo.' });
-        return;
-      }
-      showToast({
-        type: 'error',
-        message: getApiErrorMessage(error, 'No se pudo agregar la carta a la coleccion.'),
-      });
-    }
   };
 
   const handleAddToDeck = async (cardId, quantityOverride = null) => {
-    const card = normalizeCardList(cards).find((item) => item.id === cardId) || null;
+    const card = normalizeCardList(cardList).find((item) => item.id === cardId) || null;
     setDeckPickerCard(card);
     setNewDeckName(card ? `${card.name} Test` : '');
+
     if (quantityOverride !== null) {
       setActionQuantityDrafts((current) => ({
         ...current,
@@ -652,7 +449,12 @@ function Search({ activeTcgSlug, activeTgc }) {
     } else {
       commitActionQuantity(cardId);
     }
-    await loadDecksForPicker();
+
+    await queryClient.ensureQueryData({
+      queryKey: queryKeys.decks(activeTgc?.id),
+      queryFn: () => getDecks(activeTgc.id),
+      staleTime: 2 * 60 * 1000,
+    });
   };
 
   const addCardToExistingDeck = async (deckId) => {
@@ -660,24 +462,16 @@ function Search({ activeTcgSlug, activeTgc }) {
       return;
     }
 
-    setSubmittingDeckAction(true);
-
+    const quantity = commitActionQuantity(deckPickerCard.id);
     try {
-      const quantity = commitActionQuantity(deckPickerCard.id);
-      await axios.post(`${API_BASE}/decks/${deckId}/cards`, {
-        card_id: deckPickerCard.id,
+      await addToDeckMutation.mutateAsync({
+        deckId,
+        cardId: deckPickerCard.id,
         quantity,
       });
-      invalidateDeckPickerCache();
-      showToast({ type: 'success', message: getAddedMessage(quantity, 'el mazo') });
       setDeckPickerCard(null);
-    } catch (error) {
-      showToast({
-        type: 'error',
-        message: getApiErrorMessage(error, 'No se pudo agregar la carta al mazo.'),
-      });
-    } finally {
-      setSubmittingDeckAction(false);
+    } catch (_error) {
+      // The mutation already surfaces the error through toasts.
     }
   };
 
@@ -692,30 +486,26 @@ function Search({ activeTcgSlug, activeTgc }) {
       return;
     }
 
-    setSubmittingDeckAction(true);
+    const quantity = commitActionQuantity(deckPickerCard.id);
+    const creationPlan = getNewDeckCreationPlan(activeGame.slug, deckPickerCard, quantity);
+    if (!creationPlan.canCreate) {
+      showToast({
+        type: 'error',
+        message: creationPlan.helper || 'No se puede crear el mazo con esa carta inicial.',
+      });
+      return;
+    }
 
     try {
-      const quantity = commitActionQuantity(deckPickerCard.id);
-      const creationPlan = getNewDeckCreationPlan(activeGame.slug, deckPickerCard, quantity);
-      if (!creationPlan.canCreate) {
-        showToast({
-          type: 'error',
-          message: creationPlan.helper || 'No se puede crear el mazo con esa carta inicial.',
-        });
-        return;
-      }
-
-      const createResponse = await axios.post(`${API_BASE}/decks`, {
+      const createResponse = await createDeckMutation.mutateAsync({
         name: trimmedDeckName,
         tgc_id: activeTgc.id,
       });
 
-      const deckId = createResponse.data?.id || createResponse.data?.deck_id;
+      const deckId = createResponse?.id || createResponse?.deck_id;
       if (!deckId) {
         throw new Error('Deck creation did not return an id');
       }
-
-      invalidateDeckPickerCache();
 
       if (!creationPlan.shouldAddCardAfterCreate) {
         setDeckPickerCard(null);
@@ -729,11 +519,11 @@ function Search({ activeTcgSlug, activeTgc }) {
       }
 
       try {
-        await axios.post(`${API_BASE}/decks/${deckId}/cards`, {
-          card_id: deckPickerCard.id,
+        await addToDeckMutation.mutateAsync({
+          deckId,
+          cardId: deckPickerCard.id,
           quantity,
         });
-
         showToast({
           type: 'success',
           message: quantity === 1
@@ -742,23 +532,22 @@ function Search({ activeTcgSlug, activeTgc }) {
         });
         setDeckPickerCard(null);
         setNewDeckName('');
-      } catch (error) {
+      } catch (_error) {
         showToast({
           type: 'error',
-          message: getApiErrorMessage(
-            error,
-            'El mazo se creo, pero no se pudo anadir la carta inicial.'
-          ),
+          message: 'El mazo se creo, pero no se pudo anadir la carta inicial.',
         });
         navigate('/decks', { state: { openDeckId: deckId } });
       }
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
       showToast({
         type: 'error',
         message: getApiErrorMessage(error, 'No se pudo crear el mazo y agregar la carta.'),
       });
-    } finally {
-      setSubmittingDeckAction(false);
     }
   };
 
@@ -784,7 +573,6 @@ function Search({ activeTcgSlug, activeTgc }) {
 
     setPage(1);
     setPageSize(nextPageSize);
-    setPagination(createEmptyResults(nextPageSize));
   };
 
   const handleSortChange = (value) => {
@@ -839,8 +627,7 @@ function Search({ activeTcgSlug, activeTgc }) {
   const visibleEnd = pagination.total === 0
     ? 0
     : Math.min(pagination.page * pagination.limit, pagination.total);
-  const isInitialLoading = !hasLoadedCards || !hasLoadedFacets;
-  const cardList = normalizeCardList(cards);
+  const isInitialLoading = ((!cardsQuery.isFetched && Boolean(cardsRequestParams)) || (!facetsQuery.isFetched && Boolean(activeTgc?.id))) && cardList.length === 0;
 
   if (isInitialLoading) {
     return (
@@ -889,7 +676,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         visibleStart={visibleStart}
         visibleEnd={visibleEnd}
         pagination={pagination}
-        loadingCards={loadingCards}
+        loadingCards={cardsQuery.isFetching}
         pageSize={pageSize}
         pageSizeOptions={SEARCH_PAGE_SIZE_OPTIONS}
         sortBy={sortBy}
@@ -945,11 +732,11 @@ function Search({ activeTcgSlug, activeTgc }) {
       <SearchDeckPickerModal
         deckPickerCard={deckPickerCard}
         activeGame={activeGame}
-        loadingDecks={loadingDecks}
+        loadingDecks={decksQuery.isFetching}
         decks={decks}
         newDeckName={newDeckName}
         actionQuantity={deckPickerCard ? getActionQuantity(deckPickerCard.id) : DEFAULT_ACTION_QUANTITY}
-        submittingDeckAction={submittingDeckAction}
+        submittingDeckAction={addToDeckMutation.isPending || createDeckMutation.isPending}
         onClose={() => setDeckPickerCard(null)}
         onActionQuantityChange={(value) => {
           if (deckPickerCard) {

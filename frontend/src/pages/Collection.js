@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import axios from 'axios';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import FilterAutocomplete from '../components/filters/FilterAutocomplete';
 import CardDetailModal from '../components/cards/CardDetailModal';
 import { useToast } from '../context/ToastContext';
+import queryKeys from '../queryKeys';
 import { getGameConfig } from '../tcgConfig';
-import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { isInteractiveElementTarget } from '../utils/clickTargets';
 import {
@@ -14,6 +14,10 @@ import {
   matchesCollectionCodeQuery,
   normalizeText,
 } from '../utils/setFilters';
+import { addCardToDeck, adjustCollectionCard, getCollection, getDecks } from '../services/api';
+
+const EMPTY_COLLECTION = [];
+const EMPTY_DECKS = [];
 
 const buildOrderedOptions = (values, preferredOrder = []) => {
   const available = [...new Set(values.filter(Boolean))];
@@ -69,13 +73,14 @@ const compareCollectionCards = (leftCard, rightCard, direction = 'asc') => {
   return normalizeText(leftCard?.name).localeCompare(normalizeText(rightCard?.name));
 };
 
+const isUnauthorizedError = (error) => error?.response?.status === 401;
+
 function Collection({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const collectionTitle = activeGame.collectionTitle || 'Mi Coleccion';
   const { showToast } = useToast();
-  const [collection, setCollection] = useState([]);
-  const [decks, setDecks] = useState([]);
-  const [loadingCollectionPage, setLoadingCollectionPage] = useState(true);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [updatingCardId, setUpdatingCardId] = useState(null);
   const [quantityInputs, setQuantityInputs] = useState({});
   const [collectionSearchTerm, setCollectionSearchTerm] = useState('');
@@ -90,39 +95,84 @@ function Collection({ activeTcgSlug, activeTgc }) {
     () => localStorage.getItem('collectionViewMode') || 'detail'
   );
   const [selectedCard, setSelectedCard] = useState(null);
-  const collectionCacheRef = useRef(new Map());
-  const decksCacheRef = useRef(new Map());
-  const navigate = useNavigate();
 
-  const syncQuantityInputs = useCallback((items) => {
+  const collectionQuery = useQuery({
+    queryKey: queryKeys.collection(activeTgc?.id),
+    queryFn: ({ signal }) => getCollection(activeTgc.id, signal),
+    enabled: Boolean(activeTgc?.id),
+    staleTime: 2 * 60 * 1000,
+  });
+  const decksQuery = useQuery({
+    queryKey: queryKeys.decks(activeTgc?.id),
+    queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
+    enabled: Boolean(activeTgc?.id),
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const collection = useMemo(
+    () => collectionQuery.data || EMPTY_COLLECTION,
+    [collectionQuery.data]
+  );
+  const decks = useMemo(
+    () => decksQuery.data || EMPTY_DECKS,
+    [decksQuery.data]
+  );
+
+  useEffect(() => {
+    localStorage.setItem('collectionViewMode', collectionView);
+  }, [collectionView]);
+
+  useEffect(() => {
+    setCollectionSearchTerm('');
+    setCollectionFilters({
+      type: '',
+      color: '',
+      rarity: '',
+      set: '',
+    });
+    setCollectionSort('name-asc');
+    setSelectedCard(null);
+  }, [activeTcgSlug, activeTgc?.id]);
+
+  useEffect(() => {
     setQuantityInputs((current) => {
       const next = { ...current };
-      items.forEach((item) => {
+      collection.forEach((item) => {
         if (item?.card?.id && !next[item.card.id]) {
           next[item.card.id] = '1';
         }
       });
       return next;
     });
-  }, []);
+  }, [collection]);
 
-  const updateCollectionState = useCallback((updater) => {
-    setCollection((current) => {
-      const next = updater(current);
+  useEffect(() => {
+    const error = collectionQuery.error || decksQuery.error;
+    if (!error || isUnauthorizedError(error)) {
+      return;
+    }
 
-      if (activeTgc?.id) {
-        collectionCacheRef.current.set(String(activeTgc.id), next);
-      }
-
-      syncQuantityInputs(next);
-      return next;
+    showToast({
+      type: 'error',
+      message: getApiErrorMessage(error, 'No se pudo cargar la coleccion.'),
     });
-  }, [activeTgc?.id, syncQuantityInputs]);
+  }, [collectionQuery.error, decksQuery.error, showToast]);
+
+  const updateCollectionQuery = useCallback((updater) => {
+    if (!activeTgc?.id) {
+      return;
+    }
+
+    queryClient.setQueryData(queryKeys.collection(activeTgc.id), (current) => {
+      const currentItems = Array.isArray(current) ? current : [];
+      return updater(currentItems);
+    });
+  }, [activeTgc?.id, queryClient]);
 
   const updateCollectionAfterDeckAdd = useCallback((deckId, cardId, addedQuantity = 1) => {
     const deckName = decks.find((deck) => deck.id === deckId)?.name || 'Mazo';
 
-    updateCollectionState((current) => current.map((item) => {
+    updateCollectionQuery((current) => current.map((item) => {
       if (item?.card?.id !== cardId) {
         return item;
       }
@@ -149,105 +199,14 @@ function Collection({ activeTcgSlug, activeTgc }) {
         available_quantity: Math.max((item.total_quantity || 0) - usedInDecks, 0),
       };
     }));
-  }, [decks, updateCollectionState]);
+  }, [decks, updateCollectionQuery]);
 
-  useEffect(() => {
-    localStorage.setItem('collectionViewMode', collectionView);
-  }, [collectionView]);
-
-  useEffect(() => {
-    setCollectionSearchTerm('');
-    setCollectionFilters({
-      type: '',
-      color: '',
-      rarity: '',
-      set: '',
-    });
-    setCollectionSort('name-asc');
-    setSelectedCard(null);
-  }, [activeTcgSlug, activeTgc?.id]);
-
-  useEffect(() => {
-    if (!activeTgc?.id) {
-      setCollection([]);
-      setDecks([]);
-      setLoadingCollectionPage(false);
-      return;
-    }
-
-    const loadCollectionPage = async () => {
-      setLoadingCollectionPage(true);
-
-      try {
-        const cacheKey = String(activeTgc.id);
-        const cachedCollection = collectionCacheRef.current.get(cacheKey);
-        const cachedDecks = decksCacheRef.current.get(cacheKey);
-
-        if (cachedCollection) {
-          setCollection(cachedCollection);
-          syncQuantityInputs(cachedCollection);
-        }
-
-        if (cachedDecks) {
-          setDecks(cachedDecks);
-        }
-
-        const requests = [];
-
-        if (!cachedCollection) {
-          requests.push(
-            axios.get(`${API_BASE}/collection`, {
-              params: { tgc_id: activeTgc.id },
-            }).then((res) => {
-              const items = Array.isArray(res.data) ? res.data : [];
-              collectionCacheRef.current.set(cacheKey, items);
-              setCollection(items);
-              syncQuantityInputs(items);
-            })
-          );
-        }
-
-        if (!cachedDecks) {
-          requests.push(
-            axios.get(`${API_BASE}/decks`, {
-              params: { tgc_id: activeTgc.id },
-            }).then((res) => {
-              const deckItems = Array.isArray(res.data) ? res.data : [];
-              decksCacheRef.current.set(cacheKey, deckItems);
-              setDecks(deckItems);
-            })
-          );
-        }
-
-        await Promise.all(requests);
-      } catch (error) {
-        if (error.response?.status === 401) {
-          navigate('/');
-          return;
-        }
-
-        console.error('Error al cargar la vista de coleccion:', error);
-        showToast({
-          type: 'error',
-          message: getApiErrorMessage(error, 'No se pudo cargar la coleccion.'),
-        });
-      } finally {
-        setLoadingCollectionPage(false);
-      }
-    };
-
-    loadCollectionPage();
-  }, [activeTgc?.id, navigate, showToast, syncQuantityInputs]);
-
-  const adjustCollectionQuantity = async (cardId, delta) => {
-    setUpdatingCardId(cardId);
-
-    try {
-      const response = await axios.post(`${API_BASE}/collection/${cardId}/adjust`, { delta });
-      const nextQuantity = Number(response.data?.quantity ?? 0);
-
-      updateCollectionState((current) => current.flatMap((item) => {
-        if (item?.card?.id !== cardId) {
+  const adjustCollectionMutation = useMutation({
+    mutationFn: ({ cardId, delta }) => adjustCollectionCard(cardId, delta),
+    onSuccess: (data, variables) => {
+      const nextQuantity = Number(data?.quantity ?? 0);
+      updateCollectionQuery((current) => current.flatMap((item) => {
+        if (item?.card?.id !== variables.cardId) {
           return [item];
         }
 
@@ -262,9 +221,9 @@ function Collection({ activeTcgSlug, activeTgc }) {
           available_quantity: Math.max(nextQuantity - usedInDecks, 0),
         }];
       }));
-    } catch (error) {
-      if (error.response?.status === 401) {
-        navigate('/');
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
         return;
       }
 
@@ -272,9 +231,34 @@ function Collection({ activeTcgSlug, activeTgc }) {
         type: 'error',
         message: getApiErrorMessage(error, 'No se pudo actualizar la cantidad en coleccion.'),
       });
-    } finally {
+    },
+    onSettled: () => {
       setUpdatingCardId(null);
-    }
+    },
+  });
+
+  const addCardToDeckMutation = useMutation({
+    mutationFn: ({ deckId, cardId }) => addCardToDeck(deckId, { card_id: cardId, quantity: 1 }),
+    onSuccess: (_data, variables) => {
+      updateCollectionAfterDeckAdd(variables.deckId, variables.cardId);
+      queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      showToast({ type: 'success', message: 'Carta agregada al mazo.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo agregar la carta al mazo.'),
+      });
+    },
+  });
+
+  const adjustCollectionQuantity = (cardId, delta) => {
+    setUpdatingCardId(cardId);
+    adjustCollectionMutation.mutate({ cardId, delta });
   };
 
   const applyManualCollectionChange = async (cardId, direction) => {
@@ -286,26 +270,11 @@ function Collection({ activeTcgSlug, activeTgc }) {
       return;
     }
 
-    await adjustCollectionQuantity(cardId, direction === 'add' ? parsedValue : -parsedValue);
+    adjustCollectionQuantity(cardId, direction === 'add' ? parsedValue : -parsedValue);
   };
 
-  const addCardToDeck = async (deckId, cardId) => {
-    try {
-      await axios.post(`${API_BASE}/decks/${deckId}/cards`, { card_id: cardId, quantity: 1 });
-      updateCollectionAfterDeckAdd(deckId, cardId);
-      showToast({ type: 'success', message: 'Carta agregada al mazo.' });
-    } catch (error) {
-      if (error.response?.status === 401) {
-        navigate('/');
-        return;
-      }
-
-      showToast({
-        type: 'error',
-        message: getApiErrorMessage(error, 'No se pudo agregar la carta al mazo.'),
-      });
-      console.error('Error al agregar carta al mazo:', error);
-    }
+  const addCardToDeckFromCollection = (deckId, cardId) => {
+    addCardToDeckMutation.mutate({ deckId, cardId });
   };
 
   const openDeck = (deckId) => {
@@ -439,7 +408,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
     setCollectionSort('name-asc');
   };
 
-  if (loadingCollectionPage && safeCollection.length === 0) {
+  if ((collectionQuery.isPending || decksQuery.isPending) && safeCollection.length === 0) {
     return (
       <div className="collection page-shell">
         <section className="page-hero collection-hero">
@@ -711,7 +680,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
                         <button
                           key={deck.id}
                           type="button"
-                          onClick={() => addCardToDeck(deck.id, item.card.id)}
+                          onClick={() => addCardToDeckFromCollection(deck.id, item.card.id)}
                         >
                           Agregar a {deck.name}
                         </button>

@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import axios from 'axios';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import CardDetailModal from '../components/cards/CardDetailModal';
 import DeckCardRow from '../components/decks/DeckCardRow';
@@ -8,8 +8,8 @@ import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
 import DeckStatsPanel from '../components/decks/DeckStatsPanel';
 import DeckSummaryCard from '../components/decks/DeckSummaryCard';
 import { useToast } from '../context/ToastContext';
+import queryKeys from '../queryKeys';
 import { getGameConfig } from '../tcgConfig';
-import API_BASE from '../apiBase';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import {
   MAX_COPIES_PER_CARD,
@@ -26,38 +26,80 @@ import {
   parseImportedDeckFile,
   safeDeckFilename,
 } from '../utils/deckTools';
-import { fetchSessionProfile } from '../utils/bootstrapCache';
+import {
+  adjustDeckAssignment,
+  adjustDeckCard,
+  cloneDeck,
+  createDeck,
+  deleteDeck,
+  getDeckDetail,
+  getDecks,
+  getSessionProfile,
+  importDeck,
+  renameDeck,
+  shareDeck,
+} from '../services/api';
+
+const isUnauthorizedError = (error) => error?.response?.status === 401;
 
 function Decks({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const { showToast } = useToast();
-  const [decks, setDecks] = useState([]);
+  const queryClient = useQueryClient();
   const [newDeckName, setNewDeckName] = useState('');
-  const [selectedDeck, setSelectedDeck] = useState(null);
+  const [selectedDeckId, setSelectedDeckId] = useState(null);
   const [draftDeckName, setDraftDeckName] = useState('');
-  const [advancedMode, setAdvancedMode] = useState(false);
-  const [userRole, setUserRole] = useState('player');
   const [deckCardView, setDeckCardView] = useState(
     () => localStorage.getItem('deckCardViewMode') || 'detail'
   );
-  const advancedDeckControlsEnabled = Boolean(
-    selectedDeck?.advanced_mode !== undefined ? selectedDeck.advanced_mode : advancedMode
-  );
-  const [loadingDetails, setLoadingDetails] = useState(false);
-  const [loadingDeckList, setLoadingDeckList] = useState(true);
   const [selectedCard, setSelectedCard] = useState(null);
-  const [updatingDeckCardId, setUpdatingDeckCardId] = useState(null);
-  const [updatingAssignmentCardId, setUpdatingAssignmentCardId] = useState(null);
   const [editingAssignmentCardId, setEditingAssignmentCardId] = useState(null);
   const [deletingDeckId, setDeletingDeckId] = useState(null);
   const [cloningDeckId, setCloningDeckId] = useState(null);
   const [sharingDeckId, setSharingDeckId] = useState(null);
   const [renamingDeckId, setRenamingDeckId] = useState(null);
   const [importingDeck, setImportingDeck] = useState(false);
+  const [updatingDeckCardId, setUpdatingDeckCardId] = useState(null);
+  const [updatingAssignmentCardId, setUpdatingAssignmentCardId] = useState(null);
   const [deckListPreview, setDeckListPreview] = useState(null);
   const importDeckInputRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
+
+  const deckListQuery = useQuery({
+    queryKey: queryKeys.decks(activeTgc?.id),
+    queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
+    enabled: Boolean(activeTgc?.id),
+    staleTime: 2 * 60 * 1000,
+  });
+  const sessionProfileQuery = useQuery({
+    queryKey: queryKeys.sessionProfile(),
+    queryFn: async () => {
+      try {
+        return await getSessionProfile();
+      } catch (error) {
+        if (isUnauthorizedError(error)) {
+          return null;
+        }
+
+        throw error;
+      }
+    },
+  });
+  const selectedDeckQuery = useQuery({
+    queryKey: queryKeys.deckDetail(selectedDeckId),
+    queryFn: ({ signal }) => getDeckDetail(selectedDeckId, signal),
+    enabled: Boolean(selectedDeckId),
+    staleTime: 60 * 1000,
+  });
+
+  const decks = deckListQuery.data || [];
+  const selectedDeck = selectedDeckQuery.data || null;
+  const advancedMode = Boolean(sessionProfileQuery.data?.advanced_mode);
+  const userRole = (sessionProfileQuery.data?.role || 'player').toLowerCase();
+  const advancedDeckControlsEnabled = Boolean(
+    selectedDeck?.advanced_mode !== undefined ? selectedDeck.advanced_mode : advancedMode
+  );
   const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
   const isAdmin = userRole === 'admin';
   const selectedDeckIsOnePiece = selectedDeck?.composition?.format_mode === 'one-piece';
@@ -65,246 +107,216 @@ function Decks({ activeTcgSlug, activeTgc }) {
     ? `Leader ${selectedDeck?.leader_cards || 0}/${selectedDeck?.required_leader_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | DON ${selectedDeck?.don_cards || 0}/${selectedDeck?.recommended_don_cards || 10}`
     : `${selectedDeck?.total_cards || 0} cartas en total`;
 
-  const shouldRedirectToLogin = useCallback((error) => {
-    if (error.response?.status === 401) {
-      navigate('/');
-      return true;
-    }
-
-    return false;
-  }, [navigate]);
-
-  const notifyDeckError = useCallback((error, fallback) => {
-    showToast({
-      type: 'error',
-      message: getApiErrorMessage(error, fallback),
-    });
-  }, [showToast]);
-
-  const handleDeckRequestError = useCallback((error, fallback, logMessage) => {
-    if (shouldRedirectToLogin(error)) {
-      return true;
-    }
-
-    if (logMessage) {
-      console.error(logMessage, error);
-    }
-
-    notifyDeckError(error, fallback);
-    return false;
-  }, [notifyDeckError, shouldRedirectToLogin]);
-
-  useEffect(() => {
-    if (!activeTgc?.id) {
-      setLoadingDeckList(false);
-      return;
-    }
-
-    const loadDecks = async () => {
-      setLoadingDeckList(true);
-
-      try {
-        const res = await axios.get(`${API_BASE}/decks`, {
-          params: { tgc_id: activeTgc.id },
-        });
-        setDecks(Array.isArray(res.data) ? res.data : []);
-      } catch (error) {
-        handleDeckRequestError(
-          error,
-          'No se pudo cargar la lista de mazos.',
-          'Error al cargar los mazos:'
-        );
-      } finally {
-        setLoadingDeckList(false);
-      }
-    };
-
-    loadDecks();
-  }, [activeTgc?.id, handleDeckRequestError]);
-
-  useEffect(() => {
-    const fetchPreferences = async () => {
-      try {
-        const profile = await fetchSessionProfile(
-          () => axios.get(`${API_BASE}/settings/me`).then((response) => response.data || {}),
-          { forceRefresh: false }
-        );
-        setAdvancedMode(Boolean(profile?.advanced_mode));
-        setUserRole((profile?.role || 'player').toLowerCase());
-      } catch (error) {
-        shouldRedirectToLogin(error);
-      }
-    };
-
-    fetchPreferences();
-  }, [shouldRedirectToLogin]);
-
   useEffect(() => {
     localStorage.setItem('deckCardViewMode', deckCardView);
   }, [deckCardView]);
 
   useEffect(() => {
+    if (selectedDeck?.name) {
+      setDraftDeckName(selectedDeck.name);
+    }
+  }, [selectedDeck?.name]);
+
+  useEffect(() => {
     const deckId = location.state?.openDeckId;
-    if (deckId) {
-      const openSelectedDeck = async () => {
-        setLoadingDetails(true);
-
-        try {
-          const res = await axios.get(`${API_BASE}/decks/${deckId}`);
-          setSelectedDeck(res.data);
-          setDraftDeckName(res.data?.name || '');
-        } catch (error) {
-          handleDeckRequestError(
-            error,
-            'No se pudo cargar el detalle del mazo.',
-            'Error al cargar el detalle del mazo:'
-          );
-        } finally {
-          setLoadingDetails(false);
-        }
-      };
-
-      openSelectedDeck();
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [handleDeckRequestError, location.pathname, location.state, navigate]);
-
-  const fetchDecks = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}/decks`, {
-        params: { tgc_id: activeTgc.id },
-      });
-      setDecks(Array.isArray(res.data) ? res.data : []);
-    } catch (error) {
-      handleDeckRequestError(
-        error,
-        'No se pudo actualizar la lista de mazos.',
-        'Error al cargar los mazos:'
-      );
-    }
-  };
-
-  const createDeck = async (e) => {
-    e.preventDefault();
-
-    try {
-      const response = await axios.post(`${API_BASE}/decks`, { name: newDeckName, tgc_id: activeTgc.id });
-      setNewDeckName('');
-      if (response.data?.id) {
-        setDecks((current) => [response.data, ...current]);
-      } else {
-        await fetchDecks();
-      }
-      showToast({ type: 'success', message: 'Mazo creado.' });
-    } catch (error) {
-      handleDeckRequestError(error, 'No se pudo crear el mazo.', 'Error al crear el mazo:');
-    }
-  };
-
-  const deleteDeck = async (deckId, deckName) => {
-    const confirmed = window.confirm(`Se borrara el mazo "${deckName}". Esta accion no se puede deshacer.`);
-    if (!confirmed) {
+    if (!deckId) {
       return;
     }
 
-    setDeletingDeckId(deckId);
+    setSelectedDeckId(deckId);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.pathname, location.state, navigate]);
 
-    try {
-      await axios.delete(`${API_BASE}/decks/${deckId}`);
-      setDecks((current) => current.filter((deck) => deck.id !== deckId));
-      if (selectedDeck?.id === deckId) {
-        setSelectedDeck(null);
+  useEffect(() => {
+    const error = deckListQuery.error || selectedDeckQuery.error || sessionProfileQuery.error;
+    if (!error || isUnauthorizedError(error)) {
+      return;
+    }
+
+    showToast({
+      type: 'error',
+      message: getApiErrorMessage(error, 'No se pudieron cargar los datos de mazos.'),
+    });
+  }, [deckListQuery.error, selectedDeckQuery.error, sessionProfileQuery.error, showToast]);
+
+  const createDeckMutation = useMutation({
+    mutationFn: createDeck,
+    onSuccess: (createdDeck) => {
+      queryClient.setQueryData(queryKeys.decks(activeTgc?.id), (current) => (
+        Array.isArray(current) ? [createdDeck, ...current] : [createdDeck]
+      ));
+      setNewDeckName('');
+      showToast({ type: 'success', message: 'Mazo creado.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo crear el mazo.'),
+      });
+    },
+  });
+
+  const deleteDeckMutation = useMutation({
+    mutationFn: deleteDeck,
+    onSuccess: (_data, deckId) => {
+      queryClient.setQueryData(queryKeys.decks(activeTgc?.id), (current) => (
+        Array.isArray(current) ? current.filter((deck) => deck.id !== deckId) : current
+      ));
+      queryClient.removeQueries({ queryKey: queryKeys.deckDetail(deckId) });
+      if (selectedDeckId === deckId) {
+        setSelectedDeckId(null);
       }
       showToast({ type: 'success', message: 'Mazo borrado.' });
-    } catch (error) {
-      handleDeckRequestError(error, 'No se pudo borrar el mazo.');
-    } finally {
-      setDeletingDeckId(null);
-    }
-  };
-
-  const viewDeckDetails = async (deckId, options = {}) => {
-    const { keepCurrentView = false } = options;
-
-    if (!keepCurrentView) {
-      setLoadingDetails(true);
-    }
-
-    try {
-      const res = await axios.get(`${API_BASE}/decks/${deckId}`);
-      setSelectedDeck(res.data);
-      setDraftDeckName(res.data?.name || '');
-    } catch (error) {
-      handleDeckRequestError(
-        error,
-        'No se pudo cargar el detalle del mazo.',
-        'Error al cargar el detalle del mazo:'
-      );
-    } finally {
-      if (!keepCurrentView) {
-        setLoadingDetails(false);
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
       }
-    }
-  };
 
-  const cloneDeck = async (deckId) => {
-    setCloningDeckId(deckId);
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo borrar el mazo.'),
+      });
+    },
+    onSettled: () => {
+      setDeletingDeckId(null);
+    },
+  });
 
-    try {
-      const response = await axios.post(`${API_BASE}/decks/${deckId}/clone`);
-      await fetchDecks();
-      if (response.data?.deck_id) {
-        await viewDeckDetails(response.data.deck_id);
+  const cloneDeckMutation = useMutation({
+    mutationFn: cloneDeck,
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      if (response?.deck_id) {
+        setSelectedDeckId(response.deck_id);
       }
       showToast({ type: 'success', message: 'Mazo clonado.' });
-    } catch (error) {
-      handleDeckRequestError(error, 'No se pudo clonar el mazo.');
-    } finally {
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo clonar el mazo.'),
+      });
+    },
+    onSettled: () => {
       setCloningDeckId(null);
-    }
-  };
+    },
+  });
 
-  const shareDeck = async (deck) => {
-    if (!deck) {
-      return;
-    }
-
-    setSharingDeckId(deck.id);
-
-    try {
-      const response = await axios.post(`${API_BASE}/decks/${deck.id}/share`);
-      const shareUrl = `${window.location.origin}/shared-deck/${response.data.share_token}`;
-
-      if (navigator.share) {
-        await navigator.share({
-          title: deck.name,
-          text: `Consulta este mazo compartido de ${deck.tgc_name || activeGame.shortName}`,
-          url: shareUrl,
-        });
-        showToast({ type: 'success', message: 'Enlace del mazo listo para compartir.' });
-      } else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareUrl);
-        showToast({ type: 'success', message: 'Enlace del mazo copiado al portapapeles.' });
-      } else {
-        window.prompt('Copia este enlace del mazo:', shareUrl);
+  const renameDeckMutation = useMutation({
+    mutationFn: ({ deckId, name }) => renameDeck(deckId, { name }),
+    onSuccess: (response, variables) => {
+      const nextName = response?.name || variables.name;
+      setDraftDeckName(nextName);
+      queryClient.setQueryData(queryKeys.deckDetail(variables.deckId), (current) => (
+        current ? { ...current, name: nextName } : current
+      ));
+      queryClient.setQueryData(queryKeys.decks(activeTgc?.id), (current) => (
+        Array.isArray(current)
+          ? current.map((deck) => (deck.id === variables.deckId ? { ...deck, name: nextName } : deck))
+          : current
+      ));
+      showToast({ type: 'success', message: 'Nombre del mazo actualizado.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
       }
-    } catch (error) {
-      if (error?.name !== 'AbortError') {
-        handleDeckRequestError(error, 'No se pudo compartir el mazo.');
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo cambiar el nombre del mazo.'),
+      });
+    },
+    onSettled: () => {
+      setRenamingDeckId(null);
+    },
+  });
+
+  const adjustDeckCardMutation = useMutation({
+    mutationFn: ({ deckId, cardId, delta }) => adjustDeckCard(deckId, cardId, delta),
+    onSuccess: (payload, variables) => {
+      queryClient.setQueryData(queryKeys.deckDetail(variables.deckId), (current) => (
+        applyDeckQuantityMutation(current, variables.cardId, payload || {})
+      ));
+      if (payload?.deck) {
+        queryClient.setQueryData(queryKeys.decks(activeTgc?.id), (current) => (
+          mergeDeckOverviewInList(Array.isArray(current) ? current : [], payload.deck)
+        ));
       }
-    } finally {
-      setSharingDeckId(null);
-    }
-  };
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
 
-  const exportDeck = (deck) => {
-    if (!deck) {
-      return;
-    }
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo actualizar la cantidad en el mazo.'),
+      });
+    },
+    onSettled: () => {
+      setUpdatingDeckCardId(null);
+    },
+  });
 
-    const payload = buildDeckExportPayload(deck);
-    downloadJson(`${safeDeckFilename(deck.name)}.json`, payload);
-  };
+  const adjustAssignmentMutation = useMutation({
+    mutationFn: ({ deckId, cardId, delta }) => adjustDeckAssignment(deckId, cardId, delta),
+    onSuccess: (payload, variables) => {
+      queryClient.setQueryData(queryKeys.deckDetail(variables.deckId), (current) => (
+        applyDeckAssignmentMutation(current, variables.cardId, payload || {})
+      ));
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo ajustar la cobertura del mazo.'),
+      });
+    },
+    onSettled: () => {
+      setUpdatingAssignmentCardId(null);
+    },
+  });
+
+  const importDeckMutation = useMutation({
+    mutationFn: importDeck,
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      if (response?.deck_id) {
+        setSelectedDeckId(response.deck_id);
+      }
+      showToast({ type: 'success', message: 'Mazo importado.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo importar el mazo.'),
+      });
+    },
+    onSettled: () => {
+      setImportingDeck(false);
+    },
+  });
+
+  const shareDeckMutation = useMutation({
+    mutationFn: shareDeck,
+  });
 
   const closeDeckListPreview = () => {
     setDeckListPreview(null);
@@ -369,24 +381,96 @@ function Decks({ activeTcgSlug, activeTgc }) {
         throw new Error('El archivo no contiene cartas importables.');
       }
 
-      const response = await axios.post(`${API_BASE}/decks/import`, payload);
-      await fetchDecks();
-
-      if (response.data?.deck_id) {
-        await viewDeckDetails(response.data.deck_id);
+      try {
+        await importDeckMutation.mutateAsync(payload);
+      } catch (_error) {
+        // The mutation already reports backend errors through the shared toast flow.
       }
-      showToast({ type: 'success', message: 'Mazo importado.' });
     } catch (error) {
-      handleDeckRequestError(error, 'No se pudo importar el mazo.');
+      if (!isUnauthorizedError(error)) {
+        showToast({
+          type: 'error',
+          message: getApiErrorMessage(error, 'No se pudo importar el mazo.'),
+        });
+      }
+      setImportingDeck(false);
     } finally {
       if (event.target) {
         event.target.value = '';
       }
-      setImportingDeck(false);
     }
   };
 
-  const renameDeck = async () => {
+  const createDeckHandler = (e) => {
+    e.preventDefault();
+    createDeckMutation.mutate({ name: newDeckName, tgc_id: activeTgc.id });
+  };
+
+  const deleteDeckHandler = (deckId, deckName) => {
+    const confirmed = window.confirm(`Se borrara el mazo "${deckName}". Esta accion no se puede deshacer.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingDeckId(deckId);
+    deleteDeckMutation.mutate(deckId);
+  };
+
+  const viewDeckDetails = (deckId) => {
+    setSelectedDeckId(deckId);
+  };
+
+  const cloneDeckHandler = (deckId) => {
+    setCloningDeckId(deckId);
+    cloneDeckMutation.mutate(deckId);
+  };
+
+  const shareDeckHandler = async (deck) => {
+    if (!deck) {
+      return;
+    }
+
+    setSharingDeckId(deck.id);
+
+    try {
+      const response = await shareDeckMutation.mutateAsync(deck.id);
+      const shareUrl = `${window.location.origin}/shared-deck/${response.share_token}`;
+
+      if (navigator.share) {
+        await navigator.share({
+          title: deck.name,
+          text: `Consulta este mazo compartido de ${deck.tgc_name || activeGame.shortName}`,
+          url: shareUrl,
+        });
+        showToast({ type: 'success', message: 'Enlace del mazo listo para compartir.' });
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast({ type: 'success', message: 'Enlace del mazo copiado al portapapeles.' });
+      } else {
+        window.prompt('Copia este enlace del mazo:', shareUrl);
+      }
+    } catch (error) {
+      if (error?.name !== 'AbortError' && !isUnauthorizedError(error)) {
+        showToast({
+          type: 'error',
+          message: getApiErrorMessage(error, 'No se pudo compartir el mazo.'),
+        });
+      }
+    } finally {
+      setSharingDeckId(null);
+    }
+  };
+
+  const exportDeckHandler = (deck) => {
+    if (!deck) {
+      return;
+    }
+
+    const payload = buildDeckExportPayload(deck);
+    downloadJson(`${safeDeckFilename(deck.name)}.json`, payload);
+  };
+
+  const renameDeckHandler = () => {
     if (!selectedDeck) {
       return;
     }
@@ -398,62 +482,21 @@ function Decks({ activeTcgSlug, activeTgc }) {
     }
 
     setRenamingDeckId(selectedDeck.id);
-
-    try {
-      const response = await axios.patch(`${API_BASE}/decks/${selectedDeck.id}`, { name: trimmedName });
-      const nextName = response.data?.name || trimmedName;
-
-      setDraftDeckName(nextName);
-      setSelectedDeck((current) => (
-        current && current.id === selectedDeck.id
-          ? { ...current, name: nextName }
-          : current
-      ));
-      setDecks((current) => current.map((deck) => (
-        deck.id === selectedDeck.id
-          ? { ...deck, name: nextName }
-          : deck
-      )));
-      showToast({ type: 'success', message: 'Nombre del mazo actualizado.' });
-    } catch (error) {
-      handleDeckRequestError(error, 'No se pudo cambiar el nombre del mazo.');
-    } finally {
-      setRenamingDeckId(null);
-    }
+    renameDeckMutation.mutate({ deckId: selectedDeck.id, name: trimmedName });
   };
 
-  const adjustDeckCardQuantity = async (deckId, cardId, delta) => {
+  const adjustDeckCardQuantity = (deckId, cardId, delta) => {
     setUpdatingDeckCardId(cardId);
-
-    try {
-      const response = await axios.post(`${API_BASE}/decks/${deckId}/cards/${cardId}/adjust`, { delta });
-      const payload = response.data || {};
-      setSelectedDeck((current) => applyDeckQuantityMutation(current, cardId, payload));
-      if (payload.deck) {
-        setDecks((current) => mergeDeckOverviewInList(current, payload.deck));
-      }
-    } catch (error) {
-      handleDeckRequestError(error, 'No se pudo actualizar la cantidad en el mazo.');
-    } finally {
-      setUpdatingDeckCardId(null);
-    }
+    adjustDeckCardMutation.mutate({ deckId, cardId, delta });
   };
 
-  const adjustDeckCoverage = async (cardId, delta) => {
+  const adjustDeckCoverage = (cardId, delta) => {
     if (!selectedDeck?.id) {
       return;
     }
 
     setUpdatingAssignmentCardId(cardId);
-
-    try {
-      const response = await axios.post(`${API_BASE}/decks/${selectedDeck.id}/cards/${cardId}/assignment`, { delta });
-      setSelectedDeck((current) => applyDeckAssignmentMutation(current, cardId, response.data || {}));
-    } catch (error) {
-      handleDeckRequestError(error, 'No se pudo ajustar la cobertura del mazo.');
-    } finally {
-      setUpdatingAssignmentCardId(null);
-    }
+    adjustAssignmentMutation.mutate({ deckId: selectedDeck.id, cardId, delta });
   };
 
   const toggleAssignmentEditor = (cardId) => {
@@ -462,10 +505,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
   const closeDeckDetails = () => {
     setSelectedCard(null);
-    setSelectedDeck(null);
+    setSelectedDeckId(null);
   };
 
-  if (loadingDeckList && decks.length === 0) {
+  if (deckListQuery.isPending && decks.length === 0) {
     return (
       <div className="decks page-shell">
         <section className="page-hero decks-hero">
@@ -498,7 +541,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
       </section>
 
       <section className="panel create-deck-panel">
-        <form onSubmit={createDeck} className="create-deck-form">
+        <form onSubmit={createDeckHandler} className="create-deck-form">
           <input
             type="text"
             placeholder={`Nombre del mazo de ${activeGame.shortName}`}
@@ -506,7 +549,9 @@ function Decks({ activeTcgSlug, activeTgc }) {
             onChange={(e) => setNewDeckName(e.target.value)}
             required
           />
-          <button type="submit">Crear Mazo</button>
+          <button type="submit" disabled={createDeckMutation.isPending}>
+            {createDeckMutation.isPending ? 'Creando...' : 'Crear Mazo'}
+          </button>
         </form>
         <div className="create-deck-secondary-actions">
           <button
@@ -536,9 +581,9 @@ function Decks({ activeTcgSlug, activeTgc }) {
             key={deck.id}
             deck={deck}
             onOpen={() => viewDeckDetails(deck.id)}
-            onClone={() => cloneDeck(deck.id)}
-            onShare={() => shareDeck(deck)}
-            onDelete={() => deleteDeck(deck.id, deck.name)}
+            onClone={() => cloneDeckHandler(deck.id)}
+            onShare={() => shareDeckHandler(deck)}
+            onDelete={() => deleteDeckHandler(deck.id, deck.name)}
             isCloning={cloningDeckId === deck.id}
             isSharing={sharingDeckId === deck.id}
             isDeleting={deletingDeckId === deck.id}
@@ -553,14 +598,14 @@ function Decks({ activeTcgSlug, activeTgc }) {
         )}
       </section>
 
-      {(selectedDeck || loadingDetails) && (
+      {selectedDeckId && (
         <div className="card-modal deck-modal" onClick={closeDeckDetails}>
           <div className="deck-detail panel" onClick={(e) => e.stopPropagation()}>
-            {loadingDetails ? (
+            {selectedDeckQuery.isPending && !selectedDeck ? (
               <div className="deck-detail-loading">
                 <h2>Cargando mazo...</h2>
               </div>
-            ) : (
+            ) : selectedDeck ? (
               <>
                 <div className="deck-detail-header">
                   <div>
@@ -575,7 +620,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
                       <button
                         type="button"
                         className="ghost-button"
-                        onClick={renameDeck}
+                        onClick={renameDeckHandler}
                         disabled={renamingDeckId === selectedDeck?.id}
                       >
                         {renamingDeckId === selectedDeck?.id ? 'Guardando...' : 'Renombrar'}
@@ -635,10 +680,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
                   </div>
                   <DeckDetailActions
                     onOpenList={() => openDeckListPreview(selectedDeck)}
-                    onExportJson={() => exportDeck(selectedDeck)}
-                    onShare={() => shareDeck(selectedDeck)}
-                    onClone={() => cloneDeck(selectedDeck.id)}
-                    onDelete={() => deleteDeck(selectedDeck.id, selectedDeck.name)}
+                    onExportJson={() => exportDeckHandler(selectedDeck)}
+                    onShare={() => shareDeckHandler(selectedDeck)}
+                    onClone={() => cloneDeckHandler(selectedDeck.id)}
+                    onDelete={() => deleteDeckHandler(selectedDeck.id, selectedDeck.name)}
                     onClose={closeDeckDetails}
                     isSharing={sharingDeckId === selectedDeck?.id}
                     isCloning={cloningDeckId === selectedDeck?.id}
@@ -673,6 +718,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
                   </div>
                 )}
               </>
+            ) : (
+              <div className="deck-detail-loading">
+                <h2>No se pudo cargar el mazo.</h2>
+              </div>
             )}
           </div>
         </div>

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { flushSync } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { GAME_CONFIGS, getGameConfig } from '../tcgConfig';
-import API_BASE from '../apiBase';
+import { loginUser, registerUser } from '../services/api';
 
 const PUBLIC_GAME_OPTIONS = Object.values(GAME_CONFIGS);
 
@@ -94,7 +94,6 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
   const [registerData, setRegisterData] = useState({ username: '', email: '', password: '' });
   const [isRegister, setIsRegister] = useState(false);
   const [authMessage, setAuthMessage] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const activeGame = getGameConfig(activeTcgSlug);
   const quickActions = [
     { label: `Buscar en ${activeGame.shortName}`, to: '/search', tone: 'primary' },
@@ -102,34 +101,40 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
     { label: 'Ir a mis mazos', to: '/decks', tone: 'secondary' },
     { label: 'Ajustes y perfil', to: '/settings', tone: 'ghost' },
   ];
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    setAuthMessage(null);
-    setIsSubmitting(true);
-
-    try {
+  const authMutation = useMutation({
+    mutationFn: async () => {
       if (isRegister) {
-        await axios.post(`${API_BASE}/auth/register`, registerData);
+        return registerUser(registerData);
+      }
+
+      return loginUser(loginData);
+    },
+    onSuccess: async () => {
+      if (isRegister) {
         setAuthMessage({
           type: 'success',
           text: 'Registro completado. Ya puedes iniciar sesion con tu usuario.',
         });
         setRegisterData({ username: '', email: '', password: '' });
         setIsRegister(false);
-      } else {
-        await axios.post(`${API_BASE}/auth/token`, loginData);
-        onLoginSuccess();
+        return;
       }
-    } catch (err) {
+
+      await onLoginSuccess();
+    },
+    onError: (error) => {
       setAuthMessage({
         type: 'error',
-        text: getAuthErrorMessage(err, isRegister),
+        text: getAuthErrorMessage(error, isRegister),
       });
-    } finally {
-      setIsSubmitting(false);
-    }
+    },
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+
+    setAuthMessage(null);
+    authMutation.mutate();
   };
 
   const handleGameSelect = (game) => {
@@ -490,8 +495,8 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
                   />
                 </>
               )}
-              <button type="submit" disabled={isSubmitting}>
-                {isSubmitting
+              <button type="submit" disabled={authMutation.isPending}>
+                {authMutation.isPending
                   ? 'Procesando...'
                   : isRegister
                     ? 'Registrarse'
