@@ -141,6 +141,22 @@ const summarizeOpeningHand = (hand) => {
   };
 };
 
+const getCurveBandLabel = (curveBand) => {
+  if (curveBand === 'early') {
+    return 'Early';
+  }
+
+  if (curveBand === 'mid') {
+    return 'Mid';
+  }
+
+  if (curveBand === 'late') {
+    return 'Late';
+  }
+
+  return 'Sin curva';
+};
+
 function DeckCurveChart({ entries, averageCost, legendEntries }) {
   const chartEntries = useMemo(
     () => entries.filter((entry) => entry.label !== '?' || entry.total > 0),
@@ -380,6 +396,43 @@ function AdminDeckToolkit({ stats }) {
     () => summarizeOpeningHand(openingHand),
     [openingHand]
   );
+  const copySummaryEntries = useMemo(() => ([
+    {
+      label: 'Copias medias',
+      value: adminInsights?.averageCopiesPerUnique?.toFixed(2) || '0.00',
+      helper: 'Promedio por carta distinta',
+    },
+    {
+      label: 'Cartas x4',
+      value: adminInsights?.playsetCards || 0,
+      helper: 'Playsets completos',
+    },
+    {
+      label: 'Cartas x3',
+      value: adminInsights?.tripleCards || 0,
+      helper: 'Triples en la lista',
+    },
+    {
+      label: 'Cartas x2',
+      value: adminInsights?.doubleCards || 0,
+      helper: 'Dobles en la lista',
+    },
+    {
+      label: 'Cartas x1',
+      value: adminInsights?.singletonCards || 0,
+      helper: 'Singles puntuales',
+    },
+    {
+      label: 'Abrir 1 early',
+      value: formatPercentage((adminInsights?.probabilityAtLeastOneEarly || 0) * 100),
+      helper: 'Ver al menos una salida temprana',
+    },
+    {
+      label: 'Abrir 2 early',
+      value: formatPercentage((adminInsights?.probabilityAtLeastTwoEarly || 0) * 100),
+      helper: 'Ver dos salidas tempranas',
+    },
+  ]), [adminInsights]);
 
   const curveBandEntries = useMemo(() => {
     const totalMainDeckCards = adminInsights?.totalMainDeckCards || 0;
@@ -443,7 +496,7 @@ function AdminDeckToolkit({ stats }) {
           <h3>Laboratorio admin</h3>
           <p>
             Simula manos iniciales segun la regla oficial de apertura de {openingFormatLabel}
-            y revisa metricas de consistencia del mazo principal sin tocar la lista real.
+            y revisa la estabilidad del mazo principal sin tocar la lista real.
           </p>
         </div>
         <span className="deck-admin-badge">Solo admin</span>
@@ -488,16 +541,78 @@ function AdminDeckToolkit({ stats }) {
             )}
           </div>
 
-          <div className="deck-opening-hand-grid">
-            {openingHand.map((card, index) => (
-              <article key={`${card.instanceKey}-${index}`} className="deck-opening-card">
-                <span className="deck-opening-card-code">{card.source_card_id}</span>
-                <strong>{card.name}</strong>
-                <span>{card.card_type || 'Sin tipo'}</span>
-                <span>
-                  Coste {Number.isFinite(card.curveValue) ? card.curveValue : '?'} | {card.color || 'Sin color'}
-                </span>
-              </article>
+          {openingHand.length > 0 ? (
+            <div className="deck-opening-hand-grid">
+              {openingHand.map((card, index) => {
+                const colorPresentation = getDeckColorPresentation(card.color);
+
+                return (
+                  <article key={`${card.instanceKey}-${index}`} className="deck-opening-card">
+                    <div className="deck-opening-card-topline">
+                      <span className="deck-opening-card-slot">Carta {index + 1}</span>
+                      <span className="deck-opening-card-code">{card.source_card_id}</span>
+                    </div>
+
+                    <div className="deck-opening-card-visual">
+                      {card.image_url ? (
+                        <img
+                          src={card.image_url}
+                          alt={card.name}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : (
+                        <div className="deck-opening-card-placeholder">
+                          {card.source_card_id || 'Carta'}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="deck-opening-card-copy">
+                      <strong>{card.name}</strong>
+                      <span className="deck-opening-card-type">{card.card_type || 'Sin tipo'}</span>
+                    </div>
+
+                    <div className="deck-opening-card-facts">
+                      <span className="deck-opening-card-chip">
+                        Coste {Number.isFinite(card.curveValue) ? card.curveValue : '?'}
+                      </span>
+                      <span className="deck-opening-card-chip">
+                        {getCurveBandLabel(card.curveBand)}
+                      </span>
+                      <span
+                        className="deck-opening-card-chip is-color"
+                        style={colorPresentation.style}
+                      >
+                        {colorPresentation.label}
+                      </span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="collection-empty-text">
+              No hay suficientes cartas del mazo principal para simular una mano inicial.
+            </p>
+          )}
+        </article>
+
+        <article className="deck-admin-card">
+          <div className="deck-admin-card-header">
+            <div>
+              <strong>Estabilidad del mazo</strong>
+              <span>Copias clave y probabilidad de una salida inicial solida</span>
+            </div>
+          </div>
+
+          <div className="deck-admin-metric-grid">
+            {copySummaryEntries.map((entry) => (
+              <div key={entry.label} className="deck-admin-metric">
+                <span>{entry.label}</span>
+                <strong>{entry.value}</strong>
+                <small>{entry.helper}</small>
+              </div>
             ))}
           </div>
         </article>
@@ -505,48 +620,8 @@ function AdminDeckToolkit({ stats }) {
         <article className="deck-admin-card">
           <div className="deck-admin-card-header">
             <div>
-              <strong>Consistencia</strong>
-              <span>Indicadores rapidos del mazo principal</span>
-            </div>
-          </div>
-
-          <div className="deck-admin-metric-grid">
-            <div className="deck-admin-metric">
-              <span>Copias medias</span>
-              <strong>{adminInsights.averageCopiesPerUnique.toFixed(2)}</strong>
-            </div>
-            <div className="deck-admin-metric">
-              <span>Playsets</span>
-              <strong>{adminInsights.playsetCards}</strong>
-            </div>
-            <div className="deck-admin-metric">
-              <span>Triples</span>
-              <strong>{adminInsights.tripleCards}</strong>
-            </div>
-            <div className="deck-admin-metric">
-              <span>Dobles</span>
-              <strong>{adminInsights.doubleCards}</strong>
-            </div>
-            <div className="deck-admin-metric">
-              <span>Single copies</span>
-              <strong>{adminInsights.singletonCards}</strong>
-            </div>
-            <div className="deck-admin-metric">
-              <span>Abrir 1 early</span>
-              <strong>{formatPercentage(adminInsights.probabilityAtLeastOneEarly * 100)}</strong>
-            </div>
-            <div className="deck-admin-metric">
-              <span>Abrir 2 early</span>
-              <strong>{formatPercentage(adminInsights.probabilityAtLeastTwoEarly * 100)}</strong>
-            </div>
-          </div>
-        </article>
-
-        <article className="deck-admin-card">
-          <div className="deck-admin-card-header">
-            <div>
-              <strong>Estadisticas avanzadas</strong>
-              <span>Curva, tipos y colores con peso real dentro del mazo</span>
+              <strong>Curva, tipos y colores del mazo</strong>
+              <span>Lectura avanzada de como se reparte realmente la lista</span>
             </div>
           </div>
 
