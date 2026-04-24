@@ -25,18 +25,18 @@ const FIELD_LABELS = {
 const HOME_FEATURES = [
   {
     title: 'Buscar cartas',
-    description: 'Filtra por nombre, tipo, color, set o codigo sin cargar miles de resultados de golpe.',
-    bullets: ['Filtros rapidos', 'Paginacion ligera', 'Resultados pensados para mazos y coleccion'],
+    description: 'Encuentra cartas por nombre, tipo, color, set o codigo sin comerte una lista eterna.',
+    bullets: ['Filtros utiles', 'Paginacion ligera', 'Pensado para mazos y coleccion'],
   },
   {
     title: 'Gestionar tu coleccion',
-    description: 'Controla copias, revisa sets y localiza huecos de forma mas comoda desde una sola vista.',
-    bullets: ['Control por cantidades', 'Filtros por expansion', 'Vista lista para revisar faltantes'],
+    description: 'Mira cuantas copias tienes, repasa sets y detecta rapido lo que te falta.',
+    bullets: ['Control por cantidades', 'Filtros por expansion', 'Revision comoda de faltantes'],
   },
   {
     title: 'Construir mazos',
-    description: 'Monta listas, valida reglas por juego y comparte tus builds sin salir del mismo flujo.',
-    bullets: ['Reglas por TCG', 'Exportacion rapida', 'Panel de curva y mano inicial'],
+    description: 'Haz listas, comprueba que cuadran con las reglas del juego y compartelas cuando quieras.',
+    bullets: ['Reglas por TCG', 'Exportacion rapida', 'Curva y mano inicial'],
   },
 ];
 
@@ -44,17 +44,17 @@ const HOME_STEPS = [
   {
     step: '01',
     title: 'Elige juego',
-    description: 'Cambia entre Gundam y One Piece sin perder el resto de tu cuenta ni tu forma de trabajo.',
+    description: 'Entras, escoges Gundam o One Piece y sigues desde la misma cuenta.',
   },
   {
     step: '02',
     title: 'Busca y guarda',
-    description: 'Encuentra la carta, anadela a coleccion o usala directamente para montar un mazo.',
+    description: 'Encuentras una carta, la guardas en tu coleccion o la mandas al mazo en un momento.',
   },
   {
     step: '03',
-    title: 'Pulsa y comparte',
-    description: 'Revisa curva, cantidades y exporta la lista cuando ya la tengas lista para jugar.',
+    title: 'Revisa y comparte',
+    description: 'Cuando la lista ya toma forma, revisas la curva y la exportas sin complicarte.',
   },
 ];
 
@@ -152,11 +152,10 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
         <section className="page-hero home-hero home-hero-logged">
           <div className="home-hero-copy">
             <span className="eyebrow">Hub multijuego</span>
-            <h1>Tu base de operaciones para cartas, coleccion y mazos</h1>
+            <h1>Todo a mano para jugar, coleccionar y montar mazos</h1>
             <p>
-              Cambia entre sistemas compatibles desde el mismo puente. Ahora mismo estas trabajando
-              sobre {activeGame.shortName} y puedes saltar entre buscador, coleccion y construccion
-              de mazos desde el mismo flujo.
+              Ahora mismo estas en {activeGame.shortName}. Desde aqui puedes buscar cartas, revisar
+              tu coleccion o seguir con tus mazos sin dar vueltas de mas.
             </p>
           </div>
 
@@ -180,8 +179,7 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
               <span className="eyebrow">Ruta rapida</span>
               <h2>Entra donde mas te convenga</h2>
               <p>
-                Si hoy vienes a revisar cartas, completar coleccion o tocar una lista, aqui tienes
-                los accesos directos principales.
+                Si hoy vienes con una idea clara, entra por aqui y sigue sin rodeos.
               </p>
             </div>
 
@@ -201,10 +199,10 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
           <article className="panel home-context-panel">
             <div className="home-section-heading">
               <span className="eyebrow">Como funciona</span>
-              <h2>Un flujo sencillo y continuo</h2>
+              <h2>Todo sigue el mismo camino</h2>
               <p>
-                La idea es que no tengas que pensar en herramientas separadas: encuentras la carta,
-                la guardas y la conviertes en mazo dentro de la misma cuenta.
+                La gracia es no ir saltando entre herramientas raras: buscas una carta, la guardas
+                y si quieres la conviertes en mazo dentro de la misma cuenta.
               </p>
             </div>
 
@@ -269,11 +267,11 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
         <div className="home-landing-main">
           <section className="page-hero home-hero home-hero-public">
             <div className="home-hero-copy">
-              <span className="eyebrow">Coleccion centralizada</span>
-              <h1>Una misma web para buscar cartas, controlar coleccion y crear mazos</h1>
+              <span className="eyebrow">Todo en un sitio</span>
+              <h1>Busca cartas, lleva tu coleccion y monta mazos sin liarte</h1>
               <p>
-                Organiza cartas, colecciones y mazos desde una sola interfaz. Gundam y One Piece
-                ya comparten base de operaciones mientras Magic queda preparado para la siguiente fase.
+                La idea es sencilla: abrir la web y tener a mano lo importante. Gundam y One Piece
+                ya estan listos, y la base queda preparada para seguir creciendo.
               </p>
             </div>
 
@@ -287,10 +285,10 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
             <article className="panel home-context-panel">
               <div className="home-section-heading">
                 <span className="eyebrow">Que puedes hacer</span>
-                <h2>La web ya cubre el flujo principal</h2>
+                <h2>Entrar y ponerte al dia en dos minutos</h2>
                 <p>
-                  No es solo un catalogo. La idea es que puedas pasar de descubrir una carta a usarla
-                  dentro de tu coleccion o tu mazo sin cambiar de herramienta.
+                  Si vienes a mirar cartas, completar tu coleccion o tocar un mazo, aqui lo tienes
+                  todo bastante a mano.
                 </p>
               </div>
 
@@ -310,10 +308,9 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
             <article className="panel home-context-panel">
               <div className="home-section-heading">
                 <span className="eyebrow">Funciones</span>
-                <h2>Que vas a encontrar al entrar</h2>
+                <h2>Lo que te vas a encontrar</h2>
                 <p>
-                  El proyecto esta pensado para moverse rapido, evitar ruido y dejar claro para que
-                  sirve cada modulo desde el principio.
+                  Nada de menus raros ni pasos de mas. Entras y ya ves rapido por donde tirar.
                 </p>
               </div>
 
@@ -324,15 +321,15 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
                 </div>
                 <div className="home-capability-pill">
                   <strong>Coleccion viva</strong>
-                  <span>Control de copias, revisiones y faltantes.</span>
+                  <span>Copias, repasos de sets y faltantes.</span>
                 </div>
                 <div className="home-capability-pill">
                   <strong>Mazos con reglas</strong>
-                  <span>Validacion y herramientas segun el TCG.</span>
+                  <span>Validacion y ayudas segun el TCG.</span>
                 </div>
                 <div className="home-capability-pill">
                   <strong>Base comun</strong>
-                  <span>Un mismo perfil para todos los juegos activos.</span>
+                  <span>Una sola cuenta para moverte por los juegos activos.</span>
                 </div>
               </div>
             </article>
@@ -384,8 +381,8 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
           <div className="auth-container auth-home-card">
             <div className="auth-copy">
               <span className="eyebrow">Acceso</span>
-              <h2>Entra en el hangar</h2>
-              <p>Inicia sesion o crea tu perfil para entrar en Gundam o zarpar hacia One Piece.</p>
+              <h2>Entra y empieza</h2>
+              <p>Inicia sesion o crea tu perfil para ponerte a buscar cartas, ordenar tu coleccion o montar mazos.</p>
             </div>
 
             <div className="auth-toggle">
