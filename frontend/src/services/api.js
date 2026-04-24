@@ -1,8 +1,8 @@
 import apiClient from '../apiClient';
 
 export const getSessionProfile = async () => {
-  const response = await apiClient.get('/settings/me');
-  return response.data || null;
+  const response = await apiClient.get('/auth/session');
+  return response.data?.user || null;
 };
 
 export const getTgcCatalog = async () => {

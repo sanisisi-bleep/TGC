@@ -7,6 +7,7 @@ import DeckDetailActions from '../components/decks/DeckDetailActions';
 import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
 import DeckStatsPanel from '../components/decks/DeckStatsPanel';
 import DeckSummaryCard from '../components/decks/DeckSummaryCard';
+import { isUnauthorizedError, useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
 import queryKeys from '../queryKeys';
 import { getGameConfig } from '../tcgConfig';
@@ -34,17 +35,15 @@ import {
   deleteDeck,
   getDeckDetail,
   getDecks,
-  getSessionProfile,
   importDeck,
   renameDeck,
   shareDeck,
 } from '../services/api';
 
-const isUnauthorizedError = (error) => error?.response?.status === 401;
-
 function Decks({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const { showToast } = useToast();
+  const { profile } = useSession();
   const queryClient = useQueryClient();
   const [newDeckName, setNewDeckName] = useState('');
   const [selectedDeckId, setSelectedDeckId] = useState(null);
@@ -72,20 +71,6 @@ function Decks({ activeTcgSlug, activeTgc }) {
     enabled: Boolean(activeTgc?.id),
     staleTime: 2 * 60 * 1000,
   });
-  const sessionProfileQuery = useQuery({
-    queryKey: queryKeys.sessionProfile(),
-    queryFn: async () => {
-      try {
-        return await getSessionProfile();
-      } catch (error) {
-        if (isUnauthorizedError(error)) {
-          return null;
-        }
-
-        throw error;
-      }
-    },
-  });
   const selectedDeckQuery = useQuery({
     queryKey: queryKeys.deckDetail(selectedDeckId),
     queryFn: ({ signal }) => getDeckDetail(selectedDeckId, signal),
@@ -95,8 +80,8 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
   const decks = deckListQuery.data || [];
   const selectedDeck = selectedDeckQuery.data || null;
-  const advancedMode = Boolean(sessionProfileQuery.data?.advanced_mode);
-  const userRole = (sessionProfileQuery.data?.role || 'player').toLowerCase();
+  const advancedMode = Boolean(profile?.advanced_mode);
+  const userRole = (profile?.role || 'player').toLowerCase();
   const advancedDeckControlsEnabled = Boolean(
     selectedDeck?.advanced_mode !== undefined ? selectedDeck.advanced_mode : advancedMode
   );
@@ -128,7 +113,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
   }, [location.pathname, location.state, navigate]);
 
   useEffect(() => {
-    const error = deckListQuery.error || selectedDeckQuery.error || sessionProfileQuery.error;
+    const error = deckListQuery.error || selectedDeckQuery.error;
     if (!error || isUnauthorizedError(error)) {
       return;
     }
@@ -137,7 +122,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
       type: 'error',
       message: getApiErrorMessage(error, 'No se pudieron cargar los datos de mazos.'),
     });
-  }, [deckListQuery.error, selectedDeckQuery.error, sessionProfileQuery.error, showToast]);
+  }, [deckListQuery.error, selectedDeckQuery.error, showToast]);
 
   const createDeckMutation = useMutation({
     mutationFn: createDeck,

@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import './App.css';
-import apiClient from './apiClient';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import Home from './pages/Home';
 import Search from './pages/Search';
@@ -12,13 +11,13 @@ import Collection from './pages/Collection';
 import Decks from './pages/Decks';
 import Settings from './pages/Settings';
 import SharedDeck from './pages/SharedDeck';
+import { SessionProvider, useSession } from './context/SessionContext';
 import { ToastProvider } from './context/ToastContext';
-import queryKeys from './queryKeys';
 import { buildTcgMap, DEFAULT_TCG_SLUG, GAME_CONFIGS, getGameConfig } from './tcgConfig';
-import { getSessionProfile, getTgcCatalog, logoutUser } from './services/api';
+import queryKeys from './queryKeys';
+import { getTgcCatalog } from './services/api';
 
 const THEME_MODE_STORAGE_KEY = 'tgc-theme-mode-v1';
-const SESSION_QUERY_STALE_TIME_MS = 2 * 60 * 1000;
 const TGC_QUERY_STALE_TIME_MS = 30 * 60 * 1000;
 
 const getPreferredThemeMode = () => {
@@ -268,96 +267,32 @@ function ProtectedGameRoute({
   );
 }
 
-function App() {
-  const queryClient = useQueryClient();
-  const [themeMode, setThemeMode] = useState(getPreferredThemeMode);
-  const [activeTcgSlug, setActiveTcgSlug] = useState(
-    () => localStorage.getItem('activeTcgSlug') || DEFAULT_TCG_SLUG
-  );
-
-  const updateActiveTcgSlug = useCallback((nextSlug) => {
-    const normalizedSlug = (nextSlug || DEFAULT_TCG_SLUG).trim() || DEFAULT_TCG_SLUG;
-    localStorage.setItem('activeTcgSlug', normalizedSlug);
-    setActiveTcgSlug(normalizedSlug);
-  }, []);
-
-  const clearProtectedQueryData = useCallback(() => {
-    const protectedRoots = new Set(['session', 'collection', 'decks', 'cards', 'settings']);
-
-    queryClient.removeQueries({
-      predicate: (query) => {
-        const rootKey = Array.isArray(query.queryKey) ? query.queryKey[0] : null;
-        return protectedRoots.has(rootKey);
-      },
-    });
-    queryClient.setQueryData(queryKeys.sessionProfile(), null);
-  }, [queryClient]);
+function AppShell({
+  activeTcgSlug,
+  themeMode,
+  toggleThemeMode,
+  updateActiveTcgSlug,
+}) {
+  const {
+    authReady,
+    isAuthenticated,
+    logout,
+    refreshSession,
+  } = useSession();
 
   const handleLoginSuccess = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.sessionProfile() });
-  }, [queryClient]);
-
-  const retryTgcLoad = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.tgcCatalog() });
-  }, [queryClient]);
-
-  const toggleThemeMode = useCallback(() => {
-    setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
-  }, []);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
-    } catch (_error) {
-      // Ignore storage issues and keep the theme only in memory.
-    }
-
-    document.body.classList.toggle('theme-dark', themeMode === 'dark');
-    document.body.classList.toggle('theme-light', themeMode !== 'dark');
-    document.documentElement.style.colorScheme = themeMode;
-  }, [themeMode]);
-
-  useEffect(() => {
-    const interceptor = apiClient.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.status === 401) {
-          clearProtectedQueryData();
-        }
-
-        return Promise.reject(error);
-      }
-    );
-
-    return () => {
-      apiClient.interceptors.response.eject(interceptor);
-    };
-  }, [clearProtectedQueryData]);
-
-  const sessionQuery = useQuery({
-    queryKey: queryKeys.sessionProfile(),
-    queryFn: async () => {
-      try {
-        return await getSessionProfile();
-      } catch (error) {
-        if (error.response?.status === 401) {
-          return null;
-        }
-
-        throw error;
-      }
-    },
-    staleTime: SESSION_QUERY_STALE_TIME_MS,
-  });
+    await refreshSession();
+  }, [refreshSession]);
 
   const tgcCatalogQuery = useQuery({
     queryKey: queryKeys.tgcCatalog(),
     queryFn: getTgcCatalog,
     staleTime: TGC_QUERY_STALE_TIME_MS,
   });
+  const retryTgcLoad = useCallback(() => {
+    tgcCatalogQuery.refetch();
+  }, [tgcCatalogQuery]);
 
-  const isAuthenticated = Boolean(sessionQuery.data);
-  const authReady = !sessionQuery.isPending;
   const tgcBySlug = useMemo(
     () => buildTcgMap(tgcCatalogQuery.data || []),
     [tgcCatalogQuery.data]
@@ -372,16 +307,6 @@ function App() {
       || DEFAULT_TCG_SLUG;
     updateActiveTcgSlug(fallbackSlug);
   }, [activeTcgSlug, tgcBySlug, tgcCatalogQuery.isPending, updateActiveTcgSlug]);
-
-  const logout = useCallback(async () => {
-    try {
-      await logoutUser();
-    } catch (_error) {
-      // The local session still needs to be cleared even if the network request fails.
-    } finally {
-      clearProtectedQueryData();
-    }
-  }, [clearProtectedQueryData]);
 
   const activeGame = getGameConfig(activeTcgSlug);
   const activeTgc = tgcBySlug[activeTcgSlug] || null;
@@ -403,99 +328,139 @@ function App() {
   );
 
   return (
+    <div className={`App ${activeGame.palette} ${themeMode === 'dark' ? 'theme-dark' : 'theme-light'}`}>
+      {!authReady ? (
+        <main className="main-content">
+          <SessionBootstrapPanel />
+        </main>
+      ) : (
+        <>
+          <SiteNavigation
+            isAuthenticated={isAuthenticated}
+            navGames={navGames}
+            activeTcgSlug={activeTcgSlug}
+            themeMode={themeMode}
+            onSelectGame={updateActiveTcgSlug}
+            onToggleTheme={toggleThemeMode}
+            onLogout={logout}
+          />
+
+          <main className="main-content">
+            <Routes>
+              <Route
+                path="/"
+                element={
+                  <Home
+                    token={isAuthenticated ? 'cookie-session' : null}
+                    onLoginSuccess={handleLoginSuccess}
+                    activeTcgSlug={activeTcgSlug}
+                    setActiveTcgSlug={updateActiveTcgSlug}
+                    availableGames={navGames}
+                  />
+                }
+              />
+              <Route
+                path="/search"
+                element={
+                  <ProtectedGameRoute
+                    isAuthenticated={isAuthenticated}
+                    isBlocked={shouldBlockProtectedGameRoutes}
+                    fallback={protectedGameFallback}
+                    resetKey={`search-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                  >
+                    <Search
+                      key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                      activeTcgSlug={activeTcgSlug}
+                      activeTgc={activeTgc}
+                    />
+                  </ProtectedGameRoute>
+                }
+              />
+              <Route
+                path="/collection"
+                element={
+                  <ProtectedGameRoute
+                    isAuthenticated={isAuthenticated}
+                    isBlocked={shouldBlockProtectedGameRoutes}
+                    fallback={protectedGameFallback}
+                    resetKey={`collection-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                  >
+                    <Collection
+                      key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                      activeTcgSlug={activeTcgSlug}
+                      activeTgc={activeTgc}
+                    />
+                  </ProtectedGameRoute>
+                }
+              />
+              <Route
+                path="/decks"
+                element={
+                  <ProtectedGameRoute
+                    isAuthenticated={isAuthenticated}
+                    isBlocked={shouldBlockProtectedGameRoutes}
+                    fallback={protectedGameFallback}
+                    resetKey={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                  >
+                    <Decks
+                      key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                      activeTcgSlug={activeTcgSlug}
+                      activeTgc={activeTgc}
+                    />
+                  </ProtectedGameRoute>
+                }
+              />
+              <Route path="/shared-deck/:shareToken" element={<SharedDeck />} />
+              <Route path="/settings" element={isAuthenticated ? <Settings /> : <Navigate to="/" />} />
+            </Routes>
+          </main>
+        </>
+      )}
+      <Analytics beforeSend={sanitizeTelemetryPayload} />
+      <SpeedInsights beforeSend={sanitizeTelemetryPayload} />
+    </div>
+  );
+}
+
+function App() {
+  const [themeMode, setThemeMode] = useState(getPreferredThemeMode);
+  const [activeTcgSlug, setActiveTcgSlug] = useState(
+    () => localStorage.getItem('activeTcgSlug') || DEFAULT_TCG_SLUG
+  );
+
+  const updateActiveTcgSlug = useCallback((nextSlug) => {
+    const normalizedSlug = (nextSlug || DEFAULT_TCG_SLUG).trim() || DEFAULT_TCG_SLUG;
+    localStorage.setItem('activeTcgSlug', normalizedSlug);
+    setActiveTcgSlug(normalizedSlug);
+  }, []);
+
+  const toggleThemeMode = useCallback(() => {
+    setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
+    } catch (_error) {
+      // Ignore storage issues and keep the theme only in memory.
+    }
+
+    document.body.classList.toggle('theme-dark', themeMode === 'dark');
+    document.body.classList.toggle('theme-light', themeMode !== 'dark');
+    document.documentElement.style.colorScheme = themeMode;
+  }, [themeMode]);
+
+  return (
     <Router>
       <ToastProvider>
-        <div className={`App ${activeGame.palette} ${themeMode === 'dark' ? 'theme-dark' : 'theme-light'}`}>
-          {!authReady ? (
-            <main className="main-content">
-              <SessionBootstrapPanel />
-            </main>
-          ) : (
-            <>
-              <SiteNavigation
-                isAuthenticated={isAuthenticated}
-                navGames={navGames}
-                activeTcgSlug={activeTcgSlug}
-                themeMode={themeMode}
-                onSelectGame={updateActiveTcgSlug}
-                onToggleTheme={toggleThemeMode}
-                onLogout={logout}
-              />
-
-              <main className="main-content">
-                <Routes>
-                  <Route
-                    path="/"
-                    element={
-                      <Home
-                        token={isAuthenticated ? 'cookie-session' : null}
-                        onLoginSuccess={handleLoginSuccess}
-                        activeTcgSlug={activeTcgSlug}
-                        setActiveTcgSlug={updateActiveTcgSlug}
-                        availableGames={navGames}
-                      />
-                    }
-                  />
-                  <Route
-                    path="/search"
-                    element={
-                      <ProtectedGameRoute
-                        isAuthenticated={isAuthenticated}
-                        isBlocked={shouldBlockProtectedGameRoutes}
-                        fallback={protectedGameFallback}
-                        resetKey={`search-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
-                      >
-                        <Search
-                          key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
-                          activeTcgSlug={activeTcgSlug}
-                          activeTgc={activeTgc}
-                        />
-                      </ProtectedGameRoute>
-                    }
-                  />
-                  <Route
-                    path="/collection"
-                    element={
-                      <ProtectedGameRoute
-                        isAuthenticated={isAuthenticated}
-                        isBlocked={shouldBlockProtectedGameRoutes}
-                        fallback={protectedGameFallback}
-                        resetKey={`collection-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
-                      >
-                        <Collection
-                          key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
-                          activeTcgSlug={activeTcgSlug}
-                          activeTgc={activeTgc}
-                        />
-                      </ProtectedGameRoute>
-                    }
-                  />
-                  <Route
-                    path="/decks"
-                    element={
-                      <ProtectedGameRoute
-                        isAuthenticated={isAuthenticated}
-                        isBlocked={shouldBlockProtectedGameRoutes}
-                        fallback={protectedGameFallback}
-                        resetKey={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
-                      >
-                        <Decks
-                          key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
-                          activeTcgSlug={activeTcgSlug}
-                          activeTgc={activeTgc}
-                        />
-                      </ProtectedGameRoute>
-                    }
-                  />
-                  <Route path="/shared-deck/:shareToken" element={<SharedDeck />} />
-                  <Route path="/settings" element={isAuthenticated ? <Settings /> : <Navigate to="/" />} />
-                </Routes>
-              </main>
-            </>
-          )}
-          <Analytics beforeSend={sanitizeTelemetryPayload} />
-          <SpeedInsights beforeSend={sanitizeTelemetryPayload} />
-        </div>
+        <SessionProvider>
+          <AppShell
+            activeTcgSlug={activeTcgSlug}
+            themeMode={themeMode}
+            toggleThemeMode={toggleThemeMode}
+            updateActiveTcgSlug={updateActiveTcgSlug}
+          />
+        </SessionProvider>
       </ToastProvider>
     </Router>
   );

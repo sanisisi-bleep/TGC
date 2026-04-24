@@ -11,6 +11,7 @@ from app.services.auth_service import (
     authenticate_user,
     clear_auth_cookie,
     create_access_token,
+    get_current_user_optional,
     get_password_hash,
     set_auth_cookie,
 )
@@ -29,6 +30,20 @@ REGISTER_IDENTIFIER_POLICY = RateLimitPolicy(bucket="auth-register-identifier", 
 
 def _apply_no_store(response: Response):
     response.headers["Cache-Control"] = "no-store"
+
+
+def _serialize_session_user(user: User):
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "display_name": user.display_name or user.username,
+        "role": user.role or "player",
+        "bio": user.bio or "",
+        "advanced_mode": bool(user.advanced_mode),
+        "favorite_tgc_id": user.favorite_tgc_id,
+        "default_tgc_id": user.default_tgc_id,
+    }
 
 
 class UserCreate(BaseModel):
@@ -72,6 +87,14 @@ class UserLogin(BaseModel):
             raise ValueError("Invalid username format")
 
         return value
+
+
+@router.get("/session")
+def get_session(response: Response, current_user: User | None = Depends(get_current_user_optional)):
+    _apply_no_store(response)
+    if current_user is None:
+        return {"authenticated": False, "user": None}
+    return {"authenticated": True, "user": _serialize_session_user(current_user)}
 
 @router.post("/register")
 def register(user: UserCreate, request: Request, response: Response, db: Session = Depends(get_db)):

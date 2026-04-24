@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { isUnauthorizedError, useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import queryKeys from '../queryKeys';
@@ -8,9 +9,7 @@ import {
   changePassword as changePasswordRequest,
   deleteAccount as deleteAccountRequest,
   getAdminUsers,
-  getSessionProfile,
   getTgcCatalog,
-  logoutUser,
   updateAdminUserRole,
   updateProfile,
 } from '../services/api';
@@ -94,12 +93,15 @@ const copyTextToClipboard = async (text) => {
   document.body.removeChild(textArea);
 };
 
-const isUnauthorizedError = (error) => error?.response?.status === 401;
-
 function Settings() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const {
+    authReady,
+    clearProtectedQueryData,
+    profile: sessionProfile,
+  } = useSession();
   const [profile, setProfile] = useState({
     username: '',
     email: '',
@@ -115,20 +117,6 @@ function Settings() {
   const [deletePassword, setDeletePassword] = useState('');
   const [feedbackDraft, setFeedbackDraft] = useState(readFeedbackDraft);
 
-  const sessionProfileQuery = useQuery({
-    queryKey: queryKeys.sessionProfile(),
-    queryFn: async () => {
-      try {
-        return await getSessionProfile();
-      } catch (error) {
-        if (isUnauthorizedError(error)) {
-          return null;
-        }
-
-        throw error;
-      }
-    },
-  });
   const tgcCatalogQuery = useQuery({
     queryKey: queryKeys.tgcCatalog(),
     queryFn: getTgcCatalog,
@@ -137,12 +125,12 @@ function Settings() {
   const adminUsersQuery = useQuery({
     queryKey: queryKeys.adminUsers(),
     queryFn: getAdminUsers,
-    enabled: (sessionProfileQuery.data?.role || 'player') === 'admin',
+    enabled: (sessionProfile?.role || 'player') === 'admin',
   });
 
   const tgcs = tgcCatalogQuery.data || [];
   const users = adminUsersQuery.data || [];
-  const loading = sessionProfileQuery.isPending || tgcCatalogQuery.isPending;
+  const loading = !authReady || tgcCatalogQuery.isPending;
   const feedbackPreview = useMemo(
     () => buildFeedbackPreview(feedbackDraft, profile),
     [feedbackDraft, profile]
@@ -152,7 +140,7 @@ function Settings() {
   );
 
   useEffect(() => {
-    const data = sessionProfileQuery.data;
+    const data = sessionProfile;
     if (!data) {
       return;
     }
@@ -167,13 +155,13 @@ function Settings() {
       favorite_tgc_id: data.favorite_tgc_id || '',
       default_tgc_id: data.default_tgc_id || '',
     });
-  }, [sessionProfileQuery.data]);
+  }, [sessionProfile]);
 
   useEffect(() => {
-    if (sessionProfileQuery.isSuccess && !sessionProfileQuery.data) {
+    if (authReady && !sessionProfile) {
       navigate('/');
     }
-  }, [navigate, sessionProfileQuery.data, sessionProfileQuery.isSuccess]);
+  }, [authReady, navigate, sessionProfile]);
 
   useEffect(() => {
     try {
@@ -184,7 +172,7 @@ function Settings() {
   }, [feedbackDraft]);
 
   useEffect(() => {
-    const error = sessionProfileQuery.error || tgcCatalogQuery.error || adminUsersQuery.error;
+    const error = tgcCatalogQuery.error || adminUsersQuery.error;
     if (!error || isUnauthorizedError(error)) {
       return;
     }
@@ -193,7 +181,7 @@ function Settings() {
       type: 'error',
       message: getApiErrorMessage(error, 'No se pudo cargar la configuracion.'),
     });
-  }, [adminUsersQuery.error, sessionProfileQuery.error, showToast, tgcCatalogQuery.error]);
+  }, [adminUsersQuery.error, showToast, tgcCatalogQuery.error]);
 
   const saveProfileMutation = useMutation({
     mutationFn: updateProfile,
@@ -265,17 +253,10 @@ function Settings() {
 
   const deleteAccountMutation = useMutation({
     mutationFn: deleteAccountRequest,
-    onSuccess: async () => {
-      await logoutUser().catch(() => undefined);
-      queryClient.setQueryData(queryKeys.sessionProfile(), null);
-      queryClient.removeQueries({
-        predicate: (query) => {
-          const rootKey = Array.isArray(query.queryKey) ? query.queryKey[0] : null;
-          return ['session', 'collection', 'decks', 'cards', 'settings'].includes(rootKey);
-        },
-      });
+    onSuccess: () => {
+      clearProtectedQueryData();
       navigate('/');
-      window.location.reload();
+      showToast({ type: 'success', message: 'Cuenta borrada.' });
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {

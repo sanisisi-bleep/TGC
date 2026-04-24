@@ -125,6 +125,41 @@ def _resolve_request_token(request: Request, bearer_token: str | None):
     return request.cookies.get(AUTH_COOKIE_NAME)
 
 
+def _resolve_user_from_request(request: Request, bearer_token: str | None, db: Session):
+    resolved_token = _resolve_request_token(request, bearer_token)
+    if not resolved_token:
+        return None
+
+    try:
+        payload = jwt.decode(resolved_token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        token_type = payload.get("type")
+        if username is None or token_type != "access":
+            return None
+    except JWTError:
+        return None
+
+    repo = UserRepository(db)
+    user = repo.get_by_username(username)
+    if user is None:
+        return None
+
+    update_log_context(
+        user_id=user.id,
+        username=user.username,
+        user_role=get_user_role(user),
+    )
+    return user
+
+
+def get_current_user_optional(
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    return _resolve_user_from_request(request, token, db)
+
+
 def get_current_user(
     request: Request,
     token: str | None = Depends(oauth2_scheme),
@@ -136,27 +171,9 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    resolved_token = _resolve_request_token(request, token)
-    if not resolved_token:
-        raise credentials_exception
-
-    try:
-        payload = jwt.decode(resolved_token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        token_type = payload.get("type")
-        if username is None or token_type != "access":
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    repo = UserRepository(db)
-    user = repo.get_by_username(username)
+    user = _resolve_user_from_request(request, token, db)
     if user is None:
         raise credentials_exception
-    update_log_context(
-        user_id=user.id,
-        username=user.username,
-        user_role=get_user_role(user),
-    )
     return user
 
 
