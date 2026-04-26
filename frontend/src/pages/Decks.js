@@ -81,12 +81,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const decks = deckListQuery.data || [];
   const selectedDeck = selectedDeckQuery.data || null;
   const advancedMode = Boolean(profile?.advanced_mode);
-  const userRole = (profile?.role || 'player').toLowerCase();
   const advancedDeckControlsEnabled = Boolean(
     selectedDeck?.advanced_mode !== undefined ? selectedDeck.advanced_mode : advancedMode
   );
   const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
-  const isAdmin = userRole === 'admin';
   const selectedDeckIsOnePiece = selectedDeck?.composition?.format_mode === 'one-piece';
   const selectedDeckSummary = selectedDeckIsOnePiece
     ? `Leader ${selectedDeck?.leader_cards || 0}/${selectedDeck?.required_leader_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | DON ${selectedDeck?.don_cards || 0}/${selectedDeck?.recommended_don_cards || 10}`
@@ -676,7 +674,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
                   />
                 </div>
 
-                <DeckStatsPanel stats={deckStats} isAdmin={isAdmin} />
+                <DeckStatsPanel stats={deckStats} />
 
                 <div
                   className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}

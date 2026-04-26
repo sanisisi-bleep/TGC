@@ -400,7 +400,7 @@ function OpeningHandModal({
   openingHandSize,
   mulliganLimit,
   openingRules,
-  adminInsights,
+  openingHandInsights,
   openingHand,
   handSummary,
   mulliganCount,
@@ -447,8 +447,8 @@ function OpeningHandModal({
           <span className="deck-stat-chip">
             {mulliganLimit} mulligan
           </span>
-          <span className="deck-stat-chip">Main {adminInsights.totalMainDeckCards}</span>
-          <span className="deck-stat-chip">Cartas unicas {adminInsights.uniqueMainDeckCards}</span>
+          <span className="deck-stat-chip">Main {openingHandInsights.totalMainDeckCards}</span>
+          <span className="deck-stat-chip">Cartas unicas {openingHandInsights.uniqueMainDeckCards}</span>
           <span className="deck-stat-chip">Mulligan {mulliganCount}/{mulliganLimit}</span>
           <span className="deck-stat-chip">
             Early en mano {handSummary.earlyCards}/{openingHand.length}
@@ -489,14 +489,17 @@ function OpeningHandModal({
   );
 }
 
-function AdminDeckToolkit({ stats }) {
-  const adminInsights = useMemo(() => stats?.adminInsights || null, [stats?.adminInsights]);
-  const simulatorPool = useMemo(
-    () => adminInsights?.simulatorPool || [],
-    [adminInsights]
+function OpeningHandToolkit({ stats }) {
+  const openingHandInsights = useMemo(
+    () => stats?.openingHandInsights || null,
+    [stats?.openingHandInsights]
   );
-  const openingRules = adminInsights?.openingRules || null;
-  const openingHandSize = adminInsights?.openingHandSize || 0;
+  const simulatorPool = useMemo(
+    () => openingHandInsights?.simulatorPool || [],
+    [openingHandInsights]
+  );
+  const openingRules = openingHandInsights?.openingRules || null;
+  const openingHandSize = openingHandInsights?.openingHandSize || 0;
   const openingFormatLabel = useMemo(
     () => getOpeningFormatLabel(stats?.formatMode),
     [stats?.formatMode]
@@ -557,7 +560,7 @@ function AdminDeckToolkit({ stats }) {
     };
   }, [isSimulatorOpen]);
 
-  if (!adminInsights || adminInsights.totalMainDeckCards <= 0) {
+  if (!openingHandInsights || openingHandInsights.totalMainDeckCards <= 0) {
     return null;
   }
 
@@ -594,13 +597,12 @@ function AdminDeckToolkit({ stats }) {
     <section className="deck-admin-lab panel">
       <div className="deck-admin-lab-header">
         <div>
-          <h3>Laboratorio admin</h3>
+          <h3>Simulador de mano inicial</h3>
           <p>
             Simula manos iniciales segun la regla oficial de apertura de {openingFormatLabel}
             sin tocar la lista real.
           </p>
         </div>
-        <span className="deck-admin-badge">Solo admin</span>
       </div>
 
       <div className="deck-admin-lab-grid">
@@ -625,8 +627,8 @@ function AdminDeckToolkit({ stats }) {
 
           <div className="deck-admin-chip-row">
             <span className="deck-stat-chip">{openingFormatLabel}</span>
-            <span className="deck-stat-chip">Main {adminInsights.totalMainDeckCards}</span>
-            <span className="deck-stat-chip">Cartas unicas {adminInsights.uniqueMainDeckCards}</span>
+            <span className="deck-stat-chip">Main {openingHandInsights.totalMainDeckCards}</span>
+            <span className="deck-stat-chip">Cartas unicas {openingHandInsights.uniqueMainDeckCards}</span>
             <span className="deck-stat-chip">Mulligan {mulliganCount}/{mulliganLimit}</span>
             <span className="deck-stat-chip">
               Early en mano {handSummary.earlyCards}/{openingHand.length}
@@ -647,7 +649,7 @@ function AdminDeckToolkit({ stats }) {
         openingHandSize={openingHandSize}
         mulliganLimit={mulliganLimit}
         openingRules={openingRules}
-        adminInsights={adminInsights}
+        openingHandInsights={openingHandInsights}
         openingHand={openingHand}
         handSummary={handSummary}
         mulliganCount={mulliganCount}
@@ -659,7 +661,7 @@ function AdminDeckToolkit({ stats }) {
   );
 }
 
-function DeckStatsPanel({ stats, isAdmin = false }) {
+function DeckStatsPanel({ stats }) {
   const [curveDisplayMode, setCurveDisplayMode] = useState(readStoredCurveDisplayMode);
   const curveLegendEntries = useMemo(() => {
     const legendMap = new Map();
@@ -881,7 +883,7 @@ function DeckStatsPanel({ stats, isAdmin = false }) {
         </div>
       </div>
 
-      {isAdmin && <AdminDeckToolkit stats={stats} />}
+      <OpeningHandToolkit stats={stats} />
     </section>
   );
 }

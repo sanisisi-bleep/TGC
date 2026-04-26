@@ -662,7 +662,7 @@ const calculateAtLeastHitProbability = (deckSize, successCards, drawSize, minimu
   return probability;
 };
 
-const buildAdminDeckInsights = (cards = [], formatMode = 'standard') => {
+const buildOpeningHandInsights = (cards = [], formatMode = 'standard') => {
   const openingRules = getDeckOpeningRules(formatMode);
   const simulatorPool = [];
   let totalMainDeckCards = 0;
@@ -858,7 +858,7 @@ export const buildDeckStats = (deck) => {
       };
     });
   const formatMode = composition?.format_mode || 'standard';
-  const adminInsights = buildAdminDeckInsights(deck.cards || [], formatMode);
+  const openingHandInsights = buildOpeningHandInsights(deck.cards || [], formatMode);
 
   return {
     deckSignature,
@@ -885,7 +885,7 @@ export const buildDeckStats = (deck) => {
     curveEntries,
     curveChartEntries,
     averageCurveCost: curveWeightedCards > 0 ? curveWeightedTotal / curveWeightedCards : null,
-    adminInsights,
+    openingHandInsights,
   };
 };
 
