@@ -5,10 +5,28 @@ import sys
 from contextvars import ContextVar
 from datetime import datetime, timezone
 
+from app.env import load_environment
+
+
+load_environment()
+
 
 def _resolve_log_level():
     level_name = os.getenv("LOG_LEVEL", "INFO").strip().upper()
     return getattr(logging, level_name, logging.INFO)
+
+
+def _resolve_environment_name():
+    if os.getenv("APP_ENVIRONMENT"):
+        return os.getenv("APP_ENVIRONMENT").strip() or "local"
+    return "vercel" if os.getenv("VERCEL") == "1" else "local"
+
+
+def _normalize_log_value(value):
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    return value
 
 
 _REQUEST_CONTEXT_VARS = {
@@ -24,6 +42,9 @@ _REQUEST_CONTEXT_VARS = {
 _STANDARD_LOG_RECORD_ATTRS = set(
     logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()
 ) | {"asctime", "message"}
+
+LOG_SERVICE_NAME = (os.getenv("LOG_SERVICE_NAME") or "tgc-api").strip() or "tgc-api"
+LOG_ENVIRONMENT = _resolve_environment_name()
 
 
 def bind_log_context(**values):
@@ -69,6 +90,38 @@ def get_request_id():
     return _REQUEST_CONTEXT_VARS["request_id"].get()
 
 
+def build_log_extra(event: str, **values):
+    payload = {"event": event}
+
+    for key, value in values.items():
+        normalized_value = _normalize_log_value(value)
+        if normalized_value is None:
+            continue
+        payload[key] = normalized_value
+
+    return payload
+
+
+def mask_identifier(identifier: str | None):
+    normalized_identifier = _normalize_log_value(identifier)
+    if not normalized_identifier:
+        return None
+
+    if "@" in normalized_identifier:
+        local_part, _, domain = normalized_identifier.partition("@")
+        masked_local = f"{local_part[:2]}***" if local_part else "***"
+        domain_head, dot, domain_tail = domain.partition(".")
+        masked_domain = f"{domain_head[:1]}***"
+        if dot and domain_tail:
+            masked_domain = f"{masked_domain}.{domain_tail}"
+        return f"{masked_local}@{masked_domain}"
+
+    if len(normalized_identifier) <= 3:
+        return f"{normalized_identifier[:1]}***"
+
+    return f"{normalized_identifier[:3]}***"
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record):
         payload = {
@@ -77,6 +130,8 @@ class JsonFormatter(logging.Formatter):
             .replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": record.name,
+            "service": LOG_SERVICE_NAME,
+            "environment": LOG_ENVIRONMENT,
             "message": record.getMessage(),
             "module": record.module,
             "function": record.funcName,

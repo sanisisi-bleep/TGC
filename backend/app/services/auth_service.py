@@ -11,7 +11,7 @@ from app.database.connection import get_db
 from app.env import load_environment
 from app.models import User
 from app.database.repositories.user_repository import UserRepository
-from app.logger import logger, update_log_context
+from app.logger import build_log_extra, logger, mask_identifier, update_log_context
 
 load_environment()
 
@@ -77,18 +77,19 @@ def clear_auth_cookie(response: Response):
         path="/",
     )
 
+
+def _classify_identifier(identifier: str) -> str:
+    return "email" if "@" in (identifier or "") else "username"
+
+
 def verify_password(plain_password, hashed_password):
     plain_password = plain_password[:72]  # Truncate to match hash
-    result = pwd_context.verify(plain_password, hashed_password)
-    logger.debug(f"Password verification: result={result}")
-    return result
+    return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password):
     # Truncate password to 72 bytes to comply with bcrypt limit
     password = password[:72]
-    hashed = pwd_context.hash(password)
-    logger.debug(f"Password hashed successfully")
-    return hashed
+    return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
@@ -101,22 +102,54 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     return encoded_jwt
 
 def authenticate_user(db: Session, identifier: str, password: str):
-    logger.info(f"Authenticating user: {identifier}")
     repo = UserRepository(db)
-    if '@' in identifier:
+    identifier_type = _classify_identifier(identifier)
+    masked_identifier = mask_identifier(identifier)
+
+    logger.debug(
+        "Authenticating user",
+        extra=build_log_extra(
+            "auth_lookup_started",
+            identifier_type=identifier_type,
+            identifier=masked_identifier,
+        ),
+    )
+
+    if identifier_type == "email":
         user = repo.get_by_email(identifier)
-        logger.debug(f"Looking up by email: {identifier}")
     else:
         user = repo.get_by_username(identifier)
-        logger.debug(f"Looking up by username: {identifier}")
+
     if not user:
-        logger.warning(f"User not found: {identifier}")
+        logger.debug(
+            "Authentication lookup missed user",
+            extra=build_log_extra(
+                "auth_lookup_user_missing",
+                identifier_type=identifier_type,
+                identifier=masked_identifier,
+            ),
+        )
         return False
-    logger.debug(f"User found: {user.username}")
+
     if not verify_password(password, user.password_hash):
-        logger.warning(f"Password verification failed for user: {user.username}")
+        logger.debug(
+            "Authentication password verification failed",
+            extra=build_log_extra(
+                "auth_password_verification_failed",
+                user_id=user.id,
+                username=user.username,
+            ),
+        )
         return False
-    logger.info(f"Authentication successful for user: {user.username}")
+
+    logger.debug(
+        "Authentication lookup succeeded",
+        extra=build_log_extra(
+            "auth_lookup_success",
+            user_id=user.id,
+            username=user.username,
+        ),
+    )
     return user
 
 def _resolve_request_token(request: Request, bearer_token: str | None):
@@ -185,12 +218,12 @@ def require_admin_user(current_user: User = Depends(get_current_user)):
     if get_user_role(current_user) != "admin":
         logger.warning(
             "Admin access denied",
-            extra={
-                "event": "admin_access_denied",
-                "user_id": current_user.id,
-                "username": current_user.username,
-                "user_role": get_user_role(current_user),
-            },
+            extra=build_log_extra(
+                "admin_access_denied",
+                user_id=current_user.id,
+                username=current_user.username,
+                user_role=get_user_role(current_user),
+            ),
         )
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user

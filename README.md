@@ -112,6 +112,20 @@ The repository is configured to deploy frontend and backend together in one Verc
 - Search prefetches the next page in the background to make pagination feel faster.
 - Collection filtering uses deferred rendering to keep typing smoother on larger inventories.
 
+## Observability
+
+- Every backend request gets an `X-Request-ID` response header for easier trace correlation in Vercel logs.
+- The backend emits structured JSON logs with request context, user context and route-level mutation events.
+- Slow requests are flagged automatically through `SLOW_REQUEST_THRESHOLD_MS` (default `1200` ms).
+- `/health` can optionally check the database when `HEALTHCHECK_DATABASE=true`.
+- Set `SHOW_HEALTH_ERRORS=true` only when you explicitly want database error details in the health payload.
+- Optional log tuning:
+  - `LOG_LEVEL`
+  - `LOG_REQUEST_HEADERS=true`
+  - `LOG_REQUEST_QUERY_VALUES=true`
+  - `APP_ENVIRONMENT`
+  - `LOG_SERVICE_NAME`
+
 ## CI/CD
 
 The repo now includes GitHub Actions workflows:

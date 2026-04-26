@@ -16,7 +16,7 @@ from app.services.auth_service import (
     set_auth_cookie,
 )
 from app.database.repositories.user_repository import UserRepository
-from app.logger import logger
+from app.logger import build_log_extra, logger, mask_identifier
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -68,6 +68,7 @@ class UserCreate(BaseModel):
             raise ValueError("Invalid email format")
         return normalized_email
 
+
 class UserLogin(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -96,6 +97,7 @@ def get_session(response: Response, current_user: User | None = Depends(get_curr
         return {"authenticated": False, "user": None}
     return {"authenticated": True, "user": _serialize_session_user(current_user)}
 
+
 @router.post("/register")
 def register(user: UserCreate, request: Request, response: Response, db: Session = Depends(get_db)):
     enforce_rate_limit(request, REGISTER_IP_POLICY)
@@ -103,13 +105,21 @@ def register(user: UserCreate, request: Request, response: Response, db: Session
     _apply_no_store(response)
     logger.info(
         "Registering user",
-        extra={"event": "auth_register_attempt", "username": user.username},
+        extra=build_log_extra(
+            "auth_register_attempt",
+            username=user.username,
+            email=mask_identifier(user.email),
+        ),
     )
     repo = UserRepository(db)
     if repo.get_by_username(user.username) or repo.get_by_email(user.email):
         logger.warning(
             "Registration rejected because user already exists",
-            extra={"event": "auth_register_duplicate", "username": user.username},
+            extra=build_log_extra(
+                "auth_register_duplicate",
+                username=user.username,
+                email=mask_identifier(user.email),
+            ),
         )
         raise HTTPException(status_code=400, detail="Username or email already registered")
     hashed_password = get_password_hash(user.password)
@@ -124,19 +134,24 @@ def register(user: UserCreate, request: Request, response: Response, db: Session
         repo.create(new_user)
         logger.info(
             "User registered successfully",
-            extra={
-                "event": "auth_register_success",
-                "user_id": new_user.id,
-                "username": new_user.username,
-            },
+            extra=build_log_extra(
+                "auth_register_success",
+                user_id=new_user.id,
+                username=new_user.username,
+            ),
         )
         return {"message": "User created"}
     except Exception:
         logger.exception(
             "Error creating user",
-            extra={"event": "auth_register_failed", "username": user.username},
+            extra=build_log_extra(
+                "auth_register_failed",
+                username=user.username,
+                email=mask_identifier(user.email),
+            ),
         )
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.post("/token")
 def login(user: UserLogin, request: Request, response: Response, db: Session = Depends(get_db)):
@@ -144,29 +159,46 @@ def login(user: UserLogin, request: Request, response: Response, db: Session = D
     enforce_rate_limit(request, LOGIN_IDENTIFIER_POLICY, key_fragment=user.username)
     logger.info(
         "Login attempt",
-        extra={"event": "auth_login_attempt", "identifier": user.username},
+        extra=build_log_extra(
+            "auth_login_attempt",
+            identifier=mask_identifier(user.username),
+            identifier_type="email" if "@" in user.username else "username",
+        ),
     )
     user_obj = authenticate_user(db, user.username, user.password)
     if not user_obj:
         logger.warning(
             "Login failed",
-            extra={"event": "auth_login_failed", "identifier": user.username},
+            extra=build_log_extra(
+                "auth_login_failed",
+                identifier=mask_identifier(user.username),
+                identifier_type="email" if "@" in user.username else "username",
+            ),
         )
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     access_token = create_access_token(data={"sub": user_obj.username})
     set_auth_cookie(response, access_token)
     logger.info(
         "Login successful",
-        extra={
-            "event": "auth_login_success",
-            "user_id": user_obj.id,
-            "username": user_obj.username,
-        },
+        extra=build_log_extra(
+            "auth_login_success",
+            user_id=user_obj.id,
+            username=user_obj.username,
+        ),
     )
     return {"message": "Login successful", "authenticated": True}
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(response: Response, current_user: User | None = Depends(get_current_user_optional)):
     clear_auth_cookie(response)
+    if current_user is not None:
+        logger.info(
+            "Logout successful",
+            extra=build_log_extra(
+                "auth_logout_success",
+                user_id=current_user.id,
+                username=current_user.username,
+            ),
+        )
     return {"message": "Logout successful"}

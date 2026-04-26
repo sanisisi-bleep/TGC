@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app.database.connection import engine, init_db
 from app.env import load_environment
-from app.logger import get_request_id, logger
+from app.logger import build_log_extra, get_request_id, logger
 from app.routes.auth import router as auth_router
 from app.routes.cards import router as cards_router
 from app.routes.collection import router as collection_router
@@ -57,7 +57,26 @@ def _error_payload(request: Request, detail):
     return payload
 
 
+def _error_response(request: Request, status_code: int, detail, headers: dict | None = None):
+    response_headers = dict(headers or {})
+    response_headers.setdefault("Cache-Control", "no-store")
+    request_id = _request_id_for(request)
+    if request_id:
+        response_headers.setdefault("X-Request-ID", request_id)
+
+    return JSONResponse(
+        status_code=status_code,
+        content=_error_payload(request, detail),
+        headers=response_headers,
+    )
+
+
 def _health_payload(database_ok: bool, database_error: str | None = None):
+    version = (
+        os.getenv("APP_VERSION")
+        or os.getenv("VERCEL_GIT_COMMIT_SHA")
+        or ""
+    ).strip()
     payload = {
         "status": "ok" if database_ok else "degraded",
         "service": "tgc-api",
@@ -67,6 +86,8 @@ def _health_payload(database_ok: bool, database_error: str | None = None):
         .isoformat(timespec="seconds")
         .replace("+00:00", "Z"),
     }
+    if version:
+        payload["version"] = version[:12]
 
     if database_error and os.getenv("SHOW_HEALTH_ERRORS", "false").strip().lower() in {
         "1",
@@ -105,41 +126,40 @@ app.include_router(settings_router)
 
 @app.exception_handler(HTTPException)
 async def handle_http_exception(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=_error_payload(request, exc.detail),
-        headers=exc.headers,
-    )
+    if exc.status_code in {403, 429} or exc.status_code >= 500:
+        logger.warning(
+            "Handled HTTP exception",
+            extra=build_log_extra(
+                "http_exception",
+                status_code=exc.status_code,
+                detail=exc.detail,
+            ),
+        )
+    return _error_response(request, exc.status_code, exc.detail, headers=exc.headers)
 
 
 @app.exception_handler(RequestValidationError)
 async def handle_validation_exception(request: Request, exc: RequestValidationError):
     logger.warning(
         "Request validation failed",
-        extra={
-            "event": "request_validation_failed",
-            "errors": exc.errors(),
-        },
+        extra=build_log_extra(
+            "request_validation_failed",
+            errors=exc.errors(),
+        ),
     )
-    return JSONResponse(
-        status_code=422,
-        content=_error_payload(request, exc.errors()),
-    )
+    return _error_response(request, 422, exc.errors())
 
 
 @app.exception_handler(Exception)
 async def handle_unexpected_exception(request: Request, exc: Exception):
     logger.exception(
         "Unhandled application exception",
-        extra={
-            "event": "unhandled_exception",
-            "error": str(exc),
-        },
+        extra=build_log_extra(
+            "unhandled_exception",
+            error=str(exc),
+        ),
     )
-    return JSONResponse(
-        status_code=500,
-        content=_error_payload(request, "Internal server error"),
-    )
+    return _error_response(request, 500, "Internal server error")
 
 
 @app.on_event("startup")
@@ -147,13 +167,21 @@ def on_startup():
     if should_init_db_on_startup():
         logger.info(
             "Initializing database schema on startup",
-            extra={"event": "startup_init_db"},
+            extra=build_log_extra(
+                "startup_init_db",
+                root_path=get_root_path(),
+                allowed_origins_count=len(get_allowed_origins()),
+            ),
         )
         init_db()
     else:
         logger.info(
             "Skipping database initialization on startup",
-            extra={"event": "startup_skip_init_db"},
+            extra=build_log_extra(
+                "startup_skip_init_db",
+                root_path=get_root_path(),
+                allowed_origins_count=len(get_allowed_origins()),
+            ),
         )
 
 
@@ -177,7 +205,10 @@ def health_check():
     except Exception as exc:
         logger.exception(
             "Health check failed",
-            extra={"event": "health_check_failed", "error": str(exc)},
+            extra=build_log_extra(
+                "health_check_failed",
+                error=str(exc),
+            ),
         )
         payload = _health_payload(database_ok=False, database_error=str(exc))
         return JSONResponse(status_code=503, content=payload)

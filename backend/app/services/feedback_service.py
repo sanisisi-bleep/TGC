@@ -3,7 +3,7 @@ import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
 
-from app.logger import logger
+from app.logger import build_log_extra, logger
 
 
 DEFAULT_FEEDBACK_TO_EMAIL = "multiversetgc@gmail.com"
@@ -125,25 +125,25 @@ def deliver_feedback_email(submission: FeedbackSubmission):
     except Exception as exc:
         logger.exception(
             "Feedback delivery failed",
-            extra={
-                "event": "feedback_delivery_failed",
-                "username": submission.username,
-                "user_id": submission.user_id,
-                "feedback_category": submission.category,
-                "feedback_subject": submission.subject.strip() or "Sin asunto",
-                "error": str(exc),
-            },
+            extra=build_log_extra(
+                "feedback_delivery_failed",
+                username=submission.username,
+                user_id=submission.user_id,
+                feedback_category=submission.category,
+                feedback_subject=submission.subject.strip() or "Sin asunto",
+                error=str(exc),
+            ),
         )
         raise FeedbackDeliveryError("Feedback email could not be delivered.") from exc
 
     logger.info(
         "Feedback delivered successfully",
-        extra={
-            "event": "feedback_delivery_success",
-            "username": submission.username,
-            "user_id": submission.user_id,
-            "feedback_category": submission.category,
-            "feedback_subject": submission.subject.strip() or "Sin asunto",
-            "feedback_to_email": config["feedback_to_email"],
-        },
+        extra=build_log_extra(
+            "feedback_delivery_success",
+            username=submission.username,
+            user_id=submission.user_id,
+            feedback_category=submission.category,
+            feedback_subject=submission.subject.strip() or "Sin asunto",
+            feedback_to_email=config["feedback_to_email"],
+        ),
     )

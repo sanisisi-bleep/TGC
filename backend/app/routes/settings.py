@@ -15,7 +15,7 @@ from app.services.feedback_service import (
     FeedbackSubmission,
     deliver_feedback_email,
 )
-from app.logger import logger
+from app.logger import build_log_extra, logger
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -109,6 +109,17 @@ def update_my_settings(
     db.add(current_user)
     db.commit()
     db.refresh(current_user)
+    logger.info(
+        "User settings updated",
+        extra=build_log_extra(
+            "settings_profile_updated",
+            user_id=current_user.id,
+            username=current_user.username,
+            favorite_tgc_id=current_user.favorite_tgc_id,
+            default_tgc_id=current_user.default_tgc_id,
+            advanced_mode=bool(current_user.advanced_mode),
+        ),
+    )
     return _serialize_user(current_user)
 
 
@@ -119,6 +130,14 @@ def update_password(
     current_user=Depends(get_current_user),
 ):
     if not verify_password(payload.old_password, current_user.password_hash):
+        logger.warning(
+            "Password update rejected due to invalid current password",
+            extra=build_log_extra(
+                "settings_password_update_rejected",
+                user_id=current_user.id,
+                username=current_user.username,
+            ),
+        )
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
     if len(payload.new_password or "") < 8:
@@ -127,6 +146,14 @@ def update_password(
     current_user.password_hash = get_password_hash(payload.new_password)
     db.add(current_user)
     db.commit()
+    logger.info(
+        "Password updated",
+        extra=build_log_extra(
+            "settings_password_updated",
+            user_id=current_user.id,
+            username=current_user.username,
+        ),
+    )
     return {"message": "Password updated"}
 
 
@@ -159,17 +186,38 @@ def submit_feedback(
     except FeedbackConfigurationError as exc:
         logger.warning(
             "Feedback service is not configured",
-            extra={
-                "event": "feedback_delivery_unconfigured",
-                "username": current_user.username,
-                "user_id": current_user.id,
-                "error": str(exc),
-            },
+            extra=build_log_extra(
+                "feedback_delivery_unconfigured",
+                username=current_user.username,
+                user_id=current_user.id,
+                feedback_category=category,
+                error=str(exc),
+            ),
         )
         raise HTTPException(status_code=503, detail="Feedback service is not configured") from exc
     except FeedbackDeliveryError as exc:
+        logger.warning(
+            "Feedback delivery returned an upstream failure",
+            extra=build_log_extra(
+                "feedback_delivery_upstream_failed",
+                username=current_user.username,
+                user_id=current_user.id,
+                feedback_category=category,
+                error=str(exc),
+            ),
+        )
         raise HTTPException(status_code=502, detail="No se pudo enviar la sugerencia") from exc
 
+    logger.info(
+        "Feedback submitted",
+        extra=build_log_extra(
+            "feedback_submitted",
+            username=current_user.username,
+            user_id=current_user.id,
+            feedback_category=category,
+            allow_contact=bool(payload.allow_contact),
+        ),
+    )
     return {"message": "Feedback sent"}
 
 
@@ -201,6 +249,17 @@ def update_user_role(
     db.add(user)
     db.commit()
     db.refresh(user)
+    logger.info(
+        "User role updated",
+        extra=build_log_extra(
+            "admin_user_role_updated",
+            actor_user_id=current_user.id,
+            actor_username=current_user.username,
+            target_user_id=user.id,
+            target_username=user.username,
+            target_role=user.role,
+        ),
+    )
     return _serialize_user(user)
 
 
@@ -211,6 +270,14 @@ def delete_my_account(
     current_user=Depends(get_current_user),
 ):
     if not verify_password(payload.password, current_user.password_hash):
+        logger.warning(
+            "Account deletion rejected due to invalid current password",
+            extra=build_log_extra(
+                "settings_account_delete_rejected",
+                user_id=current_user.id,
+                username=current_user.username,
+            ),
+        )
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
     owned_deck_ids = [
@@ -225,4 +292,13 @@ def delete_my_account(
     db.execute(delete(UserCollection).where(UserCollection.user_id == current_user.id))
     db.execute(delete(User).where(User.id == current_user.id))
     db.commit()
+    logger.info(
+        "Account deleted",
+        extra=build_log_extra(
+            "settings_account_deleted",
+            user_id=current_user.id,
+            username=current_user.username,
+            owned_deck_count=len(owned_deck_ids),
+        ),
+    )
     return {"message": "Account deleted"}

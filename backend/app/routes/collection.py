@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from app.database.connection import get_db
-from app.logger import logger
+from app.logger import build_log_extra, logger
 from app.services.auth_service import get_current_user
 from app.services.card_service import CardService
 from app.models import User, UserCollection, Card
@@ -21,6 +21,7 @@ class CollectionAdd(BaseModel):
 class CollectionAdjust(BaseModel):
     delta: int = Field(..., ne=0)
 
+
 @router.get("")
 def get_user_collection(
     tgc_id: Optional[int] = None,
@@ -29,6 +30,7 @@ def get_user_collection(
 ):
     service = CardService(db)
     return service.get_user_collection(current_user.id, tgc_id)
+
 
 @router.post("", status_code=status.HTTP_200_OK)
 def add_to_collection(
@@ -56,6 +58,17 @@ def add_to_collection(
     if existing:
         existing.quantity += item.quantity
         repo.update(existing)
+        logger.info(
+            "Collection quantity increased",
+            extra=build_log_extra(
+                "collection_card_incremented",
+                user_id=current_user.id,
+                username=current_user.username,
+                card_id=item.card_id,
+                quantity=existing.quantity,
+                delta=item.quantity,
+            ),
+        )
         return {
             "message": "Card quantity updated in collection",
             "card_id": item.card_id,
@@ -68,6 +81,16 @@ def add_to_collection(
         quantity=item.quantity
     )
     repo.create(collection_item)
+    logger.info(
+        "Card added to collection",
+        extra=build_log_extra(
+            "collection_card_added",
+            user_id=current_user.id,
+            username=current_user.username,
+            card_id=item.card_id,
+            quantity=item.quantity,
+        ),
+    )
 
     return {
         "message": "Added to collection",
@@ -86,10 +109,32 @@ def adjust_collection_quantity(
     service = CardService(db)
     try:
         collection = service.adjust_collection_quantity(current_user.id, card_id, item.delta)
+        logger.info(
+            "Collection quantity adjusted",
+            extra=build_log_extra(
+                "collection_card_adjusted",
+                user_id=current_user.id,
+                username=current_user.username,
+                card_id=card_id,
+                delta=item.delta,
+                quantity=collection.quantity if collection else 0,
+            ),
+        )
         return {
             "message": "Collection quantity updated",
             "card_id": card_id,
             "quantity": collection.quantity if collection else 0,
         }
     except ValueError as e:
+        logger.warning(
+            "Collection adjustment rejected",
+            extra=build_log_extra(
+                "collection_card_adjust_rejected",
+                user_id=current_user.id,
+                username=current_user.username,
+                card_id=card_id,
+                delta=item.delta,
+                error=str(e),
+            ),
+        )
         raise HTTPException(status_code=400, detail=str(e))

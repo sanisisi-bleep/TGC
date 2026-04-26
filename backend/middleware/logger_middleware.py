@@ -5,11 +5,12 @@ import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from app.logger import bind_log_context, logger, reset_log_context
+from app.logger import bind_log_context, build_log_extra, logger, reset_log_context
 
 
 SENSITIVE_HEADERS = {"authorization", "cookie", "set-cookie"}
 TOKENIZED_PATH_PREFIXES = ("/decks/shared/", "/shared-deck/")
+DEFAULT_SLOW_REQUEST_THRESHOLD_MS = float(os.getenv("SLOW_REQUEST_THRESHOLD_MS", "1200"))
 
 
 def _is_enabled(name: str, default: str = "false") -> bool:
@@ -34,6 +35,19 @@ def _sanitize_path(path: str) -> str:
     return sanitized_path
 
 
+def _sanitize_query(request: Request):
+    if not request.url.query:
+        return None
+
+    if _is_enabled("LOG_REQUEST_QUERY_VALUES"):
+        return {
+            key: value
+            for key, value in request.query_params.multi_items()
+        }
+
+    return sorted(set(request.query_params.keys()))
+
+
 def _resolve_request_id(request: Request) -> str:
     return (
         request.headers.get("x-request-id")
@@ -53,22 +67,39 @@ def _resolve_client_ip(request: Request) -> str | None:
     return None
 
 
-def _log_response(status_code: int, duration_ms: float):
+def _status_family(status_code: int) -> str:
+    return f"{status_code // 100}xx"
+
+
+def _log_response(status_code: int, duration_ms: float, route_template: str | None, response_size: str | None):
     if status_code >= 500:
         log_method = logger.error
     elif status_code >= 400:
+        log_method = logger.warning
+    elif duration_ms >= DEFAULT_SLOW_REQUEST_THRESHOLD_MS:
         log_method = logger.warning
     else:
         log_method = logger.info
 
     log_method(
         "Request completed",
-        extra={
-            "event": "request_finished",
-            "status_code": status_code,
-            "duration_ms": duration_ms,
-        },
+        extra=build_log_extra(
+            "request_finished",
+            status_code=status_code,
+            status_family=_status_family(status_code),
+            duration_ms=duration_ms,
+            slow_request=duration_ms >= DEFAULT_SLOW_REQUEST_THRESHOLD_MS,
+            route_template=route_template,
+            response_size=response_size,
+        ),
     )
+
+
+def _resolve_route_template(request: Request) -> str | None:
+    route = request.scope.get("route")
+    if route is None:
+        return None
+    return getattr(route, "path", None) or getattr(route, "name", None)
 
 
 class LoggerMiddleware(BaseHTTPMiddleware):
@@ -88,19 +119,19 @@ class LoggerMiddleware(BaseHTTPMiddleware):
 
         logger.info(
             "Incoming request",
-            extra={
-                "event": "request_started",
-                "query": request.url.query or None,
-            },
+            extra=build_log_extra(
+                "request_started",
+                query=_sanitize_query(request),
+            ),
         )
 
         if _is_enabled("LOG_REQUEST_HEADERS"):
             logger.debug(
                 "Request headers",
-                extra={
-                    "event": "request_headers",
-                    "headers": _sanitize_headers(dict(request.headers)),
-                },
+                extra=build_log_extra(
+                    "request_headers",
+                    headers=_sanitize_headers(dict(request.headers)),
+                ),
             )
 
         try:
@@ -110,11 +141,13 @@ class LoggerMiddleware(BaseHTTPMiddleware):
             duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
             logger.exception(
                 "Unhandled request exception",
-                extra={
-                    "event": "request_failed",
-                    "status_code": 500,
-                    "duration_ms": duration_ms,
-                },
+                extra=build_log_extra(
+                    "request_failed",
+                    status_code=500,
+                    status_family="5xx",
+                    duration_ms=duration_ms,
+                    route_template=_resolve_route_template(request),
+                ),
             )
             raise
         finally:
@@ -123,6 +156,8 @@ class LoggerMiddleware(BaseHTTPMiddleware):
                 _log_response(
                     status_code=response.status_code,
                     duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
+                    route_template=_resolve_route_template(request),
+                    response_size=response.headers.get("content-length"),
                 )
 
             reset_log_context(context_tokens)
