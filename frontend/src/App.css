@@ -32,6 +32,11 @@
   --radius-xl: 28px;
   --radius-lg: 20px;
   --radius-md: 14px;
+  --motion-fast: 160ms;
+  --motion-base: 240ms;
+  --motion-slow: 360ms;
+  --motion-slower: 520ms;
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .App.theme-gundam {
@@ -178,6 +183,53 @@ textarea::placeholder {
     radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 18%, transparent), transparent 28%),
     radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 20%, transparent), transparent 24%),
     linear-gradient(180deg, var(--bg-soft) 0%, var(--bg) 54%, color-mix(in srgb, var(--bg) 72%, #d6e0ee) 100%);
+  transition: background var(--motion-slow) var(--ease-standard), color var(--motion-base) ease;
+}
+
+@keyframes soft-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes soft-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .App.theme-dark.theme-gundam {
@@ -422,6 +474,11 @@ textarea::placeholder {
   justify-content: center;
   font-size: 1.05rem;
   line-height: 1;
+  transition: transform var(--motion-base) var(--ease-standard);
+}
+
+.nav-theme-toggle:hover .nav-theme-toggle-icon {
+  transform: rotate(-10deg) scale(1.04);
 }
 
 .sr-only {
@@ -564,6 +621,12 @@ textarea::placeholder {
   border: 1px solid var(--surface-border);
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
+  transition:
+    background var(--motion-slow) var(--ease-standard),
+    border-color var(--motion-base) ease,
+    box-shadow var(--motion-base) ease,
+    color var(--motion-base) ease,
+    transform var(--motion-base) var(--ease-standard);
 }
 
 .page-hero {
@@ -575,6 +638,7 @@ textarea::placeholder {
   border-radius: var(--radius-xl);
   overflow: hidden;
   position: relative;
+  animation: soft-fade-up var(--motion-slower) var(--ease-standard) both;
 }
 
 .page-hero::after {
@@ -628,6 +692,11 @@ textarea::placeholder {
   background: linear-gradient(145deg, rgba(22, 86, 193, 0.98), rgba(12, 50, 121, 0.94));
   color: white;
   text-align: right;
+  transition:
+    background var(--motion-slow) var(--ease-standard),
+    border-color var(--motion-base) ease,
+    box-shadow var(--motion-base) ease,
+    transform var(--motion-base) var(--ease-standard);
 }
 
 .hero-stat span {
@@ -670,6 +739,10 @@ textarea::placeholder {
   border-radius: 999px;
   background: var(--surface-muted);
   border: 1px solid var(--surface-muted-border);
+  transition:
+    background var(--motion-base) ease,
+    border-color var(--motion-base) ease,
+    box-shadow var(--motion-base) ease;
 }
 
 .view-toggle button {
@@ -681,6 +754,15 @@ textarea::placeholder {
   color: var(--text-soft);
   font-weight: 700;
   cursor: pointer;
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    background var(--motion-base) ease,
+    color var(--motion-base) ease,
+    box-shadow var(--motion-base) ease;
+}
+
+.view-toggle button:hover {
+  transform: translateY(-1px);
 }
 
 .view-toggle button.is-active {
@@ -692,6 +774,7 @@ textarea::placeholder {
 .panel {
   border-radius: var(--radius-lg);
   padding: 1.4rem;
+  animation: soft-fade-up var(--motion-base) var(--ease-standard) both;
 }
 
 .home {
@@ -1484,6 +1567,11 @@ textarea::placeholder {
 .search-card-item {
   cursor: pointer;
   outline: none;
+  transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) ease;
+}
+
+.search-card-item:hover {
+  transform: translateY(-2px);
 }
 
 .search-card-item:focus-visible {
@@ -1505,6 +1593,12 @@ textarea::placeholder {
   object-fit: cover;
   border-radius: 18px;
   box-shadow: 0 16px 30px rgba(15, 39, 71, 0.12);
+  transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) ease;
+}
+
+.card-item:hover img {
+  transform: translateY(-3px);
+  box-shadow: 0 20px 36px rgba(15, 39, 71, 0.16);
 }
 
 .App.theme-one-piece .card-item img,
@@ -1919,6 +2013,7 @@ textarea::placeholder {
   border-radius: 18px;
   box-shadow: 0 18px 32px rgba(15, 39, 71, 0.16);
   border: 1px solid rgba(255, 255, 255, 0.75);
+  transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) ease;
 }
 
 .collection-item.is-openable {
@@ -1928,6 +2023,11 @@ textarea::placeholder {
 .collection-item.is-openable:hover {
   transform: translateY(-2px);
   box-shadow: 0 24px 44px rgba(17, 40, 84, 0.14);
+}
+
+.collection-item.is-openable:hover img {
+  transform: translateY(-2px);
+  box-shadow: 0 22px 36px rgba(15, 39, 71, 0.2);
 }
 
 .collection-main {
@@ -3240,6 +3340,7 @@ textarea::placeholder {
   background: rgba(12, 26, 48, 0.74);
   backdrop-filter: blur(10px);
   z-index: 1000;
+  animation: modal-backdrop-in var(--motion-base) ease both;
 }
 
 .card-detail,
@@ -3250,6 +3351,8 @@ textarea::placeholder {
   border-radius: 28px;
   background: var(--surface-strong);
   box-shadow: 0 40px 80px rgba(10, 16, 20, 0.26);
+  animation: modal-surface-in var(--motion-slow) var(--ease-standard) both;
+  transform-origin: center top;
 }
 
 .card-detail {
@@ -3294,7 +3397,11 @@ textarea::placeholder {
     color-mix(in srgb, var(--surface-strong) 97%, transparent)
   );
   border: 1px solid var(--line);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-base) ease,
+    border-color var(--motion-base) ease,
+    background var(--motion-base) ease;
 }
 
 .deck-card-row.is-grid {
@@ -3348,7 +3455,7 @@ textarea::placeholder {
   aspect-ratio: 3 / 4;
   border-radius: 16px;
   box-shadow: 0 16px 28px rgba(17, 40, 84, 0.14);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) ease;
 }
 
 .deck-card-row.is-inventory.is-openable:hover {
@@ -3398,6 +3505,48 @@ textarea::placeholder {
 .deck-card-row.is-openable:hover {
   transform: translateY(-1px);
   box-shadow: 0 16px 30px rgba(17, 40, 84, 0.1);
+}
+
+.cards-grid > .card-item,
+.collection-list > .collection-item,
+.decks-list > .deck-item,
+.deck-detail-grid > .deck-card-row {
+  animation: soft-fade-up var(--motion-base) var(--ease-standard) both;
+}
+
+.cards-grid > .card-item:nth-child(2),
+.collection-list > .collection-item:nth-child(2),
+.decks-list > .deck-item:nth-child(2),
+.deck-detail-grid > .deck-card-row:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.cards-grid > .card-item:nth-child(3),
+.collection-list > .collection-item:nth-child(3),
+.decks-list > .deck-item:nth-child(3),
+.deck-detail-grid > .deck-card-row:nth-child(3) {
+  animation-delay: 80ms;
+}
+
+.cards-grid > .card-item:nth-child(4),
+.collection-list > .collection-item:nth-child(4),
+.decks-list > .deck-item:nth-child(4),
+.deck-detail-grid > .deck-card-row:nth-child(4) {
+  animation-delay: 120ms;
+}
+
+.cards-grid > .card-item:nth-child(5),
+.collection-list > .collection-item:nth-child(5),
+.decks-list > .deck-item:nth-child(5),
+.deck-detail-grid > .deck-card-row:nth-child(5) {
+  animation-delay: 160ms;
+}
+
+.cards-grid > .card-item:nth-child(6),
+.collection-list > .collection-item:nth-child(6),
+.decks-list > .deck-item:nth-child(6),
+.deck-detail-grid > .deck-card-row:nth-child(6) {
+  animation-delay: 200ms;
 }
 
 .deck-card-copy h4 {
@@ -3950,6 +4099,7 @@ textarea::placeholder {
     border-radius: 22px;
     background: color-mix(in srgb, var(--nav-chip-bg) 74%, rgba(255, 255, 255, 0.05));
     box-shadow: 0 16px 32px rgba(5, 10, 18, 0.18);
+    animation: soft-slide-down var(--motion-base) var(--ease-standard) both;
   }
 
   .nav-session {
@@ -4260,5 +4410,16 @@ textarea::placeholder {
   .secondary-inline-button,
   .danger-ghost-button {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
