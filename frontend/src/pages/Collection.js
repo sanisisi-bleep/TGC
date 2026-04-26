@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import FilterAutocomplete from '../components/filters/FilterAutocomplete';
 import CardDetailModal from '../components/cards/CardDetailModal';
 import { useToast } from '../context/ToastContext';
 import queryKeys from '../queryKeys';
+import { QUERY_STALE_TIMES } from '../queryConfig';
 import { getGameConfig } from '../tcgConfig';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { isInteractiveElementTarget } from '../utils/clickTargets';
@@ -95,18 +96,19 @@ function Collection({ activeTcgSlug, activeTgc }) {
     () => localStorage.getItem('collectionViewMode') || 'detail'
   );
   const [selectedCard, setSelectedCard] = useState(null);
+  const deferredCollectionSearchTerm = useDeferredValue(collectionSearchTerm);
 
   const collectionQuery = useQuery({
     queryKey: queryKeys.collection(activeTgc?.id),
     queryFn: ({ signal }) => getCollection(activeTgc.id, signal),
     enabled: Boolean(activeTgc?.id),
-    staleTime: 2 * 60 * 1000,
+    staleTime: QUERY_STALE_TIMES.collection,
   });
   const decksQuery = useQuery({
     queryKey: queryKeys.decks(activeTgc?.id),
     queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
     enabled: Boolean(activeTgc?.id),
-    staleTime: 2 * 60 * 1000,
+    staleTime: QUERY_STALE_TIMES.decks,
   });
 
   const collection = useMemo(
@@ -325,7 +327,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
   );
 
   const visibleCollection = useMemo(() => {
-    const normalizedSearch = normalizeText(collectionSearchTerm);
+    const normalizedSearch = normalizeText(deferredCollectionSearchTerm);
     const nextCollection = safeCollection.filter((item) => {
       const card = item.card;
       const normalizedCardType = normalizeCollectionCardType(card.card_type, activeTcgSlug);
@@ -386,7 +388,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
     });
 
     return sortedCollection;
-  }, [activeTcgSlug, collectionFilters, collectionSearchTerm, collectionSort, safeCollection]);
+  }, [activeTcgSlug, collectionFilters, collectionSort, deferredCollectionSearchTerm, safeCollection]);
 
   const hasCollectionFilters = Boolean(
     collectionSearchTerm.trim()

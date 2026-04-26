@@ -10,6 +10,7 @@ import DeckSummaryCard from '../components/decks/DeckSummaryCard';
 import { isUnauthorizedError, useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
 import queryKeys from '../queryKeys';
+import { QUERY_STALE_TIMES } from '../queryConfig';
 import { getGameConfig } from '../tcgConfig';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import {
@@ -69,13 +70,13 @@ function Decks({ activeTcgSlug, activeTgc }) {
     queryKey: queryKeys.decks(activeTgc?.id),
     queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
     enabled: Boolean(activeTgc?.id),
-    staleTime: 2 * 60 * 1000,
+    staleTime: QUERY_STALE_TIMES.decks,
   });
   const selectedDeckQuery = useQuery({
     queryKey: queryKeys.deckDetail(selectedDeckId),
     queryFn: ({ signal }) => getDeckDetail(selectedDeckId, signal),
     enabled: Boolean(selectedDeckId),
-    staleTime: 60 * 1000,
+    staleTime: QUERY_STALE_TIMES.deckDetail,
   });
 
   const decks = deckListQuery.data || [];

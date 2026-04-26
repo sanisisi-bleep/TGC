@@ -424,7 +424,7 @@ function OpeningHandModal({
             </p>
           </div>
 
-          <div className="deck-admin-actions">
+          <div className="deck-opening-actions">
             <button type="button" className="ghost-button" onClick={onDrawFreshHand}>
               Robar mano
             </button>
@@ -439,7 +439,7 @@ function OpeningHandModal({
           </div>
         </div>
 
-        <div className="deck-admin-chip-row">
+        <div className="deck-opening-chip-row">
           <span className="deck-stat-chip">{openingFormatLabel}</span>
           <span className="deck-stat-chip">
             {openingHandSize} cartas iniciales
@@ -594,8 +594,8 @@ function OpeningHandToolkit({ stats }) {
   };
 
   return (
-    <section className="deck-admin-lab panel">
-      <div className="deck-admin-lab-header">
+    <section className="deck-opening-panel panel">
+      <div className="deck-opening-panel-header">
         <div>
           <h3>Simulador de mano inicial</h3>
           <p>
@@ -605,27 +605,27 @@ function OpeningHandToolkit({ stats }) {
         </div>
       </div>
 
-      <div className="deck-admin-lab-grid">
-        <article className="deck-admin-card deck-admin-card-simulator">
-          <div className="deck-admin-card-header">
+      <div className="deck-opening-panel-grid">
+        <article className="deck-opening-summary-card">
+          <div className="deck-opening-summary-header">
             <div>
               <strong>Mano inicial y mulligan</strong>
               <span>
                 {openingHandSize} cartas | {mulliganLimit} mulligan | {openingRules?.mulliganSummary}
               </span>
             </div>
-            <div className="deck-admin-actions">
+            <div className="deck-opening-actions">
               <button type="button" className="ghost-button" onClick={openSimulator}>
                 Abrir simulador
               </button>
             </div>
           </div>
 
-          <p className="deck-admin-card-copy">
+          <p className="deck-opening-summary-copy">
             Deja el detalle del mazo limpio y abre la simulacion solo cuando quieras revisar la salida.
           </p>
 
-          <div className="deck-admin-chip-row">
+          <div className="deck-opening-chip-row">
             <span className="deck-stat-chip">{openingFormatLabel}</span>
             <span className="deck-stat-chip">Main {openingHandInsights.totalMainDeckCards}</span>
             <span className="deck-stat-chip">Cartas unicas {openingHandInsights.uniqueMainDeckCards}</span>

@@ -9,6 +9,9 @@ A full-stack web application for managing trading card game collections.
 - User card collections with quantities
 - Deck building
 - View which decks contain specific cards
+- Search pagination with cache-aware loading
+- Opening hand simulator inside deck details
+- Internal feedback inbox routed through the backend
 
 ## Setup
 
@@ -100,3 +103,40 @@ The repository is configured to deploy frontend and backend together in one Verc
 - Frontend: `cd frontend && npm start`
 - Backend: `cd backend && uvicorn app.main:app --reload`
 - Both services with Vercel locally: `vercel dev -L`
+
+## Performance
+
+- Search responses use HTTP cache headers on the backend.
+- Card facets are cached more aggressively because they change less often.
+- The frontend uses TanStack Query with shared cache and longer stale times for catalog, collection and deck data.
+- Search prefetches the next page in the background to make pagination feel faster.
+- Collection filtering uses deferred rendering to keep typing smoother on larger inventories.
+
+## CI/CD
+
+The repo now includes GitHub Actions workflows:
+
+- `.github/workflows/ci.yml`
+  - Builds the frontend with `npm run build`
+  - Installs backend dependencies
+  - Runs `python -m compileall backend`
+  - Imports `app.main` as a smoke check
+
+- `.github/workflows/deploy-vercel.yml`
+  - Deploys to Vercel after `CI` succeeds on `main`
+  - Can also be launched manually with `workflow_dispatch`
+  - Skips deployment automatically until the Vercel secrets are configured
+
+### Secrets needed for Vercel deploy
+
+- `VERCEL_TOKEN`
+- `VERCEL_ORG_ID`
+- `VERCEL_PROJECT_ID`
+
+### Recommended GitHub setup
+
+1. Protect `main`
+2. Require the `CI` workflow to pass before merge
+3. Use only one production deploy path
+
+If you keep Vercel's native Git integration enabled, you may get duplicate deploys together with the GitHub deploy workflow. In that case, disable one of the two paths.

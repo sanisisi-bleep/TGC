@@ -15,10 +15,10 @@ import { SessionProvider, useSession } from './context/SessionContext';
 import { ToastProvider } from './context/ToastContext';
 import { buildTcgMap, DEFAULT_TCG_SLUG, GAME_CONFIGS, getGameConfig } from './tcgConfig';
 import queryKeys from './queryKeys';
+import { QUERY_STALE_TIMES } from './queryConfig';
 import { getTgcCatalog } from './services/api';
 
 const THEME_MODE_STORAGE_KEY = 'tgc-theme-mode-v1';
-const TGC_QUERY_STALE_TIME_MS = 30 * 60 * 1000;
 
 const getPreferredThemeMode = () => {
   if (typeof window === 'undefined') {
@@ -287,7 +287,7 @@ function AppShell({
   const tgcCatalogQuery = useQuery({
     queryKey: queryKeys.tgcCatalog(),
     queryFn: getTgcCatalog,
-    staleTime: TGC_QUERY_STALE_TIME_MS,
+    staleTime: QUERY_STALE_TIMES.tgcCatalog,
   });
   const retryTgcLoad = useCallback(() => {
     tgcCatalogQuery.refetch();

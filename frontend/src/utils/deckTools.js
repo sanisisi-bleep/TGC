@@ -617,63 +617,10 @@ const classifyCurveBand = (curveValue) => {
   return 'late';
 };
 
-const calculateCombination = (n, k) => {
-  if (!Number.isFinite(n) || !Number.isFinite(k) || k < 0 || k > n) {
-    return 0;
-  }
-
-  if (k === 0 || k === n) {
-    return 1;
-  }
-
-  let result = 1;
-  const limit = Math.min(k, n - k);
-
-  for (let index = 1; index <= limit; index += 1) {
-    result = (result * (n - limit + index)) / index;
-  }
-
-  return result;
-};
-
-const calculateAtLeastHitProbability = (deckSize, successCards, drawSize, minimumHits = 1) => {
-  if (deckSize <= 0 || successCards <= 0 || drawSize <= 0 || minimumHits > drawSize) {
-    return 0;
-  }
-
-  const safeSuccessCards = Math.min(successCards, deckSize);
-  const safeDrawSize = Math.min(drawSize, deckSize);
-  const denominator = calculateCombination(deckSize, safeDrawSize);
-
-  if (!denominator) {
-    return 0;
-  }
-
-  let probability = 0;
-  const maxHits = Math.min(safeSuccessCards, safeDrawSize);
-
-  for (let hits = minimumHits; hits <= maxHits; hits += 1) {
-    probability += (
-      calculateCombination(safeSuccessCards, hits)
-      * calculateCombination(deckSize - safeSuccessCards, safeDrawSize - hits)
-    ) / denominator;
-  }
-
-  return probability;
-};
-
 const buildOpeningHandInsights = (cards = [], formatMode = 'standard') => {
   const openingRules = getDeckOpeningRules(formatMode);
   const simulatorPool = [];
   let totalMainDeckCards = 0;
-  let earlyGameCards = 0;
-  let midGameCards = 0;
-  let lateGameCards = 0;
-  let unknownCurveCards = 0;
-  let playsetCards = 0;
-  let tripleCards = 0;
-  let doubleCards = 0;
-  let singletonCards = 0;
 
   cards.forEach((card) => {
     const quantity = Number(card?.quantity) || 0;
@@ -684,26 +631,6 @@ const buildOpeningHandInsights = (cards = [], formatMode = 'standard') => {
     totalMainDeckCards += quantity;
     const curveValue = normalizeCurveValue(card);
     const curveBand = classifyCurveBand(curveValue);
-
-    if (curveBand === 'early') {
-      earlyGameCards += quantity;
-    } else if (curveBand === 'mid') {
-      midGameCards += quantity;
-    } else if (curveBand === 'late') {
-      lateGameCards += quantity;
-    } else {
-      unknownCurveCards += quantity;
-    }
-
-    if (quantity >= 4) {
-      playsetCards += 1;
-    } else if (quantity === 3) {
-      tripleCards += 1;
-    } else if (quantity === 2) {
-      doubleCards += 1;
-    } else {
-      singletonCards += 1;
-    }
 
     simulatorPool.push({
       id: card.id,
@@ -728,27 +655,6 @@ const buildOpeningHandInsights = (cards = [], formatMode = 'standard') => {
     openingHandSize,
     totalMainDeckCards,
     uniqueMainDeckCards,
-    averageCopiesPerUnique: uniqueMainDeckCards > 0 ? totalMainDeckCards / uniqueMainDeckCards : 0,
-    earlyGameCards,
-    midGameCards,
-    lateGameCards,
-    unknownCurveCards,
-    playsetCards,
-    tripleCards,
-    doubleCards,
-    singletonCards,
-    probabilityAtLeastOneEarly: calculateAtLeastHitProbability(
-      totalMainDeckCards,
-      earlyGameCards,
-      openingHandSize,
-      1
-    ),
-    probabilityAtLeastTwoEarly: calculateAtLeastHitProbability(
-      totalMainDeckCards,
-      earlyGameCards,
-      openingHandSize,
-      2
-    ),
     simulatorPool,
   };
 };

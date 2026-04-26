@@ -11,6 +11,7 @@ import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { getNewDeckCreationPlan } from '../utils/deckTools';
 import queryKeys from '../queryKeys';
+import { QUERY_STALE_TIMES } from '../queryConfig';
 import { buildSetFilterOptions } from '../utils/setFilters';
 import {
   readStoredEnumValue,
@@ -259,20 +260,20 @@ function Search({ activeTcgSlug, activeTgc }) {
     queryKey: queryKeys.cardsSearch(cardsRequestParams || { tgc_id: activeTgc?.id || 0 }),
     queryFn: ({ signal }) => getCards(cardsRequestParams, signal),
     enabled: Boolean(cardsRequestParams),
-    staleTime: 5 * 60 * 1000,
+    staleTime: QUERY_STALE_TIMES.cardsSearch,
     placeholderData: (previousData) => previousData,
   });
   const facetsQuery = useQuery({
     queryKey: queryKeys.cardFacets(activeTgc?.id),
     queryFn: ({ signal }) => getCardFacets(activeTgc.id, signal),
     enabled: Boolean(activeTgc?.id),
-    staleTime: 60 * 60 * 1000,
+    staleTime: QUERY_STALE_TIMES.cardFacets,
   });
   const decksQuery = useQuery({
     queryKey: queryKeys.decks(activeTgc?.id),
     queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
     enabled: Boolean(activeTgc?.id && deckPickerCard),
-    staleTime: 2 * 60 * 1000,
+    staleTime: QUERY_STALE_TIMES.decks,
   });
 
   useEffect(() => {
@@ -357,6 +358,28 @@ function Search({ activeTcgSlug, activeTgc }) {
   );
   const effectiveCardViewMode = isMobileLayout ? cardViewMode : 'detail';
   const cardList = normalizeCardList(pagination.items);
+
+  useEffect(() => {
+    if (!cardsRequestParams || !pagination.has_next) {
+      return;
+    }
+
+    const nextPageParams = {
+      ...cardsRequestParams,
+      page: pagination.page + 1,
+    };
+
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.cardsSearch(nextPageParams),
+      queryFn: ({ signal }) => getCards(nextPageParams, signal),
+      staleTime: QUERY_STALE_TIMES.cardsSearch,
+    });
+  }, [
+    cardsRequestParams,
+    pagination.has_next,
+    pagination.page,
+    queryClient,
+  ]);
 
   useEffect(() => {
     if (pagination.page && pagination.page !== page) {
@@ -453,7 +476,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     await queryClient.ensureQueryData({
       queryKey: queryKeys.decks(activeTgc?.id),
       queryFn: () => getDecks(activeTgc.id),
-      staleTime: 2 * 60 * 1000,
+      staleTime: QUERY_STALE_TIMES.decks,
     });
   };
 

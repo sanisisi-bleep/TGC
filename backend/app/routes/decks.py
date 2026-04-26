@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -8,6 +8,7 @@ from app.services.auth_service import get_current_user
 from app.models import User
 
 router = APIRouter(prefix="/decks", tags=["decks"])
+SHARED_DECK_CACHE_CONTROL = "public, max-age=60, s-maxage=300, stale-while-revalidate=3600"
 
 class DeckCreate(BaseModel):
     name: str
@@ -80,7 +81,8 @@ def get_deck_details(deck_id: int, db: Session = Depends(get_db), current_user: 
         _raise_deck_http_error(404, error)
 
 @router.get("/shared/{share_token}")
-def get_shared_deck(share_token: str, db: Session = Depends(get_db)):
+def get_shared_deck(share_token: str, response: Response, db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = SHARED_DECK_CACHE_CONTROL
     service = _deck_service(db)
     try:
         return service.get_shared_deck(share_token)

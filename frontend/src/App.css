@@ -2779,13 +2779,13 @@ textarea::placeholder {
   font-size: 0.86rem;
 }
 
-.deck-admin-lab {
+.deck-opening-panel {
   margin-top: 1rem;
   display: grid;
   gap: 1rem;
 }
 
-.deck-admin-lab-header {
+.deck-opening-panel-header {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -2793,41 +2793,26 @@ textarea::placeholder {
   align-items: flex-start;
 }
 
-.deck-admin-lab-header h3 {
+.deck-opening-panel-header h3 {
   margin: 0;
   font-size: 1rem;
   font-family: 'Space Grotesk', sans-serif;
 }
 
-.deck-admin-lab-header p {
+.deck-opening-panel-header p {
   margin: 0.32rem 0 0;
   color: var(--text-soft);
   font-size: 0.88rem;
   max-width: 44rem;
 }
 
-.deck-admin-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0.32rem 0.72rem;
-  border-radius: 999px;
-  background: rgba(216, 179, 92, 0.14);
-  border: 1px solid rgba(216, 179, 92, 0.24);
-  color: #9b5b11;
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.deck-admin-lab-grid {
+.deck-opening-panel-grid {
   display: grid;
   gap: 0.85rem;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
-.deck-admin-card {
+.deck-opening-summary-card {
   display: grid;
   gap: 0.85rem;
   padding: 0.95rem 1rem;
@@ -2836,11 +2821,7 @@ textarea::placeholder {
   border: 1px solid rgba(21, 38, 58, 0.08);
 }
 
-.deck-admin-card-simulator {
-  grid-column: 1 / -1;
-}
-
-.deck-admin-card-header {
+.deck-opening-summary-header {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -2848,33 +2829,33 @@ textarea::placeholder {
   align-items: flex-start;
 }
 
-.deck-admin-card-header strong {
+.deck-opening-summary-header strong {
   display: block;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 0.98rem;
 }
 
-.deck-admin-card-header span {
+.deck-opening-summary-header span {
   display: block;
   margin-top: 0.18rem;
   color: var(--text-soft);
   font-size: 0.82rem;
 }
 
-.deck-admin-card-copy {
+.deck-opening-summary-copy {
   margin: 0;
   color: var(--text-soft);
   font-size: 0.9rem;
   line-height: 1.45;
 }
 
-.deck-admin-actions {
+.deck-opening-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
 }
 
-.deck-admin-chip-row {
+.deck-opening-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -3092,8 +3073,8 @@ textarea::placeholder {
 .App.theme-dark .deck-stats-panel,
 .App.theme-dark .deck-stat-card,
 .App.theme-dark .deck-curve-chart,
-.App.theme-dark .deck-admin-lab,
-.App.theme-dark .deck-admin-card,
+.App.theme-dark .deck-opening-panel,
+.App.theme-dark .deck-opening-summary-card,
 .App.theme-dark .deck-opening-card {
   background:
     linear-gradient(
@@ -3148,12 +3129,6 @@ textarea::placeholder {
   background: rgba(127, 156, 255, 0.14);
   border-color: rgba(127, 156, 255, 0.24);
   color: var(--primary-deep);
-}
-
-.App.theme-dark .deck-admin-badge {
-  background: rgba(216, 179, 92, 0.18);
-  border-color: rgba(216, 179, 92, 0.3);
-  color: #f0cf86;
 }
 
 .App.theme-dark .deck-action-button.is-soft {
@@ -4085,8 +4060,8 @@ textarea::placeholder {
   .deck-item-header,
   .deck-detail-header,
   .deck-curve-header,
-  .deck-admin-lab-header,
-  .deck-admin-card-header,
+  .deck-opening-panel-header,
+  .deck-opening-summary-header,
   .deck-opening-modal-header {
     flex-direction: column;
     align-items: start;
@@ -4114,7 +4089,7 @@ textarea::placeholder {
     padding: 0.55rem 0.2rem 0.2rem;
   }
 
-  .deck-admin-actions {
+  .deck-opening-actions {
     width: 100%;
   }
 
