@@ -52,6 +52,7 @@ function DeckCardRow({
           loading="lazy"
           decoding="async"
         />
+        <span className="deck-card-inventory-copy">x{card.quantity}</span>
       </article>
     );
   }

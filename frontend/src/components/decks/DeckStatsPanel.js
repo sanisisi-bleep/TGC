@@ -345,6 +345,150 @@ function DeckCurveChart({ entries, averageCost, legendEntries }) {
   );
 }
 
+function OpeningHandCard({ card, index }) {
+  const colorPresentation = getDeckColorPresentation(card.color);
+
+  return (
+    <article className="deck-opening-card">
+      <div className="deck-opening-card-topline">
+        <span className="deck-opening-card-slot">Carta {index + 1}</span>
+        <span className="deck-opening-card-code">{card.source_card_id}</span>
+      </div>
+
+      <div className="deck-opening-card-visual">
+        {card.image_url ? (
+          <img
+            src={card.image_url}
+            alt={card.name}
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          <div className="deck-opening-card-placeholder">
+            {card.source_card_id || 'Carta'}
+          </div>
+        )}
+      </div>
+
+      <div className="deck-opening-card-copy">
+        <strong>{card.name}</strong>
+        <span className="deck-opening-card-type">{card.card_type || 'Sin tipo'}</span>
+      </div>
+
+      <div className="deck-opening-card-facts">
+        <span className="deck-opening-card-chip">
+          Coste {Number.isFinite(card.curveValue) ? card.curveValue : '?'}
+        </span>
+        <span className="deck-opening-card-chip">
+          {getCurveBandLabel(card.curveBand)}
+        </span>
+        <span
+          className="deck-opening-card-chip is-color"
+          style={colorPresentation.style}
+        >
+          {colorPresentation.label}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function OpeningHandModal({
+  isOpen,
+  onClose,
+  openingFormatLabel,
+  openingHandSize,
+  mulliganLimit,
+  openingRules,
+  adminInsights,
+  openingHand,
+  handSummary,
+  mulliganCount,
+  canMulligan,
+  onDrawFreshHand,
+  onMulligan,
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="card-modal" onClick={onClose}>
+      <div className="deck-detail deck-opening-modal panel" onClick={(event) => event.stopPropagation()}>
+        <div className="deck-opening-modal-header">
+          <div className="deck-opening-modal-copy">
+            <span className="eyebrow">Simulador de mano inicial</span>
+            <h2>Mano inicial y mulligan</h2>
+            <p>
+              Simula la apertura oficial de {openingFormatLabel} sin tocar la lista real del mazo.
+            </p>
+          </div>
+
+          <div className="deck-admin-actions">
+            <button type="button" className="ghost-button" onClick={onDrawFreshHand}>
+              Robar mano
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={onMulligan}
+              disabled={!canMulligan}
+            >
+              {canMulligan ? 'Mulligan' : 'Mulligan usado'}
+            </button>
+          </div>
+        </div>
+
+        <div className="deck-admin-chip-row">
+          <span className="deck-stat-chip">{openingFormatLabel}</span>
+          <span className="deck-stat-chip">
+            {openingHandSize} cartas iniciales
+          </span>
+          <span className="deck-stat-chip">
+            {mulliganLimit} mulligan
+          </span>
+          <span className="deck-stat-chip">Main {adminInsights.totalMainDeckCards}</span>
+          <span className="deck-stat-chip">Cartas unicas {adminInsights.uniqueMainDeckCards}</span>
+          <span className="deck-stat-chip">Mulligan {mulliganCount}/{mulliganLimit}</span>
+          <span className="deck-stat-chip">
+            Early en mano {handSummary.earlyCards}/{openingHand.length}
+          </span>
+          {Number.isFinite(handSummary.averageCurve) && (
+            <span className="deck-stat-chip">
+              Curva media mano {handSummary.averageCurve.toFixed(2)}
+            </span>
+          )}
+          {openingRules?.mulliganSummary && (
+            <span className="deck-stat-chip">{openingRules.mulliganSummary}</span>
+          )}
+        </div>
+
+        {openingHand.length > 0 ? (
+          <div className="deck-opening-hand-grid">
+            {openingHand.map((card, index) => (
+              <OpeningHandCard
+                key={`${card.instanceKey}-${index}`}
+                card={card}
+                index={index}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="collection-empty-text">
+            No hay suficientes cartas del mazo principal para simular una mano inicial.
+          </p>
+        )}
+
+        <div className="card-detail-footer">
+          <button type="button" className="ghost-button" onClick={onClose}>
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminDeckToolkit({ stats }) {
   const adminInsights = useMemo(() => stats?.adminInsights || null, [stats?.adminInsights]);
   const simulatorPool = useMemo(
@@ -359,6 +503,7 @@ function AdminDeckToolkit({ stats }) {
   );
   const [openingHand, setOpeningHand] = useState([]);
   const [mulliganCount, setMulliganCount] = useState(0);
+  const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const handSummary = useMemo(
     () => summarizeOpeningHand(openingHand),
     [openingHand]
@@ -377,6 +522,40 @@ function AdminDeckToolkit({ stats }) {
     setOpeningHand(drawCardsFromPool(simulatorPool, openingHandSize));
     setMulliganCount(0);
   }, [openingHandSize, simulatorPool, stats?.deckSignature]);
+
+  useEffect(() => {
+    setIsSimulatorOpen(false);
+  }, [stats?.deckSignature]);
+
+  useEffect(() => {
+    if (!isSimulatorOpen || typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isSimulatorOpen]);
+
+  useEffect(() => {
+    if (!isSimulatorOpen || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsSimulatorOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isSimulatorOpen]);
 
   if (!adminInsights || adminInsights.totalMainDeckCards <= 0) {
     return null;
@@ -403,6 +582,14 @@ function AdminDeckToolkit({ stats }) {
     setMulliganCount((current) => current + 1);
   };
 
+  const openSimulator = () => {
+    setIsSimulatorOpen(true);
+  };
+
+  const closeSimulator = () => {
+    setIsSimulatorOpen(false);
+  };
+
   return (
     <section className="deck-admin-lab panel">
       <div className="deck-admin-lab-header">
@@ -426,19 +613,15 @@ function AdminDeckToolkit({ stats }) {
               </span>
             </div>
             <div className="deck-admin-actions">
-              <button type="button" className="ghost-button" onClick={drawFreshHand}>
-                Robar mano
-              </button>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={handleMulligan}
-                disabled={!canMulligan}
-              >
-                {canMulligan ? 'Mulligan' : 'Mulligan usado'}
+              <button type="button" className="ghost-button" onClick={openSimulator}>
+                Abrir simulador
               </button>
             </div>
           </div>
+
+          <p className="deck-admin-card-copy">
+            Deja el detalle del mazo limpio y abre la simulacion solo cuando quieras revisar la salida.
+          </p>
 
           <div className="deck-admin-chip-row">
             <span className="deck-stat-chip">{openingFormatLabel}</span>
@@ -454,64 +637,24 @@ function AdminDeckToolkit({ stats }) {
               </span>
             )}
           </div>
-
-          {openingHand.length > 0 ? (
-            <div className="deck-opening-hand-grid">
-              {openingHand.map((card, index) => {
-                const colorPresentation = getDeckColorPresentation(card.color);
-
-                return (
-                  <article key={`${card.instanceKey}-${index}`} className="deck-opening-card">
-                    <div className="deck-opening-card-topline">
-                      <span className="deck-opening-card-slot">Carta {index + 1}</span>
-                      <span className="deck-opening-card-code">{card.source_card_id}</span>
-                    </div>
-
-                    <div className="deck-opening-card-visual">
-                      {card.image_url ? (
-                        <img
-                          src={card.image_url}
-                          alt={card.name}
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      ) : (
-                        <div className="deck-opening-card-placeholder">
-                          {card.source_card_id || 'Carta'}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="deck-opening-card-copy">
-                      <strong>{card.name}</strong>
-                      <span className="deck-opening-card-type">{card.card_type || 'Sin tipo'}</span>
-                    </div>
-
-                    <div className="deck-opening-card-facts">
-                      <span className="deck-opening-card-chip">
-                        Coste {Number.isFinite(card.curveValue) ? card.curveValue : '?'}
-                      </span>
-                      <span className="deck-opening-card-chip">
-                        {getCurveBandLabel(card.curveBand)}
-                      </span>
-                      <span
-                        className="deck-opening-card-chip is-color"
-                        style={colorPresentation.style}
-                      >
-                        {colorPresentation.label}
-                      </span>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="collection-empty-text">
-              No hay suficientes cartas del mazo principal para simular una mano inicial.
-            </p>
-          )}
         </article>
       </div>
+
+      <OpeningHandModal
+        isOpen={isSimulatorOpen}
+        onClose={closeSimulator}
+        openingFormatLabel={openingFormatLabel}
+        openingHandSize={openingHandSize}
+        mulliganLimit={mulliganLimit}
+        openingRules={openingRules}
+        adminInsights={adminInsights}
+        openingHand={openingHand}
+        handSummary={handSummary}
+        mulliganCount={mulliganCount}
+        canMulligan={canMulligan}
+        onDrawFreshHand={drawFreshHand}
+        onMulligan={handleMulligan}
+      />
     </section>
   );
 }
