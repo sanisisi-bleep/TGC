@@ -678,7 +678,9 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
                 <DeckStatsPanel stats={deckStats} isAdmin={isAdmin} />
 
-                <div className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''}`}>
+                <div
+                  className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}
+                >
                   {(selectedDeck?.cards || []).map((card) => (
                     <DeckCardRow
                       key={card.id}

@@ -1,11 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, StringConstraints
 from sqlalchemy.orm import Session
 from sqlalchemy import delete
 
 from app.database.connection import get_db
 from app.models import Tgc, User, UserCollection, Deck, DeckCard
+from app.rate_limit import RateLimitPolicy, enforce_rate_limit
 from app.services.auth_service import get_current_user, get_password_hash, require_admin_user, verify_password
+from app.services.feedback_service import (
+    FeedbackConfigurationError,
+    FeedbackDeliveryError,
+    FeedbackSubmission,
+    deliver_feedback_email,
+)
+from app.logger import logger
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -16,6 +26,12 @@ ALLOWED_ROLES = {
     "organizer",
     "admin",
 }
+FEEDBACK_CATEGORY_OPTIONS = {"idea", "ux", "data", "bug", "other"}
+FEEDBACK_RATE_LIMIT_POLICY = RateLimitPolicy(
+    bucket="settings-feedback",
+    limit=5,
+    window_seconds=60 * 60,
+)
 
 
 class SettingsUpdate(BaseModel):
@@ -37,6 +53,15 @@ class AdminRoleUpdate(BaseModel):
 
 class DeleteAccountRequest(BaseModel):
     password: str
+
+
+class FeedbackRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    category: Annotated[str, StringConstraints(min_length=2, max_length=20)]
+    subject: Annotated[str, StringConstraints(max_length=120)] = ""
+    message: Annotated[str, StringConstraints(min_length=1, max_length=1200)]
+    allow_contact: bool = True
 
 
 def _serialize_user(user):
@@ -103,6 +128,49 @@ def update_password(
     db.add(current_user)
     db.commit()
     return {"message": "Password updated"}
+
+
+@router.post("/feedback")
+def submit_feedback(
+    payload: FeedbackRequest,
+    request: Request,
+    current_user=Depends(get_current_user),
+):
+    category = (payload.category or "").strip().lower()
+    if category not in FEEDBACK_CATEGORY_OPTIONS:
+        raise HTTPException(status_code=400, detail="Invalid feedback category")
+
+    enforce_rate_limit(request, FEEDBACK_RATE_LIMIT_POLICY, key_fragment=current_user.username)
+
+    submission = FeedbackSubmission(
+        category=category,
+        subject=(payload.subject or "").strip(),
+        message=(payload.message or "").strip(),
+        allow_contact=bool(payload.allow_contact),
+        username=current_user.username,
+        email=current_user.email or "",
+        display_name=current_user.display_name or current_user.username,
+        role=current_user.role or "player",
+        user_id=current_user.id,
+    )
+
+    try:
+        deliver_feedback_email(submission)
+    except FeedbackConfigurationError as exc:
+        logger.warning(
+            "Feedback service is not configured",
+            extra={
+                "event": "feedback_delivery_unconfigured",
+                "username": current_user.username,
+                "user_id": current_user.id,
+                "error": str(exc),
+            },
+        )
+        raise HTTPException(status_code=503, detail="Feedback service is not configured") from exc
+    except FeedbackDeliveryError as exc:
+        raise HTTPException(status_code=502, detail="No se pudo enviar la sugerencia") from exc
+
+    return {"message": "Feedback sent"}
 
 
 @router.get("/users")

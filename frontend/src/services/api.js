@@ -129,6 +129,11 @@ export const changePassword = async (payload) => {
   return response.data || null;
 };
 
+export const sendFeedback = async (payload) => {
+  const response = await apiClient.post('/settings/feedback', payload);
+  return response.data || null;
+};
+
 export const getAdminUsers = async () => {
   const response = await apiClient.get('/settings/users');
   return Array.isArray(response.data) ? response.data : [];

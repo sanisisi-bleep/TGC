@@ -3251,6 +3251,12 @@ textarea::placeholder {
   align-items: stretch;
 }
 
+.deck-detail-grid.is-inventory-grid {
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 0.85rem;
+  align-items: start;
+}
+
 .deck-card-row {
   display: grid;
   grid-template-columns: 78px 1fr auto;
@@ -3285,29 +3291,14 @@ textarea::placeholder {
   width: 100%;
 }
 
-.deck-card-row.is-inventory .deck-card-copy {
-  display: grid;
-  gap: 0.4rem;
-}
-
-.deck-card-row.is-inventory .deck-card-controls-static {
-  align-items: stretch;
-}
-
-.deck-card-quantity-display {
-  display: grid;
-  gap: 0.25rem;
+.deck-card-row.is-inventory {
+  grid-template-columns: 1fr;
   justify-items: center;
-  padding: 0.95rem 1rem;
-  border-radius: 18px;
-  background: var(--surface-muted);
-  border: 1px solid var(--surface-muted-border);
-}
-
-.deck-card-quantity-display strong {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 1.8rem;
-  color: var(--text);
+  align-items: start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .deck-card-row.has-missing-copies {
@@ -3323,6 +3314,15 @@ textarea::placeholder {
   height: 104px;
   object-fit: cover;
   border-radius: 14px;
+}
+
+.deck-card-row.is-inventory img {
+  width: 100%;
+  max-width: 132px;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  border-radius: 16px;
+  box-shadow: 0 16px 28px rgba(17, 40, 84, 0.14);
 }
 
 .deck-card-row.is-openable {

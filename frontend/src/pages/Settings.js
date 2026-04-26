@@ -10,6 +10,7 @@ import {
   deleteAccount as deleteAccountRequest,
   getAdminUsers,
   getTgcCatalog,
+  sendFeedback as sendFeedbackRequest,
   updateAdminUserRole,
   updateProfile,
 } from '../services/api';
@@ -251,6 +252,34 @@ function Settings() {
     },
   });
 
+  const sendFeedbackMutation = useMutation({
+    mutationFn: sendFeedbackRequest,
+    onSuccess: () => {
+      setFeedbackDraft(DEFAULT_FEEDBACK_DRAFT);
+
+      try {
+        window.localStorage.removeItem(FEEDBACK_STORAGE_KEY);
+      } catch (_error) {
+        // Ignore storage issues and keep the local state cleared in memory.
+      }
+
+      showToast({
+        type: 'success',
+        message: 'Sugerencia enviada a multiversetgc@gmail.com.',
+      });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo enviar la sugerencia.'),
+      });
+    },
+  });
+
   const deleteAccountMutation = useMutation({
     mutationFn: deleteAccountRequest,
     onSuccess: () => {
@@ -349,18 +378,21 @@ function Settings() {
     }
   };
 
-  const openFeedbackEmail = () => {
+  const sendFeedback = () => {
     if (!hasFeedbackContent) {
       showToast({
         type: 'error',
-        message: 'Escribe algo en el borrador antes de abrirlo en correo.',
+        message: 'Escribe algo en el borrador antes de enviar la sugerencia.',
       });
       return;
     }
 
-    const subject = feedbackDraft.subject.trim() || 'Sugerencia sobre Multiverse TCG Manager';
-    const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(feedbackPreview)}`;
-    window.location.href = mailtoUrl;
+    sendFeedbackMutation.mutate({
+      category: feedbackDraft.category,
+      subject: feedbackDraft.subject.trim(),
+      message: feedbackDraft.message.trim(),
+      allow_contact: Boolean(feedbackDraft.allowContact),
+    });
   };
 
   const clearFeedbackDraft = () => {
@@ -544,8 +576,8 @@ function Settings() {
           <div className="settings-panel-header">
             <h2>Sugerencias para admin</h2>
             <p>
-              Este buzon no envia nada al backend de momento. Guarda tu borrador en local y te lo
-              deja listo para copiar o abrirlo en correo.
+              Este buzon envia la sugerencia directamente al correo interno de admin sin abrir
+              ningun cliente externo.
             </p>
           </div>
 
@@ -613,8 +645,13 @@ function Settings() {
             <button type="button" onClick={copyFeedbackDraft}>
               Copiar sugerencia
             </button>
-            <button type="button" className="settings-secondary-button" onClick={openFeedbackEmail}>
-              Abrir en correo
+            <button
+              type="button"
+              className="settings-secondary-button"
+              onClick={sendFeedback}
+              disabled={sendFeedbackMutation.isPending}
+            >
+              {sendFeedbackMutation.isPending ? 'Enviando...' : 'Enviar sugerencia'}
             </button>
             <button type="button" className="settings-ghost-button" onClick={clearFeedbackDraft}>
               Limpiar borrador

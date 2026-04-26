@@ -39,6 +39,23 @@ function DeckCardRow({
     onOpenCard(card);
   };
 
+  if (isInventoryView) {
+    return (
+      <article
+        className={`deck-card-row is-inventory ${onOpenCard ? 'is-openable' : ''}`.trim()}
+        onClick={handleOpenCard}
+        title={`${card.name} x${card.quantity}`}
+      >
+        <img
+          src={card.image_url}
+          alt={card.name}
+          loading="lazy"
+          decoding="async"
+        />
+      </article>
+    );
+  }
+
   return (
     <article
       className={`deck-card-row ${card.missing_quantity > 0 ? 'has-missing-copies' : ''} ${isGridView ? 'is-grid' : ''} ${isInventoryView ? 'is-inventory' : ''} ${onOpenCard ? 'is-openable' : ''}`.trim()}
@@ -135,36 +152,26 @@ function DeckCardRow({
           <span className="deck-covered-text">Completa x{card.fulfilled_quantity || 0}</span>
         )}
       </div>
-
-      {isInventoryView ? (
-        <div className="deck-card-controls deck-card-controls-static">
-          <div className="deck-card-quantity-display">
-            <span className="collection-panel-label">Copias</span>
-            <strong>x{card.quantity}</strong>
-          </div>
+      <div className="deck-card-controls">
+        <div className="quantity-stepper-controls deck-stepper-controls">
+          <button
+            type="button"
+            onClick={() => onAdjustQuantity(card.id, -1)}
+            disabled={isUpdatingQuantity}
+          >
+            -
+          </button>
+          <span className="deck-stepper-value">x{card.quantity}</span>
+          <button
+            type="button"
+            onClick={() => onAdjustQuantity(card.id, 1)}
+            disabled={isUpdatingQuantity || card.quantity >= maxQuantity}
+          >
+            +
+          </button>
         </div>
-      ) : (
-        <div className="deck-card-controls">
-          <div className="quantity-stepper-controls deck-stepper-controls">
-            <button
-              type="button"
-              onClick={() => onAdjustQuantity(card.id, -1)}
-              disabled={isUpdatingQuantity}
-            >
-              -
-            </button>
-            <span className="deck-stepper-value">x{card.quantity}</span>
-            <button
-              type="button"
-              onClick={() => onAdjustQuantity(card.id, 1)}
-              disabled={isUpdatingQuantity || card.quantity >= maxQuantity}
-            >
-              +
-            </button>
-          </div>
-          <span className="deck-card-limit-note">Max {maxQuantity}</span>
-        </div>
-      )}
+        <span className="deck-card-limit-note">Max {maxQuantity}</span>
+      </div>
     </article>
   );
 }
