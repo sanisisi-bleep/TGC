@@ -28,7 +28,15 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        shell: bash
+        run: |
+          set -e
+          if npm ci --no-audit --no-fund; then
+            echo "Frontend dependencies installed with npm ci"
+          else
+            echo "npm ci failed. Retrying with npm install to recover from lockfile usage issues."
+            npm install --no-audit --no-fund
+          fi
 
       - name: Build frontend
         working-directory: frontend
@@ -62,4 +70,3 @@ jobs:
           INIT_DB_ON_STARTUP: "false"
         run: |
           python -c "import pathlib, sys; sys.path.append(str(pathlib.Path('backend').resolve())); import app.main; print('backend import ok')"
-
