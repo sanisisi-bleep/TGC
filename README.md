@@ -130,8 +130,8 @@ The repo now includes GitHub Actions workflows:
 ### Secrets needed for Vercel deploy
 
 - `VERCEL_TOKEN`
-- `VERCEL_ORG_ID`
-- `VERCEL_PROJECT_ID`
+
+The workflow already includes the linked `orgId` and `projectId` for this repo, so only the token needs to be added in GitHub.
 
 ### Recommended GitHub setup
 
