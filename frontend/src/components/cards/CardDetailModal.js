@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSession } from '../../context/SessionContext';
 
 const hasCardValue = (value) => (
   value !== null
@@ -12,9 +13,13 @@ function CardDetailModal({
   onClose,
   footer = null,
 }) {
+  const { profile } = useSession();
+
   if (!card) {
     return null;
   }
+
+  const showAdvancedQa = Boolean(profile?.advanced_mode);
 
   const primaryFacts = [
     { label: 'Codigo', value: card.source_card_id || 'Sin codigo' },
@@ -111,7 +116,7 @@ function CardDetailModal({
     },
     {
       label: 'Q&A',
-      value: card.qa,
+      value: showAdvancedQa ? card.qa : null,
     },
   ].filter((block) => Boolean(block.value));
 

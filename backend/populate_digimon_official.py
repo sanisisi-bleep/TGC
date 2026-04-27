@@ -91,11 +91,24 @@ REQUEST_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
+HTML_TAG_RE = re.compile(r"<\s*/?\s*[a-zA-Z][^>]*>")
+
+
+def html_to_plain_text(value, separator=" "):
+    normalized = unescape(str(value)).replace("\xa0", " ")
+    if not HTML_TAG_RE.search(normalized):
+        return normalized
+
+    soup = BeautifulSoup(normalized, "html.parser")
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    return soup.get_text(separator, strip=False)
+
 
 def clean_text(value):
     if value is None:
         return ""
-    normalized = unescape(str(value)).replace("\xa0", " ")
+    normalized = html_to_plain_text(value)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized
 
@@ -104,8 +117,7 @@ def clean_multiline_text(value):
     if value is None:
         return ""
 
-    normalized = unescape(str(value))
-    normalized = normalized.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    normalized = html_to_plain_text(value)
     normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
     return "\n".join(
         line for line in (clean_text(part) for part in normalized.splitlines()) if line
