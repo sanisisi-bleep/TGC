@@ -3378,6 +3378,10 @@ textarea::placeholder {
   animation: modal-backdrop-in var(--motion-base) ease both;
 }
 
+.deck-opening-overlay {
+  z-index: 1080;
+}
+
 .card-detail,
 .deck-detail {
   width: min(100%, 960px);

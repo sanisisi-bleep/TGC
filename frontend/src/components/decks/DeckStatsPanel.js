@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { getDeckColorPresentation, getDeckColorToneStops } from '../../utils/deckTools';
 
 const CURVE_DISPLAY_STORAGE_KEY = 'deckCurveDisplayMode';
@@ -408,12 +409,12 @@ function OpeningHandModal({
   onDrawFreshHand,
   onMulligan,
 }) {
-  if (!isOpen) {
+  if (!isOpen || typeof document === 'undefined') {
     return null;
   }
 
-  return (
-    <div className="card-modal" onClick={onClose}>
+  return createPortal(
+    <div className="card-modal deck-opening-overlay" onClick={onClose}>
       <div className="deck-detail deck-opening-modal panel" onClick={(event) => event.stopPropagation()}>
         <div className="deck-opening-modal-header">
           <div className="deck-opening-modal-copy">
@@ -487,7 +488,8 @@ function OpeningHandModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
