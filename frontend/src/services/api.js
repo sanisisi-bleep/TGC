@@ -104,13 +104,33 @@ export const addCardToDeck = async (deckId, payload) => {
   return response.data || null;
 };
 
+export const addCardToConsidering = async (deckId, payload) => {
+  const response = await apiClient.post(`/decks/${deckId}/considering`, payload);
+  return response.data || null;
+};
+
 export const adjustDeckCard = async (deckId, cardId, delta) => {
   const response = await apiClient.post(`/decks/${deckId}/cards/${cardId}/adjust`, { delta });
   return response.data || null;
 };
 
+export const adjustConsideringCard = async (deckId, cardId, delta) => {
+  const response = await apiClient.post(`/decks/${deckId}/considering/${cardId}/adjust`, { delta });
+  return response.data || null;
+};
+
 export const adjustDeckAssignment = async (deckId, cardId, delta) => {
   const response = await apiClient.post(`/decks/${deckId}/cards/${cardId}/assignment`, { delta });
+  return response.data || null;
+};
+
+export const moveDeckCardToConsidering = async (deckId, cardId, quantity = 1) => {
+  const response = await apiClient.post(`/decks/${deckId}/cards/${cardId}/move-to-considering`, { quantity });
+  return response.data || null;
+};
+
+export const moveConsideringCardToDeck = async (deckId, cardId, quantity = 1) => {
+  const response = await apiClient.post(`/decks/${deckId}/considering/${cardId}/move-to-main`, { quantity });
   return response.data || null;
 };
 

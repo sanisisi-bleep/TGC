@@ -26,12 +26,25 @@ class DeckCardCreate(BaseModel):
     quantity: int = Field(..., gt=0)
 
 
+class DeckConsideringCreate(BaseModel):
+    card_id: int
+    quantity: int = Field(..., gt=0)
+
+
 class DeckCardAdjust(BaseModel):
     delta: int
 
 
 class DeckCardAssignmentAdjust(BaseModel):
     delta: int
+
+
+class DeckConsideringAdjust(BaseModel):
+    delta: int
+
+
+class DeckCardTransfer(BaseModel):
+    quantity: int = Field(..., gt=0)
 
 
 class DeckImportCard(BaseModel):
@@ -323,6 +336,42 @@ def add_card_to_deck(deck_id: int, card: DeckCardCreate, db: Session = Depends(g
         )
 
 
+@router.post("/{deck_id}/considering")
+def add_card_to_considering(deck_id: int, card: DeckConsideringCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        result = service.add_card_to_considering(deck_id, card.card_id, card.quantity, current_user.id)
+        logger.info(
+            "Card added to considering",
+            extra=build_log_extra(
+                "deck_considering_card_added",
+                deck_id=deck_id,
+                card_id=card.card_id,
+                user_id=current_user.id,
+                username=current_user.username,
+                quantity=result["quantity"],
+                delta=card.quantity,
+            ),
+        )
+        return _deck_card_payload(
+            "Card added to considering",
+            deck_id,
+            card.card_id,
+            quantity=result["quantity"],
+        )
+    except ValueError as error:
+        _raise_deck_http_error(
+            400,
+            error,
+            event="deck_considering_card_add_rejected",
+            deck_id=deck_id,
+            card_id=card.card_id,
+            user_id=current_user.id,
+            username=current_user.username,
+            delta=card.quantity,
+        )
+
+
 @router.post("/{deck_id}/cards/{card_id}/adjust")
 def adjust_card_in_deck(deck_id: int, card_id: int, payload: DeckCardAdjust, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = _deck_service(db)
@@ -354,6 +403,42 @@ def adjust_card_in_deck(deck_id: int, card_id: int, payload: DeckCardAdjust, db:
             400,
             error,
             event="deck_card_quantity_adjust_rejected",
+            deck_id=deck_id,
+            card_id=card_id,
+            user_id=current_user.id,
+            username=current_user.username,
+            delta=payload.delta,
+        )
+
+
+@router.post("/{deck_id}/considering/{card_id}/adjust")
+def adjust_card_in_considering(deck_id: int, card_id: int, payload: DeckConsideringAdjust, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        result = service.adjust_considering_card_quantity(deck_id, card_id, payload.delta, current_user.id)
+        logger.info(
+            "Considering card quantity adjusted",
+            extra=build_log_extra(
+                "deck_considering_card_adjusted",
+                deck_id=deck_id,
+                card_id=card_id,
+                user_id=current_user.id,
+                username=current_user.username,
+                delta=payload.delta,
+                quantity=result["quantity"],
+            ),
+        )
+        return _deck_card_payload(
+            "Considering quantity updated",
+            deck_id,
+            card_id,
+            quantity=result["quantity"],
+        )
+    except ValueError as error:
+        _raise_deck_http_error(
+            400,
+            error,
+            event="deck_considering_card_adjust_rejected",
             deck_id=deck_id,
             card_id=card_id,
             user_id=current_user.id,
@@ -397,4 +482,82 @@ def adjust_card_assignment_in_deck(deck_id: int, card_id: int, payload: DeckCard
             user_id=current_user.id,
             username=current_user.username,
             delta=payload.delta,
+        )
+
+
+@router.post("/{deck_id}/cards/{card_id}/move-to-considering")
+def move_card_to_considering(deck_id: int, card_id: int, payload: DeckCardTransfer, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        result = service.move_card_to_considering(deck_id, card_id, payload.quantity, current_user.id)
+        logger.info(
+            "Card moved from main deck to considering",
+            extra=build_log_extra(
+                "deck_card_moved_to_considering",
+                deck_id=deck_id,
+                card_id=card_id,
+                user_id=current_user.id,
+                username=current_user.username,
+                quantity=payload.quantity,
+                deck_quantity=result["deck_quantity"],
+                considering_quantity=result["considering_quantity"],
+            ),
+        )
+        return _deck_card_payload(
+            "Card moved to considering",
+            deck_id,
+            card_id,
+            quantity=result["deck_quantity"],
+            considering_quantity=result["considering_quantity"],
+            assigned_quantity=result["assigned_quantity"],
+        )
+    except ValueError as error:
+        _raise_deck_http_error(
+            400,
+            error,
+            event="deck_card_move_to_considering_rejected",
+            deck_id=deck_id,
+            card_id=card_id,
+            user_id=current_user.id,
+            username=current_user.username,
+            quantity=payload.quantity,
+        )
+
+
+@router.post("/{deck_id}/considering/{card_id}/move-to-main")
+def move_card_to_main_deck(deck_id: int, card_id: int, payload: DeckCardTransfer, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        result = service.move_card_from_considering_to_deck(deck_id, card_id, payload.quantity, current_user.id)
+        logger.info(
+            "Card moved from considering to main deck",
+            extra=build_log_extra(
+                "deck_card_moved_from_considering",
+                deck_id=deck_id,
+                card_id=card_id,
+                user_id=current_user.id,
+                username=current_user.username,
+                quantity=payload.quantity,
+                deck_quantity=result["deck_quantity"],
+                considering_quantity=result["considering_quantity"],
+            ),
+        )
+        return _deck_card_payload(
+            "Card moved to main deck",
+            deck_id,
+            card_id,
+            quantity=result["deck_quantity"],
+            considering_quantity=result["considering_quantity"],
+            assigned_quantity=result["assigned_quantity"],
+        )
+    except ValueError as error:
+        _raise_deck_http_error(
+            400,
+            error,
+            event="deck_card_move_from_considering_rejected",
+            deck_id=deck_id,
+            card_id=card_id,
+            user_id=current_user.id,
+            username=current_user.username,
+            quantity=payload.quantity,
         )

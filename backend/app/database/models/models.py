@@ -156,6 +156,18 @@ class DeckCard(Base):
     card = relationship("Card")
 
 
+class DeckConsideringCard(Base):
+    __tablename__ = "deck_considering_cards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    deck_id = Column(Integer, ForeignKey("decks.id"))
+    card_id = Column(Integer, ForeignKey("cards.id"))
+    quantity = Column(Integer, default=1)
+
+    deck = relationship("Deck")
+    card = relationship("Card")
+
+
 __all__ = [
     "Base",
     "Tgc",
@@ -167,4 +179,5 @@ __all__ = [
     "UserCollection",
     "Deck",
     "DeckCard",
+    "DeckConsideringCard",
 ]

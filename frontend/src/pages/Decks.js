@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import CardDetailModal from '../components/cards/CardDetailModal';
 import DeckCardRow from '../components/decks/DeckCardRow';
+import DeckConsideringRow from '../components/decks/DeckConsideringRow';
 import DeckDetailActions from '../components/decks/DeckDetailActions';
 import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
 import DeckStatsPanel from '../components/decks/DeckStatsPanel';
@@ -30,7 +31,10 @@ import {
 } from '../utils/deckTools';
 import {
   adjustDeckAssignment,
+  adjustConsideringCard,
   adjustDeckCard,
+  moveConsideringCardToDeck,
+  moveDeckCardToConsidering,
   cloneDeck,
   createDeck,
   deleteDeck,
@@ -61,6 +65,8 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const [importingDeck, setImportingDeck] = useState(false);
   const [updatingDeckCardId, setUpdatingDeckCardId] = useState(null);
   const [updatingAssignmentCardId, setUpdatingAssignmentCardId] = useState(null);
+  const [updatingConsideringCardId, setUpdatingConsideringCardId] = useState(null);
+  const [movingConsideringCardId, setMovingConsideringCardId] = useState(null);
   const [deckListPreview, setDeckListPreview] = useState(null);
   const importDeckInputRef = useRef(null);
   const location = useLocation();
@@ -87,6 +93,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
   );
   const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
   const selectedDeckIsOnePiece = selectedDeck?.composition?.format_mode === 'one-piece';
+  const selectedDeckConsideringTotal = Number(selectedDeck?.considering_total_cards) || 0;
   const selectedDeckSummary = selectedDeckIsOnePiece
     ? `Leader ${selectedDeck?.leader_cards || 0}/${selectedDeck?.required_leader_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | DON ${selectedDeck?.don_cards || 0}/${selectedDeck?.recommended_don_cards || 10}`
     : `${selectedDeck?.total_cards || 0} cartas en total`;
@@ -271,6 +278,78 @@ function Decks({ activeTcgSlug, activeTgc }) {
     },
     onSettled: () => {
       setUpdatingAssignmentCardId(null);
+    },
+  });
+
+  const adjustConsideringMutation = useMutation({
+    mutationFn: ({ deckId, cardId, delta }) => adjustConsideringCard(deckId, cardId, delta),
+    onSuccess: async (_payload, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+      ]);
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo actualizar considering.'),
+      });
+    },
+    onSettled: () => {
+      setUpdatingConsideringCardId(null);
+    },
+  });
+
+  const moveToConsideringMutation = useMutation({
+    mutationFn: ({ deckId, cardId, quantity }) => moveDeckCardToConsidering(deckId, cardId, quantity),
+    onSuccess: async (_payload, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+      ]);
+      showToast({ type: 'success', message: 'Carta movida a considering.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo mover la carta a considering.'),
+      });
+    },
+    onSettled: () => {
+      setMovingConsideringCardId(null);
+      setUpdatingDeckCardId(null);
+    },
+  });
+
+  const moveFromConsideringMutation = useMutation({
+    mutationFn: ({ deckId, cardId, quantity }) => moveConsideringCardToDeck(deckId, cardId, quantity),
+    onSuccess: async (_payload, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+      ]);
+      showToast({ type: 'success', message: 'Carta devuelta al mazo principal.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo pasar la carta al mazo principal.'),
+      });
+    },
+    onSettled: () => {
+      setMovingConsideringCardId(null);
     },
   });
 
@@ -474,6 +553,22 @@ function Decks({ activeTcgSlug, activeTgc }) {
     adjustDeckCardMutation.mutate({ deckId, cardId, delta });
   };
 
+  const adjustConsideringQuantity = (deckId, cardId, delta) => {
+    setUpdatingConsideringCardId(cardId);
+    adjustConsideringMutation.mutate({ deckId, cardId, delta });
+  };
+
+  const moveDeckCardToConsideringHandler = (deckId, cardId) => {
+    setUpdatingDeckCardId(cardId);
+    setMovingConsideringCardId(cardId);
+    moveToConsideringMutation.mutate({ deckId, cardId, quantity: 1 });
+  };
+
+  const moveConsideringCardToDeckHandler = (deckId, cardId) => {
+    setMovingConsideringCardId(cardId);
+    moveFromConsideringMutation.mutate({ deckId, cardId, quantity: 1 });
+  };
+
   const adjustDeckCoverage = (cardId, delta) => {
     if (!selectedDeck?.id) {
       return;
@@ -611,7 +706,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
                       </button>
                     </div>
                     <p>
-                      {`${selectedDeck?.cards?.length || 0} cartas distintas | ${selectedDeckSummary}`}
+                      {`${selectedDeck?.cards?.length || 0} cartas distintas | ${selectedDeckSummary}${selectedDeckConsideringTotal > 0 ? ` | Considering ${selectedDeckConsideringTotal}` : ''}`}
                     </p>
                     <div className="deck-status-row">
                       <span className={`deck-status-chip ${selectedDeck?.is_complete ? 'is-complete' : 'is-incomplete'}`}>
@@ -635,6 +730,11 @@ function Decks({ activeTcgSlug, activeTgc }) {
                       {(selectedDeck?.missing_copies || 0) > 0 && (
                         <span className="deck-status-chip deck-missing-chip">
                           Faltan {selectedDeck?.missing_copies} copias
+                        </span>
+                      )}
+                      {selectedDeckConsideringTotal > 0 && (
+                        <span className="deck-status-chip deck-progress-chip">
+                          Considering {selectedDeckConsideringTotal}
                         </span>
                       )}
                     </div>
@@ -693,6 +793,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
                       onToggleAssignmentEditor={toggleAssignmentEditor}
                       onAdjustCoverage={adjustDeckCoverage}
                       onAdjustQuantity={(cardId, delta) => adjustDeckCardQuantity(selectedDeck.id, cardId, delta)}
+                      onMoveToConsidering={(cardId) => moveDeckCardToConsideringHandler(selectedDeck.id, cardId)}
                       onOpenCard={setSelectedCard}
                     />
                   ))}
@@ -703,6 +804,47 @@ function Decks({ activeTcgSlug, activeTgc }) {
                     <p>Este mazo todavia no tiene cartas.</p>
                   </div>
                 )}
+
+                <section className="deck-considering-section panel">
+                  <div className="deck-considering-header">
+                    <div>
+                      <span className="eyebrow">Considering</span>
+                      <h3>Cartas en observacion</h3>
+                      <p>
+                        Guarda aqui pruebas y opciones sin que cuenten para la lista principal,
+                        la curva ni la mano inicial.
+                      </p>
+                    </div>
+                    <div className="deck-status-row">
+                      <span className="deck-status-chip deck-progress-chip">
+                        {selectedDeck?.considering_unique_cards || 0} distintas
+                      </span>
+                      <span className="deck-status-chip deck-progress-chip">
+                        {selectedDeckConsideringTotal} copias
+                      </span>
+                    </div>
+                  </div>
+
+                  {(selectedDeck?.considering_cards || []).length > 0 ? (
+                    <div className="deck-considering-list">
+                      {(selectedDeck?.considering_cards || []).map((card) => (
+                        <DeckConsideringRow
+                          key={`considering-${card.id}`}
+                          card={card}
+                          movingConsideringCardId={movingConsideringCardId}
+                          updatingConsideringCardId={updatingConsideringCardId}
+                          onAdjustQuantity={(cardId, delta) => adjustConsideringQuantity(selectedDeck.id, cardId, delta)}
+                          onMoveToMainDeck={(cardId) => moveConsideringCardToDeckHandler(selectedDeck.id, cardId)}
+                          onOpenCard={setSelectedCard}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty-state subtle-empty">
+                      <p>Todavia no has guardado cartas en considering para este mazo.</p>
+                    </div>
+                  )}
+                </section>
               </>
             ) : (
               <div className="deck-detail-loading">

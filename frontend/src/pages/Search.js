@@ -19,6 +19,7 @@ import {
 } from '../utils/searchCache';
 import {
   addCardToCollection,
+  addCardToConsidering,
   addCardToDeck,
   createDeck,
   getCardFacets,
@@ -337,6 +338,32 @@ function Search({ activeTcgSlug, activeTgc }) {
     },
   });
 
+  const addToConsideringMutation = useMutation({
+    mutationFn: ({ deckId, cardId, quantity }) => addCardToConsidering(deckId, {
+      card_id: cardId,
+      quantity,
+    }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      showToast({
+        type: 'success',
+        message: variables.quantity === 1
+          ? '1 copia guardada en considering.'
+          : `${variables.quantity} copias guardadas en considering.`,
+      });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo guardar la carta en considering.'),
+      });
+    },
+  });
+
   const createDeckMutation = useMutation({
     mutationFn: createDeck,
     onSuccess: () => {
@@ -488,6 +515,24 @@ function Search({ activeTcgSlug, activeTgc }) {
     const quantity = commitActionQuantity(deckPickerCard.id);
     try {
       await addToDeckMutation.mutateAsync({
+        deckId,
+        cardId: deckPickerCard.id,
+        quantity,
+      });
+      setDeckPickerCard(null);
+    } catch (_error) {
+      // The mutation already surfaces the error through toasts.
+    }
+  };
+
+  const addCardToDeckConsidering = async (deckId) => {
+    if (!deckPickerCard) {
+      return;
+    }
+
+    const quantity = commitActionQuantity(deckPickerCard.id);
+    try {
+      await addToConsideringMutation.mutateAsync({
         deckId,
         cardId: deckPickerCard.id,
         quantity,
@@ -759,7 +804,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         decks={decks}
         newDeckName={newDeckName}
         actionQuantity={deckPickerCard ? getActionQuantity(deckPickerCard.id) : DEFAULT_ACTION_QUANTITY}
-        submittingDeckAction={addToDeckMutation.isPending || createDeckMutation.isPending}
+        submittingDeckAction={addToDeckMutation.isPending || addToConsideringMutation.isPending || createDeckMutation.isPending}
         onClose={() => setDeckPickerCard(null)}
         onActionQuantityChange={(value) => {
           if (deckPickerCard) {
@@ -783,6 +828,7 @@ function Search({ activeTcgSlug, activeTgc }) {
         }}
         onNewDeckNameChange={setNewDeckName}
         onAddCardToExistingDeck={addCardToExistingDeck}
+        onAddCardToConsidering={addCardToDeckConsidering}
         onCreateDeckAndAddCard={createDeckAndAddCard}
       />
     </div>

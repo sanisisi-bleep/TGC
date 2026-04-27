@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import delete
 
 from app.database.connection import get_db
-from app.models import Tgc, User, UserCollection, Deck, DeckCard
+from app.models import Tgc, User, UserCollection, Deck, DeckCard, DeckConsideringCard
 from app.rate_limit import RateLimitPolicy, enforce_rate_limit
 from app.services.auth_service import get_current_user, get_password_hash, require_admin_user, verify_password
 from app.services.feedback_service import (
@@ -287,6 +287,7 @@ def delete_my_account(
 
     if owned_deck_ids:
         db.execute(delete(DeckCard).where(DeckCard.deck_id.in_(owned_deck_ids)))
+        db.execute(delete(DeckConsideringCard).where(DeckConsideringCard.deck_id.in_(owned_deck_ids)))
         db.execute(delete(Deck).where(Deck.id.in_(owned_deck_ids)))
 
     db.execute(delete(UserCollection).where(UserCollection.user_id == current_user.id))

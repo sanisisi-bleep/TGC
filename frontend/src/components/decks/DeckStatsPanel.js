@@ -421,6 +421,8 @@ function OpeningHandModal({
             <h2>Mano inicial y mulligan</h2>
             <p>
               Simula la apertura oficial de {openingFormatLabel} sin tocar la lista real del mazo.
+              {' '}
+              {openingHandInsights.simulatorScopeCopy}
             </p>
           </div>
 
@@ -514,6 +516,7 @@ function OpeningHandToolkit({ stats }) {
 
   const mulliganLimit = openingRules?.mulliganLimit || 0;
   const canMulligan = openingHand.length > 0 && openingHandSize > 0 && mulliganCount < mulliganLimit;
+  const consideringCards = Number(stats?.consideringCards) || 0;
 
   useEffect(() => {
     if (simulatorPool.length === 0 || openingHandSize <= 0) {
@@ -622,13 +625,16 @@ function OpeningHandToolkit({ stats }) {
           </div>
 
           <p className="deck-opening-summary-copy">
-            Deja el detalle del mazo limpio y abre la simulacion solo cuando quieras revisar la salida.
+            {openingHandInsights.simulatorScopeCopy}
           </p>
 
           <div className="deck-opening-chip-row">
             <span className="deck-stat-chip">{openingFormatLabel}</span>
             <span className="deck-stat-chip">Main {openingHandInsights.totalMainDeckCards}</span>
             <span className="deck-stat-chip">Cartas unicas {openingHandInsights.uniqueMainDeckCards}</span>
+            {consideringCards > 0 && (
+              <span className="deck-stat-chip">Considering {consideringCards}</span>
+            )}
             <span className="deck-stat-chip">Mulligan {mulliganCount}/{mulliganLimit}</span>
             <span className="deck-stat-chip">
               Early en mano {handSummary.earlyCards}/{openingHand.length}

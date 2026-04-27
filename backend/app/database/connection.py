@@ -103,11 +103,20 @@ def ensure_deck_columns():
         "ALTER TABLE decks ADD COLUMN IF NOT EXISTS tgc_id INTEGER",
         "ALTER TABLE decks ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)",
         "ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS assigned_quantity INTEGER",
+        (
+            "CREATE TABLE IF NOT EXISTS deck_considering_cards ("
+            "id SERIAL PRIMARY KEY, "
+            "deck_id INTEGER REFERENCES decks(id), "
+            "card_id INTEGER REFERENCES cards(id), "
+            "quantity INTEGER DEFAULT 1)"
+        ),
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_decks_share_token ON decks(share_token)",
         "CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_decks_user_tgc_id ON decks(user_id, tgc_id)",
         "CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id)",
         "CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_card_id ON deck_cards(deck_id, card_id)",
+        "CREATE INDEX IF NOT EXISTS idx_deck_considering_cards_deck_id ON deck_considering_cards(deck_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_deck_considering_cards_deck_card_id ON deck_considering_cards(deck_id, card_id)",
     ]
 
     _run_schema_statements(statements)

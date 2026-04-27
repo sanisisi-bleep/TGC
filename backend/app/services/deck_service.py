@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.models import Card, Deck, DeckCard, Tgc, User, UserCollection
+from app.models import Card, Deck, DeckCard, DeckConsideringCard, Tgc, User, UserCollection
 from app.services.game_rules import (
     GUNDAM_TGC_NAME,
     ONE_PIECE_TCG_NAME,
@@ -31,6 +31,16 @@ class DeckService:
         if not deck_card:
             raise ValueError("Card not found in deck")
         return deck_card
+
+    def _get_deck_considering_card_or_error(self, deck_id: int, card_id: int) -> DeckConsideringCard:
+        considering_card = (
+            self.db.query(DeckConsideringCard)
+            .filter(DeckConsideringCard.deck_id == deck_id, DeckConsideringCard.card_id == card_id)
+            .first()
+        )
+        if not considering_card:
+            raise ValueError("Card not found in considering")
+        return considering_card
 
     def _get_rules_for_deck(self, deck: Deck):
         deck_tgc = self._resolve_deck_tgc(deck)
@@ -91,6 +101,14 @@ class DeckService:
         return (
             self.db.query(func.coalesce(func.sum(DeckCard.quantity), 0))
             .filter(DeckCard.deck_id == deck_id)
+            .scalar()
+            or 0
+        )
+
+    def _get_considering_total_quantity(self, deck_id: int) -> int:
+        return (
+            self.db.query(func.coalesce(func.sum(DeckConsideringCard.quantity), 0))
+            .filter(DeckConsideringCard.deck_id == deck_id)
             .scalar()
             or 0
         )
@@ -172,6 +190,23 @@ class DeckService:
                 "quantity": deck_card.quantity,
             }
             for deck_card, card in rows
+        ]
+
+    def _get_considering_entries(self, deck_id: int):
+        rows = (
+            self.db.query(DeckConsideringCard, Card)
+            .join(Card, Card.id == DeckConsideringCard.card_id)
+            .filter(DeckConsideringCard.deck_id == deck_id)
+            .order_by(DeckConsideringCard.id.asc(), Card.id.asc())
+            .all()
+        )
+        return [
+            {
+                "considering_card": considering_card,
+                "card": card,
+                "quantity": considering_card.quantity,
+            }
+            for considering_card, card in rows
         ]
 
     def _build_candidate_deck_entries(self, deck_id: int, target_card: Card, next_quantity: int):
@@ -425,6 +460,13 @@ class DeckService:
                 f"{deck_tgc.name if deck_tgc else 'This TCG'} decks cannot exceed {rules['deck_max_cards']} cards"
             )
 
+    def _validate_considering_quantity_rules(self, deck_tgc, rules: dict, next_quantity: int, card: Card):
+        card_limit = self._get_card_quantity_limit(deck_tgc, rules, card)
+        if next_quantity > card_limit:
+            raise ValueError(
+                f"You can only keep up to {card_limit} copies of this card in considering"
+            )
+
     def _validate_one_piece_composition(self, rules: dict, composition: dict, card: Card, is_increase: bool, require_complete: bool):
         role = get_one_piece_card_role(card.card_type) if card else "main"
 
@@ -536,6 +578,25 @@ class DeckService:
             "color_warning_text": color_warning_text,
         }
 
+    def _serialize_considering_card(self, deck_tgc, rules: dict, considering_card: DeckConsideringCard, card: Card):
+        role = self._get_card_role(deck_tgc, card)
+        return {
+            "id": card.id,
+            "source_card_id": card.source_card_id,
+            "name": card.name,
+            "image_url": normalize_card_image_url(card.image_url),
+            "card_type": card.card_type,
+            "lv": card.lv,
+            "cost": card.cost,
+            "color": card.color,
+            "rarity": card.rarity,
+            "set_name": card.set_name,
+            "version": card.version,
+            "quantity": considering_card.quantity,
+            "deck_role": role,
+            "max_quantity_allowed": self._get_card_quantity_limit(deck_tgc, rules, card),
+        }
+
     def _build_deck_response_base(self, deck: Deck, deck_tgc, rules: dict, composition: dict, total_cards: int):
         return {
             "id": deck.id,
@@ -565,19 +626,25 @@ class DeckService:
             "deck_color_labels": composition.get("deck_color_labels", []),
             "max_deck_colors": composition.get("max_deck_colors", 0),
             "off_color_cards": composition["off_color_cards"],
+            "considering_total_cards": 0,
+            "considering_unique_cards": 0,
         }
 
     def _serialize_deck_payload(self, deck: Deck, deck_tgc, rules: dict, user_id: Optional[int] = None, include_share_token: bool = False):
         deck_entries = self._get_deck_entries(deck.id)
+        considering_entries = self._get_considering_entries(deck.id)
         composition = self._build_deck_composition(deck_tgc, rules, deck_entries)
         total_cards = sum(entry["quantity"] for entry in deck_entries)
+        considering_total_cards = sum(entry["quantity"] for entry in considering_entries)
         advanced_mode = self._is_advanced_mode_enabled(user_id) if user_id is not None else False
+        tracked_card_ids = [entry["card"].id for entry in deck_entries] + [entry["card"].id for entry in considering_entries]
         owned_quantities = self._get_owned_quantities_map(
             user_id,
-            [entry["card"].id for entry in deck_entries],
+            tracked_card_ids,
         ) if user_id is not None else {}
 
         serialized_cards = []
+        serialized_considering_cards = []
         missing_copies = 0
 
         for entry in deck_entries:
@@ -602,8 +669,26 @@ class DeckService:
 
             serialized_cards.append(base_payload)
 
+        for entry in considering_entries:
+            considering_card = entry["considering_card"]
+            card = entry["card"]
+            base_payload = self._serialize_considering_card(deck_tgc, rules, considering_card, card)
+
+            if user_id is not None:
+                base_payload["owned_quantity"] = owned_quantities.get(card.id, 0)
+
+            serialized_considering_cards.append(base_payload)
+
         role_order = {"leader": 0, "main": 1, "don": 2}
         serialized_cards.sort(
+            key=lambda item: (
+                role_order.get(item["deck_role"], 9),
+                item["cost"] if item["cost"] is not None else 999,
+                item["name"].lower(),
+                item["source_card_id"] or "",
+            )
+        )
+        serialized_considering_cards.sort(
             key=lambda item: (
                 role_order.get(item["deck_role"], 9),
                 item["cost"] if item["cost"] is not None else 999,
@@ -614,6 +699,9 @@ class DeckService:
 
         response = self._build_deck_response_base(deck, deck_tgc, rules, composition, total_cards)
         response["cards"] = serialized_cards
+        response["considering_cards"] = serialized_considering_cards
+        response["considering_total_cards"] = considering_total_cards
+        response["considering_unique_cards"] = len(serialized_considering_cards)
 
         if user_id is not None:
             response["missing_copies"] = missing_copies
@@ -741,6 +829,7 @@ class DeckService:
         deck = self._get_user_deck_or_error(deck_id, user_id)
 
         self.db.query(DeckCard).filter(DeckCard.deck_id == deck.id).delete(synchronize_session=False)
+        self.db.query(DeckConsideringCard).filter(DeckConsideringCard.deck_id == deck.id).delete(synchronize_session=False)
         self.db.delete(deck)
         self.db.commit()
         return deck
@@ -764,6 +853,20 @@ class DeckService:
                     card_id=source_card.card_id,
                     quantity=source_card.quantity,
                     assigned_quantity=source_card.assigned_quantity,
+                )
+            )
+
+        source_considering_cards = (
+            self.db.query(DeckConsideringCard)
+            .filter(DeckConsideringCard.deck_id == source_deck.id)
+            .all()
+        )
+        for source_card in source_considering_cards:
+            self.db.add(
+                DeckConsideringCard(
+                    deck_id=cloned_deck.id,
+                    card_id=source_card.card_id,
+                    quantity=source_card.quantity,
                 )
             )
 
@@ -825,6 +928,150 @@ class DeckService:
         self.db.refresh(deck_card)
         return {
             "quantity": deck_card.quantity,
+            "assigned_quantity": deck_card.assigned_quantity,
+        }
+
+    def add_card_to_considering(self, deck_id: int, card_id: int, quantity: int, user_id: int):
+        deck = self._get_user_deck_or_error(deck_id, user_id)
+        deck_tgc, rules = self._get_rules_for_deck(deck)
+
+        if quantity <= 0:
+            raise ValueError("Quantity must be greater than zero")
+
+        card = self.db.query(Card).filter(Card.id == card_id).first()
+        if not card:
+            raise ValueError("Card not found")
+
+        if card.tgc_id != (deck_tgc.id if deck_tgc else card.tgc_id):
+            raise ValueError("Card belongs to a different TCG")
+
+        considering_card = (
+            self.db.query(DeckConsideringCard)
+            .filter(DeckConsideringCard.deck_id == deck_id, DeckConsideringCard.card_id == card_id)
+            .first()
+        )
+        current_quantity = considering_card.quantity if considering_card else 0
+        next_quantity = current_quantity + quantity
+        self._validate_considering_quantity_rules(deck_tgc, rules, next_quantity, card)
+
+        if considering_card:
+            considering_card.quantity = next_quantity
+        else:
+            considering_card = DeckConsideringCard(deck_id=deck_id, card_id=card_id, quantity=quantity)
+            self.db.add(considering_card)
+
+        self.db.commit()
+        self.db.refresh(considering_card)
+        return {"quantity": considering_card.quantity}
+
+    def adjust_considering_card_quantity(self, deck_id: int, card_id: int, delta: int, user_id: int):
+        deck = self._get_user_deck_or_error(deck_id, user_id)
+        deck_tgc, rules = self._get_rules_for_deck(deck)
+        considering_card = self._get_deck_considering_card_or_error(deck_id, card_id)
+        card = self.db.query(Card).filter(Card.id == card_id).first()
+
+        next_quantity = considering_card.quantity + delta
+        if next_quantity > 0:
+            self._validate_considering_quantity_rules(deck_tgc, rules, next_quantity, card)
+
+        if next_quantity <= 0:
+            self.db.delete(considering_card)
+            self.db.commit()
+            return {"quantity": 0}
+
+        considering_card.quantity = next_quantity
+        self.db.commit()
+        self.db.refresh(considering_card)
+        return {"quantity": considering_card.quantity}
+
+    def move_card_to_considering(self, deck_id: int, card_id: int, quantity: int, user_id: int):
+        deck = self._get_user_deck_or_error(deck_id, user_id)
+        deck_tgc, rules = self._get_rules_for_deck(deck)
+        deck_card = self._get_deck_card_or_error(deck_id, card_id)
+
+        if quantity <= 0:
+            raise ValueError("Quantity must be greater than zero")
+        if quantity > deck_card.quantity:
+            raise ValueError("Not enough copies in deck to move")
+
+        card = self.db.query(Card).filter(Card.id == card_id).first()
+        considering_card = (
+            self.db.query(DeckConsideringCard)
+            .filter(DeckConsideringCard.deck_id == deck_id, DeckConsideringCard.card_id == card_id)
+            .first()
+        )
+        current_considering_quantity = considering_card.quantity if considering_card else 0
+        next_considering_quantity = current_considering_quantity + quantity
+        self._validate_considering_quantity_rules(deck_tgc, rules, next_considering_quantity, card)
+
+        if considering_card:
+            considering_card.quantity = next_considering_quantity
+        else:
+            considering_card = DeckConsideringCard(deck_id=deck_id, card_id=card_id, quantity=quantity)
+            self.db.add(considering_card)
+
+        next_deck_quantity = deck_card.quantity - quantity
+        if next_deck_quantity <= 0:
+            self.db.delete(deck_card)
+            assigned_quantity = None
+        else:
+            deck_card.quantity = next_deck_quantity
+            if deck_card.assigned_quantity is not None:
+                deck_card.assigned_quantity = min(deck_card.assigned_quantity, deck_card.quantity)
+            assigned_quantity = deck_card.assigned_quantity
+
+        self.db.commit()
+        self.db.refresh(considering_card)
+        return {
+            "deck_quantity": max(next_deck_quantity, 0),
+            "considering_quantity": considering_card.quantity,
+            "assigned_quantity": assigned_quantity,
+        }
+
+    def move_card_from_considering_to_deck(self, deck_id: int, card_id: int, quantity: int, user_id: int):
+        deck = self._get_user_deck_or_error(deck_id, user_id)
+        deck_tgc, rules = self._get_rules_for_deck(deck)
+        considering_card = self._get_deck_considering_card_or_error(deck_id, card_id)
+
+        if quantity <= 0:
+            raise ValueError("Quantity must be greater than zero")
+        if quantity > considering_card.quantity:
+            raise ValueError("Not enough copies in considering to move")
+
+        card = self.db.query(Card).filter(Card.id == card_id).first()
+        deck_card = (
+            self.db.query(DeckCard)
+            .filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id)
+            .first()
+        )
+        current_quantity = deck_card.quantity if deck_card else 0
+        next_quantity = current_quantity + quantity
+        total_cards_in_deck = self._get_deck_total_quantity(deck_id)
+        next_total = total_cards_in_deck - current_quantity + next_quantity
+
+        self._validate_generic_quantity_rules(deck_tgc, rules, next_quantity, next_total, card)
+        candidate_entries = self._build_candidate_deck_entries(deck_id, card, next_quantity)
+        self._validate_deck_composition(deck_tgc, rules, candidate_entries, card, is_increase=True)
+
+        if deck_card:
+            deck_card.quantity = next_quantity
+        else:
+            deck_card = DeckCard(deck_id=deck_id, card_id=card_id, quantity=quantity)
+            self.db.add(deck_card)
+
+        next_considering_quantity = considering_card.quantity - quantity
+        if next_considering_quantity <= 0:
+            self.db.delete(considering_card)
+            considering_quantity = 0
+        else:
+            considering_card.quantity = next_considering_quantity
+            considering_quantity = considering_card.quantity
+
+        self.db.commit()
+        self.db.refresh(deck_card)
+        return {
+            "deck_quantity": deck_card.quantity,
+            "considering_quantity": considering_quantity,
             "assigned_quantity": deck_card.assigned_quantity,
         }
 

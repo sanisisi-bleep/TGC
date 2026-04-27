@@ -3,6 +3,7 @@ from .models import (
     Card,
     Deck,
     DeckCard,
+    DeckConsideringCard,
     GundamCard,
     MagicCard,
     OnePieceCard,
@@ -22,4 +23,5 @@ __all__ = [
     "UserCollection",
     "Deck",
     "DeckCard",
+    "DeckConsideringCard",
 ]

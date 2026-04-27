@@ -22,6 +22,7 @@ function SearchDeckPickerModal({
   onIncreaseActionQuantity,
   onNewDeckNameChange,
   onAddCardToExistingDeck,
+  onAddCardToConsidering,
   onCreateDeckAndAddCard,
 }) {
   if (!deckPickerCard) {
@@ -38,7 +39,7 @@ function SearchDeckPickerModal({
       <div className="deck-picker-modal panel" onClick={(e) => e.stopPropagation()}>
         <div className="settings-panel-header">
           <h2>Anadir a mazo</h2>
-          <p>Elige un mazo existente o crea uno nuevo para {deckPickerCard.name}.</p>
+          <p>Elige si {deckPickerCard.name} va al mazo principal o se queda en considering.</p>
           {ruleSummary ? <p>{ruleSummary}</p> : null}
         </div>
 
@@ -66,19 +67,31 @@ function SearchDeckPickerModal({
                   quantity: actionQuantity,
                 });
                 return (
-                  <button
-                    key={deck.id}
-                    type="button"
-                    className="deck-picker-option"
-                    onClick={() => onAddCardToExistingDeck(deck.id)}
-                    disabled={submittingDeckAction || option.disabled}
-                  >
+                  <div key={deck.id} className="deck-picker-option">
                     <strong>{deck.name}</strong>
                     <span>{option.summary}</span>
                     {option.helper && (
                       <span className="deck-picker-option-helper">{option.helper}</span>
                     )}
-                  </button>
+                    <div className="deck-picker-option-actions">
+                      <button
+                        type="button"
+                        className="deck-action-button is-primary"
+                        onClick={() => onAddCardToExistingDeck(deck.id)}
+                        disabled={submittingDeckAction || option.disabled}
+                      >
+                        Anadir al mazo
+                      </button>
+                      <button
+                        type="button"
+                        className="deck-action-button is-soft"
+                        onClick={() => onAddCardToConsidering(deck.id)}
+                        disabled={submittingDeckAction}
+                      >
+                        Considering
+                      </button>
+                    </div>
+                  </div>
                 );
               })
             ) : (

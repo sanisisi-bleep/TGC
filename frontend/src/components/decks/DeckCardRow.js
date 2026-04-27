@@ -12,6 +12,7 @@ function DeckCardRow({
   onToggleAssignmentEditor,
   onAdjustCoverage,
   onAdjustQuantity,
+  onMoveToConsidering,
   onOpenCard,
 }) {
   const isInventoryView = deckCardView === 'inventory';
@@ -172,6 +173,16 @@ function DeckCardRow({
           </button>
         </div>
         <span className="deck-card-limit-note">Max {maxQuantity}</span>
+        {onMoveToConsidering && (
+          <button
+            type="button"
+            className="deck-action-button is-soft deck-inline-action"
+            onClick={() => onMoveToConsidering(card.id)}
+            disabled={isUpdatingQuantity || (card.quantity || 0) <= 0}
+          >
+            Considering
+          </button>
+        )}
       </div>
     </article>
   );

@@ -488,6 +488,11 @@ export const safeDeckFilename = (value) => (
     || 'mazo'
 );
 
+const getExportableDeckCards = (deck) => (
+  (deck?.cards || [])
+    .filter((card) => (Number(card?.quantity) || 0) > 0)
+);
+
 export const buildDeckExportPayload = (deck) => ({
   format: 'tgc-deck-v1',
   exported_at: new Date().toISOString(),
@@ -496,7 +501,7 @@ export const buildDeckExportPayload = (deck) => ({
     tgc_id: deck.tgc_id,
     tgc_name: deck.tgc_name,
     total_cards: deck.total_cards,
-    cards: (deck.cards || []).map((card) => ({
+    cards: getExportableDeckCards(deck).map((card) => ({
       card_id: card.id,
       source_card_id: card.source_card_id,
       version: card.version,
@@ -508,7 +513,7 @@ export const buildDeckExportPayload = (deck) => ({
 });
 
 export const buildDeckListText = (deck) => (
-  (deck?.cards || [])
+  getExportableDeckCards(deck)
     .slice()
     .sort((left, right) => {
       const leftOrder = DECK_ROLE_ORDER[left.deck_role] ?? 9;
@@ -518,7 +523,6 @@ export const buildDeckListText = (deck) => (
       }
       return (left.source_card_id || '').localeCompare(right.source_card_id || '');
     })
-    .filter((card) => (Number(card.quantity) || 0) > 0)
     .map((card) => `${Number(card.quantity)}x${card.source_card_id || `CARD-${card.id}`}`)
     .join('\n')
 );
@@ -656,6 +660,7 @@ const buildOpeningHandInsights = (cards = [], formatMode = 'standard') => {
     totalMainDeckCards,
     uniqueMainDeckCards,
     simulatorPool,
+    simulatorScopeCopy: 'El simulador roba solo del mazo principal. Leader, DON!! y Considering se quedan fuera.',
   };
 };
 
@@ -784,6 +789,8 @@ export const buildDeckStats = (deck) => {
     leaderColorLabels: composition?.leader_color_labels || [],
     offColorCards: composition?.off_color_cards || [],
     copyLimitExceededCards: composition?.copy_limit_exceeded_cards || [],
+    consideringCards: Number(deck.considering_total_cards) || 0,
+    consideringUniqueCards: Number(deck.considering_unique_cards) || 0,
     typeEntries: toSortedEntries(typeMap),
     colorEntries: toSortedEntries(colorMap),
     rarityEntries: toSortedEntries(rarityMap),

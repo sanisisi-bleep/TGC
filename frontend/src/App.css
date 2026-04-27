@@ -1913,8 +1913,18 @@ textarea::placeholder {
   );
   color: var(--text);
   text-align: left;
-  cursor: pointer;
   box-shadow: 0 12px 22px rgba(17, 40, 84, 0.08);
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-base) ease,
+    border-color var(--motion-base) ease,
+    background var(--motion-base) ease;
+}
+
+.deck-picker-option:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--surface-muted-border));
+  box-shadow: 0 16px 28px rgba(17, 40, 84, 0.12);
 }
 
 .deck-picker-option strong,
@@ -1931,10 +1941,17 @@ textarea::placeholder {
   font-size: 0.84rem;
 }
 
-.deck-picker-option:disabled {
-  cursor: not-allowed;
-  opacity: 0.72;
-  box-shadow: none;
+.deck-picker-option-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.deck-picker-option-actions .deck-action-button {
+  width: auto;
+  min-width: 144px;
+  flex: 1 1 170px;
 }
 
 .deck-picker-create {
@@ -2558,6 +2575,11 @@ textarea::placeholder {
   background: linear-gradient(180deg, rgba(255, 247, 245, 0.95), rgba(255, 237, 233, 0.82));
 }
 
+.deck-inline-action {
+  width: auto;
+  min-width: 0;
+}
+
 .deck-action-button:disabled {
   opacity: 0.66;
   cursor: not-allowed;
@@ -3175,7 +3197,10 @@ textarea::placeholder {
 .App.theme-dark .deck-curve-chart,
 .App.theme-dark .deck-opening-panel,
 .App.theme-dark .deck-opening-summary-card,
-.App.theme-dark .deck-opening-card {
+.App.theme-dark .deck-opening-card,
+.App.theme-dark .deck-considering-section,
+.App.theme-dark .deck-considering-row,
+.App.theme-dark .deck-picker-option {
   background:
     linear-gradient(
       180deg,
@@ -3249,6 +3274,16 @@ textarea::placeholder {
   background: linear-gradient(180deg, rgba(74, 27, 30, 0.96), rgba(43, 18, 20, 0.92));
   color: #ffd6d0;
   border-color: rgba(201, 59, 47, 0.24);
+}
+
+.App.theme-dark .deck-picker-option:hover {
+  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.22);
+}
+
+.App.theme-dark .deck-considering-badge {
+  background: rgba(216, 179, 92, 0.14);
+  border-color: rgba(216, 179, 92, 0.24);
+  color: #f0cf86;
 }
 
 .App.theme-dark .deck-status-chip.is-complete,
@@ -3505,6 +3540,65 @@ textarea::placeholder {
 .deck-card-row.is-openable:hover {
   transform: translateY(-1px);
   box-shadow: 0 16px 30px rgba(17, 40, 84, 0.1);
+}
+
+.deck-considering-section {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  animation: soft-fade-up var(--motion-base) var(--ease-standard) both;
+}
+
+.deck-considering-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.deck-considering-header h3 {
+  margin: 0.2rem 0 0.4rem;
+}
+
+.deck-considering-header p {
+  margin: 0;
+  max-width: 58ch;
+  color: var(--text-soft);
+}
+
+.deck-considering-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.deck-considering-row {
+  grid-template-columns: 78px minmax(0, 1fr) auto;
+}
+
+.deck-considering-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0.3rem 0.72rem;
+  border-radius: 999px;
+  background: rgba(214, 114, 19, 0.12);
+  border: 1px solid rgba(214, 114, 19, 0.18);
+  color: #9b4d09;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.deck-considering-copy {
+  margin-top: 0.45rem;
+  color: var(--text-soft);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.deck-considering-controls {
+  align-items: flex-end;
 }
 
 .cards-grid > .card-item,
@@ -4210,6 +4304,7 @@ textarea::placeholder {
   .deck-item-header,
   .deck-detail-header,
   .deck-curve-header,
+  .deck-considering-header,
   .deck-opening-panel-header,
   .deck-opening-summary-header,
   .deck-opening-modal-header {
@@ -4274,6 +4369,16 @@ textarea::placeholder {
     grid-template-columns: 1fr;
   }
 
+  .deck-picker-option-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .deck-picker-option-actions .deck-action-button {
+    width: 100%;
+    min-width: 0;
+  }
+
   .home-hero-copy {
     max-width: 100%;
   }
@@ -4316,6 +4421,19 @@ textarea::placeholder {
 
   .view-toggle-compact button {
     flex: 1 1 0;
+  }
+
+  .deck-considering-row {
+    grid-template-columns: 1fr;
+  }
+
+  .deck-considering-row img {
+    margin: 0 auto;
+  }
+
+  .deck-considering-controls,
+  .deck-inline-action {
+    width: 100%;
   }
 
   .pagination-button {
