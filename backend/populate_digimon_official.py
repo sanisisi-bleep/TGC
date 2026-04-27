@@ -65,6 +65,23 @@ SET_CODE_FILTER = resolve_csv_env("DIGIMON_SET_CODE_FILTER", DEFAULT_SET_CODE_FI
 CATEGORY_ID_FILTER = resolve_csv_env("DIGIMON_CATEGORY_ID_FILTER", DEFAULT_CATEGORY_ID_FILTER)
 HAS_ACTIVE_FILTERS = bool(SET_CODE_FILTER or CATEGORY_ID_FILTER)
 
+CARD_STRING_LIMITS = {
+    "source_card_id": 50,
+    "deck_key": 50,
+    "name": 255,
+    "card_type": 50,
+    "color": 100,
+    "rarity": 20,
+    "set_name": 255,
+    "version": 50,
+    "artist": 255,
+}
+
+DIGIMON_DETAIL_STRING_LIMITS = {
+    "form": 100,
+    "attribute": 100,
+}
+
 REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -289,6 +306,29 @@ def build_card_description(set_name, notes):
     if notes:
         parts.append(f"Notes: {notes}")
     return "\n".join(parts)
+
+
+def validate_string_lengths(card_data):
+    problems = []
+
+    for field, limit in CARD_STRING_LIMITS.items():
+        value = card_data.get(field)
+        if isinstance(value, str) and len(value) > limit:
+            problems.append(f"{field}={len(value)}/{limit}")
+
+    detail_payload = card_data.get("detail_payload") or {}
+    for field, limit in DIGIMON_DETAIL_STRING_LIMITS.items():
+        value = detail_payload.get(field)
+        if isinstance(value, str) and len(value) > limit:
+            problems.append(f"detail_payload.{field}={len(value)}/{limit}")
+
+    if problems:
+        source_card_id = card_data.get("source_card_id") or "unknown card"
+        name = card_data.get("name") or ""
+        raise ValueError(
+            f"Digimon card {source_card_id} has values longer than the database schema allows: "
+            f"{', '.join(problems)}. Name: {name}"
+        )
 
 
 def parse_popup_card(popup, category_label, page_url):
@@ -598,6 +638,8 @@ def upsert_cards(db, tgc_id, scraped_cards):
     imported_keys = set()
 
     for card_data in scraped_cards:
+        validate_string_lengths(card_data)
+
         identity = (clean_text(card_data["source_card_id"]), clean_text(card_data["version"]).upper())
         imported_keys.add(identity)
         card = existing_by_identity.get(identity)

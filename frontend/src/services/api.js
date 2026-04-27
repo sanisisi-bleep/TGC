@@ -1,7 +1,7 @@
 import apiClient from '../apiClient';
 
-export const getSessionProfile = async () => {
-  const response = await apiClient.get('/auth/session');
+export const getSessionProfile = async (signal) => {
+  const response = await apiClient.get('/auth/session', { signal });
   return response.data?.user || null;
 };
 

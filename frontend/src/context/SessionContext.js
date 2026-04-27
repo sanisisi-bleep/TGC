@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useState,
 } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../apiClient';
@@ -11,6 +12,7 @@ import queryKeys from '../queryKeys';
 import { getSessionProfile, logoutUser } from '../services/api';
 
 const SESSION_QUERY_STALE_TIME_MS = 2 * 60 * 1000;
+const SESSION_BOOTSTRAP_MAX_WAIT_MS = 8000;
 const PROTECTED_QUERY_ROOTS = new Set(['collection', 'decks', 'cards', 'settings']);
 
 const SessionContext = createContext(null);
@@ -19,6 +21,7 @@ export const isUnauthorizedError = (error) => error?.response?.status === 401;
 
 export function SessionProvider({ children }) {
   const queryClient = useQueryClient();
+  const [sessionBootstrapBypassed, setSessionBootstrapBypassed] = useState(false);
 
   const markSessionAsLoggedOut = useCallback(() => {
     queryClient.setQueryData(queryKeys.sessionProfile(), null);
@@ -67,14 +70,37 @@ export function SessionProvider({ children }) {
 
   const sessionQuery = useQuery({
     queryKey: queryKeys.sessionProfile(),
-    queryFn: getSessionProfile,
+    queryFn: ({ signal }) => getSessionProfile(signal),
     staleTime: SESSION_QUERY_STALE_TIME_MS,
   });
 
+  useEffect(() => {
+    if (!sessionQuery.isPending) {
+      if (sessionBootstrapBypassed) {
+        setSessionBootstrapBypassed(false);
+      }
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setSessionBootstrapBypassed(true);
+      // If the session probe stalls, fall back to an anonymous shell instead of blocking the app forever.
+      queryClient.setQueryData(queryKeys.sessionProfile(), (currentProfile) => currentProfile ?? null);
+    }, SESSION_BOOTSTRAP_MAX_WAIT_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [queryClient, sessionBootstrapBypassed, sessionQuery.isPending]);
+
+  const authReady = !sessionQuery.isPending
+    || sessionQuery.fetchStatus === 'paused'
+    || sessionBootstrapBypassed;
+
   const value = useMemo(() => ({
-    profile: sessionQuery.data || null,
+    profile: sessionQuery.data ?? null,
     isAuthenticated: Boolean(sessionQuery.data),
-    authReady: !sessionQuery.isPending,
+    authReady,
     sessionError: sessionQuery.error || null,
     refreshSession,
     logout,
@@ -85,9 +111,9 @@ export function SessionProvider({ children }) {
     logout,
     markSessionAsLoggedOut,
     refreshSession,
+    authReady,
     sessionQuery.data,
     sessionQuery.error,
-    sessionQuery.isPending,
   ]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

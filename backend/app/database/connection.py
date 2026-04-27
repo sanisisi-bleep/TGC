@@ -51,6 +51,7 @@ def ensure_card_columns():
         "ALTER TABLE cards ADD COLUMN IF NOT EXISTS link TEXT",
         "ALTER TABLE cards ADD COLUMN IF NOT EXISTS zones TEXT",
         "ALTER TABLE cards ADD COLUMN IF NOT EXISTS artist VARCHAR(255)",
+        "ALTER TABLE cards ALTER COLUMN name TYPE VARCHAR(255)",
         "ALTER TABLE cards ALTER COLUMN color TYPE VARCHAR(100)",
         "UPDATE cards SET deck_key = source_card_id WHERE deck_key IS NULL AND source_card_id IS NOT NULL",
         "ALTER TABLE cards DROP CONSTRAINT IF EXISTS idx_cards_tgc_source_card_id",

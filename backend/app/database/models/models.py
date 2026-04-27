@@ -38,7 +38,7 @@ class Card(Base):
     tgc_id = Column(Integer, ForeignKey("tgc.id"))
     source_card_id = Column(String(50), index=True)
     deck_key = Column(String(50), index=True)
-    name = Column(String(100))
+    name = Column(String(255))
     card_type = Column(String(50))
     lv = Column(Integer)
     cost = Column(Integer)
