@@ -11,6 +11,7 @@ function DeckSummaryCard({
   isDeleting,
 }) {
   const isOnePieceDeck = deck?.composition?.format_mode === 'one-piece';
+  const isDigimonDeck = deck?.composition?.format_mode === 'digimon';
   const createdAtLabel = new Date(deck.created_at).toLocaleDateString();
   const totalCards = Number(deck.total_cards) || 0;
   const maxCards = Number(deck.max_cards) || 50;
@@ -21,6 +22,12 @@ function DeckSummaryCard({
         ? 'Leader y main deck listos. Puedes abrirlo para revisar colores, DON y exportacion.'
         : 'Todavia necesita ajustes de leader, main deck o DON antes de quedar listo para jugar.'
     )
+    : isDigimonDeck
+      ? (
+        deck.is_complete
+          ? 'Main deck y Digi-Eggs listos. Abre el mazo para revisar curva, mano inicial y variantes.'
+          : 'Revisa el main deck, los Digi-Eggs y las copias por numero antes de darlo por cerrado.'
+      )
     : (
       deck.is_complete
         ? 'Mazo completo y listo para afinar copias, curva y sets desde el panel de detalle.'
@@ -44,7 +51,11 @@ function DeckSummaryCard({
           {deck.is_complete ? 'Listo para jugar' : 'Pendiente de revisar'}
         </span>
         <span className="deck-status-chip deck-progress-chip">
-          {isOnePieceDeck ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} main` : `${totalCards}/${maxCards} cartas`}
+          {isOnePieceDeck
+            ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} main`
+            : isDigimonDeck
+              ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} main`
+              : `${totalCards}/${maxCards} cartas`}
         </span>
         <span className={`deck-status-chip ${remainingCards > 0 ? 'deck-missing-chip' : 'deck-progress-chip'}`}>
           {remainingCards > 0 ? `Restan ${remainingCards}` : 'Sin huecos'}
@@ -62,6 +73,15 @@ function DeckSummaryCard({
             </span>
             <span className="deck-status-chip deck-progress-chip">
               DON {deck.don_cards}/{deck.recommended_don_cards}
+            </span>
+          </>
+        ) : isDigimonDeck ? (
+          <>
+            <span className="deck-status-chip deck-progress-chip">
+              Main {deck.main_deck_cards || 0}/{deck.required_main_deck_cards || 50}
+            </span>
+            <span className="deck-status-chip deck-progress-chip">
+              Eggs {deck.egg_cards || 0}/{deck.max_egg_cards || 5}
             </span>
           </>
         ) : (

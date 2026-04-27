@@ -35,6 +35,23 @@ export const GAME_CONFIGS = {
       colors: ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'],
     },
   },
+  digimon: {
+    slug: 'digimon',
+    name: 'Digimon Card Game',
+    shortName: 'Digimon',
+    searchTitle: 'Buscar Cartas de Digimon',
+    collectionTitle: 'Archivo Digimon',
+    decksTitle: 'Mazos de Digimon',
+    eyebrow: 'Digivice',
+    accentClass: 'game-card-digimon',
+    available: true,
+    description: 'Controla tu archivo digital, ajusta Digi-Eggs y afina listas de Digimon sin salir del mismo panel.',
+    palette: 'theme-digimon',
+    filters: {
+      types: ['Digimon', 'Digi-Egg', 'Tamer', 'Option'],
+      colors: ['Red', 'Blue', 'Yellow', 'Green', 'White', 'Black', 'Purple'],
+    },
+  },
   magic: {
     slug: 'magic',
     name: 'Magic: The Gathering',
@@ -63,6 +80,10 @@ export function resolveTcgSlug(name = '') {
 
   if (normalized.includes('one piece')) {
     return 'one-piece';
+  }
+
+  if (normalized.includes('digimon')) {
+    return 'digimon';
   }
 
   if (normalized.includes('magic')) {

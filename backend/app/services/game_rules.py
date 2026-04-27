@@ -3,9 +3,11 @@ import re
 GUNDAM_TGC_NAME = "Gundam TGC"
 ONE_PIECE_TCG_NAME = "One Piece TCG"
 MAGIC_TCG_NAME = "Magic: The Gathering"
+DIGIMON_TCG_NAME = "Digimon Card Game"
 
 GUNDAM_COLORS = ("Blue", "Green", "Red", "Purple", "White")
 ONE_PIECE_COLORS = ("Red", "Green", "Blue", "Purple", "Black", "Yellow")
+DIGIMON_COLORS = ("Red", "Blue", "Yellow", "Green", "White", "Black", "Purple")
 
 DEFAULT_RULES = {
     "deck_min_cards": 0,
@@ -18,6 +20,8 @@ DEFAULT_RULES = {
     "allow_optional_don_deck": False,
     "enforce_color_identity": False,
     "max_deck_colors": 0,
+    "required_egg_cards": 0,
+    "max_egg_cards": 0,
 }
 
 
@@ -57,6 +61,22 @@ TGC_RULES = {
         "allow_optional_don_deck": False,
         "enforce_color_identity": False,
         "max_deck_colors": 0,
+        "required_egg_cards": 0,
+        "max_egg_cards": 0,
+    },
+    DIGIMON_TCG_NAME: {
+        "deck_min_cards": 50,
+        "deck_max_cards": 55,
+        "max_copies_per_card": 4,
+        "required_leader_cards": 0,
+        "required_main_deck_cards": 50,
+        "max_main_deck_cards": 50,
+        "max_don_cards": 0,
+        "allow_optional_don_deck": False,
+        "enforce_color_identity": False,
+        "max_deck_colors": 0,
+        "required_egg_cards": 0,
+        "max_egg_cards": 5,
     },
 }
 
@@ -98,3 +118,14 @@ def get_gundam_colors(raw_color: str | None):
 
 def get_one_piece_colors(raw_color: str | None):
     return detect_colors(raw_color, ONE_PIECE_COLORS)
+
+
+def get_digimon_card_role(card_type: str | None):
+    normalized = normalize_card_type(card_type)
+    if normalized in {"DIGI-EGG", "DIGIEGG"}:
+        return "egg"
+    return "main"
+
+
+def get_digimon_colors(raw_color: str | None):
+    return detect_colors(raw_color, DIGIMON_COLORS)

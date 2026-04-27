@@ -24,6 +24,8 @@ function DeckCardRow({
   const maxQuantity = card.max_quantity_allowed || maxCopiesPerCard || 4;
   const roleLabel = card.deck_role === 'leader'
     ? 'Leader'
+    : card.deck_role === 'egg'
+      ? 'Digi-Egg'
     : card.deck_role === 'don'
       ? 'DON!!'
       : 'Main';

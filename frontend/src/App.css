@@ -71,6 +71,22 @@
   --shadow: 0 24px 60px rgba(57, 44, 19, 0.16);
 }
 
+.App.theme-digimon {
+  --bg: #edf8ff;
+  --bg-soft: #f9fdff;
+  --surface: rgba(247, 253, 255, 0.92);
+  --surface-strong: #ffffff;
+  --surface-dark: #0f3353;
+  --text: #10273e;
+  --text-soft: #53708f;
+  --line: rgba(16, 39, 62, 0.12);
+  --primary: #1194d9;
+  --primary-deep: #0c5d9d;
+  --accent: #ffb347;
+  --accent-soft: #ffe7b7;
+  --shadow: 0 24px 60px rgba(16, 59, 98, 0.14);
+}
+
 .App.theme-dark {
   color-scheme: dark;
 }
@@ -139,6 +155,37 @@
   --nav-chip-bg: rgba(255, 255, 255, 0.045);
   --nav-chip-border: rgba(169, 132, 255, 0.14);
   --nav-text: #fdf7ff;
+}
+
+.App.theme-dark.theme-digimon {
+  --bg: #071018;
+  --bg-soft: #0b1621;
+  --surface: rgba(9, 19, 30, 0.92);
+  --surface-strong: #122130;
+  --surface-dark: #050b12;
+  --text: #eff8ff;
+  --text-soft: #98b5ca;
+  --line: rgba(116, 205, 255, 0.16);
+  --primary: #66d9ff;
+  --primary-deep: #d9f8ff;
+  --accent: #ffb95b;
+  --accent-soft: #3f2b12;
+  --shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
+  --surface-border: rgba(102, 217, 255, 0.16);
+  --surface-border-soft: rgba(102, 217, 255, 0.12);
+  --surface-muted: rgba(102, 217, 255, 0.08);
+  --surface-muted-border: rgba(102, 217, 255, 0.12);
+  --surface-elevated: rgba(12, 23, 36, 0.98);
+  --input-bg: rgba(8, 17, 27, 0.97);
+  --input-bg-strong: rgba(11, 22, 34, 0.98);
+  --input-border: rgba(102, 217, 255, 0.16);
+  --input-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  --focus-ring: rgba(102, 217, 255, 0.18);
+  --nav-surface: linear-gradient(90deg, rgba(6, 11, 18, 0.98), rgba(8, 36, 58, 0.96) 46%, rgba(40, 28, 13, 0.94));
+  --nav-border: rgba(102, 217, 255, 0.12);
+  --nav-chip-bg: rgba(255, 255, 255, 0.045);
+  --nav-chip-border: rgba(102, 217, 255, 0.14);
+  --nav-text: #f5fdff;
 }
 
 * {
@@ -248,12 +295,24 @@ textarea::placeholder {
     linear-gradient(180deg, #140f1a 0%, #0f0b14 55%, #08060c 100%);
 }
 
+.App.theme-dark.theme-digimon {
+  background:
+    radial-gradient(circle at 11% 10%, rgba(102, 217, 255, 0.18), transparent 24%),
+    radial-gradient(circle at 86% 12%, rgba(255, 185, 91, 0.12), transparent 18%),
+    radial-gradient(circle at 80% 82%, rgba(18, 66, 94, 0.22), transparent 26%),
+    linear-gradient(180deg, #0b1520 0%, #08111a 55%, #050a11 100%);
+}
+
 .App.theme-dark.theme-gundam .page-hero::after {
   background: radial-gradient(circle, rgba(217, 161, 62, 0.24), transparent 70%);
 }
 
 .App.theme-dark.theme-one-piece .page-hero::after {
   background: radial-gradient(circle, rgba(143, 104, 255, 0.24), transparent 62%);
+}
+
+.App.theme-dark.theme-digimon .page-hero::after {
+  background: radial-gradient(circle, rgba(102, 217, 255, 0.24), transparent 68%);
 }
 
 .App.theme-dark.theme-gundam .eyebrow {
@@ -266,6 +325,11 @@ textarea::placeholder {
   color: #e7dbff;
 }
 
+.App.theme-dark.theme-digimon .eyebrow {
+  background: rgba(102, 217, 255, 0.14);
+  color: #c8f6ff;
+}
+
 .App.theme-dark.theme-gundam .hero-stat {
   background: linear-gradient(145deg, rgba(38, 54, 88, 0.98), rgba(14, 23, 39, 0.96));
   border: 1px solid rgba(217, 161, 62, 0.18);
@@ -274,6 +338,11 @@ textarea::placeholder {
 .App.theme-dark.theme-one-piece .hero-stat {
   background: linear-gradient(145deg, rgba(53, 26, 70, 0.98), rgba(18, 11, 24, 0.96));
   border: 1px solid rgba(216, 179, 92, 0.18);
+}
+
+.App.theme-dark.theme-digimon .hero-stat {
+  background: linear-gradient(145deg, rgba(13, 43, 67, 0.98), rgba(8, 18, 29, 0.96));
+  border: 1px solid rgba(102, 217, 255, 0.16);
 }
 
 .App.theme-dark.theme-gundam .card-item::before,
@@ -286,12 +355,21 @@ textarea::placeholder {
   background: linear-gradient(90deg, #8f68ff 0 60%, #531d2d 60% 82%, #d8b35c 82% 100%);
 }
 
+.App.theme-dark.theme-digimon .card-item::before,
+.App.theme-dark.theme-digimon .deck-item::before {
+  background: linear-gradient(90deg, #66d9ff 0 56%, #1b5d86 56% 80%, #ffb95b 80% 100%);
+}
+
 .App.theme-dark.theme-gundam .collection-item::before {
   background: linear-gradient(180deg, #6f8df6 0%, #1f2a3d 56%, #c74e52 80%, #d9a13e 100%);
 }
 
 .App.theme-dark.theme-one-piece .collection-item::before {
   background: linear-gradient(180deg, #8f68ff 0%, #22152c 56%, #531d2d 82%, #d8b35c 100%);
+}
+
+.App.theme-dark.theme-digimon .collection-item::before {
+  background: linear-gradient(180deg, #66d9ff 0%, #11304a 56%, #1b5d86 80%, #ffb95b 100%);
 }
 
 .App.theme-dark.theme-gundam .deck-summary-card {
@@ -306,10 +384,23 @@ textarea::placeholder {
     linear-gradient(180deg, rgba(29, 20, 37, 0.96), rgba(17, 12, 22, 0.92));
 }
 
+.App.theme-dark.theme-digimon .deck-summary-card {
+  background:
+    radial-gradient(circle at top right, rgba(102, 217, 255, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(15, 28, 42, 0.96), rgba(10, 18, 28, 0.92));
+}
+
 .App.theme-dark.theme-one-piece .card-item img,
 .App.theme-dark.theme-one-piece .collection-item img,
 .App.theme-dark.theme-one-piece .deck-card-row img {
   background: linear-gradient(180deg, rgba(28, 20, 34, 0.98), rgba(16, 11, 20, 0.94));
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.28);
+}
+
+.App.theme-dark.theme-digimon .card-item img,
+.App.theme-dark.theme-digimon .collection-item img,
+.App.theme-dark.theme-digimon .deck-card-row img {
+  background: linear-gradient(180deg, rgba(11, 24, 37, 0.98), rgba(7, 16, 25, 0.94));
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.28);
 }
 
@@ -3685,9 +3776,19 @@ textarea::placeholder {
   color: var(--text);
 }
 
+.deck-role-badge.is-egg {
+  background: rgba(17, 148, 217, 0.14);
+  color: #0d6097;
+}
+
 .deck-role-badge.is-don {
   background: rgba(214, 114, 19, 0.14);
   color: #9b4d09;
+}
+
+.App.theme-dark .deck-role-badge.is-egg {
+  background: rgba(102, 217, 255, 0.18);
+  color: #d8f9ff;
 }
 
 .deck-role-warning {

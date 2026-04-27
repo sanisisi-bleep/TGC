@@ -37,6 +37,7 @@ class Card(Base):
     id = Column(Integer, primary_key=True, index=True)
     tgc_id = Column(Integer, ForeignKey("tgc.id"))
     source_card_id = Column(String(50), index=True)
+    deck_key = Column(String(50), index=True)
     name = Column(String(100))
     card_type = Column(String(50))
     lv = Column(Integer)
@@ -60,6 +61,7 @@ class Card(Base):
     gundam_data = relationship("GundamCard", back_populates="card", uselist=False)
     one_piece_data = relationship("OnePieceCard", back_populates="card", uselist=False)
     magic_data = relationship("MagicCard", back_populates="card", uselist=False)
+    digimon_data = relationship("DigimonCard", back_populates="card", uselist=False)
 
 
 class GundamCard(Base):
@@ -117,6 +119,26 @@ class MagicCard(Base):
     card = relationship("Card", back_populates="magic_data")
 
 
+class DigimonCard(Base):
+    __tablename__ = "digimon_cards"
+
+    card_id = Column(Integer, ForeignKey("cards.id"), primary_key=True)
+    dp = Column(Integer)
+    form = Column(String(100))
+    attribute = Column(String(100))
+    type_line = Column(Text)
+    digivolution_requirements = Column(Text)
+    special_digivolution = Column(Text)
+    inherited_effect = Column(Text)
+    security_effect = Column(Text)
+    rule_text = Column(Text)
+    notes = Column(Text)
+    qa = Column(Text)
+    is_alternative_art = Column(Boolean, default=False)
+
+    card = relationship("Card", back_populates="digimon_data")
+
+
 class UserCollection(Base):
     __tablename__ = "user_collections"
 
@@ -168,6 +190,19 @@ class DeckConsideringCard(Base):
     card = relationship("Card")
 
 
+class DeckEggCard(Base):
+    __tablename__ = "deck_egg_cards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    deck_id = Column(Integer, ForeignKey("decks.id"))
+    card_id = Column(Integer, ForeignKey("cards.id"))
+    quantity = Column(Integer, default=1)
+    assigned_quantity = Column(Integer)
+
+    deck = relationship("Deck")
+    card = relationship("Card")
+
+
 __all__ = [
     "Base",
     "Tgc",
@@ -176,8 +211,10 @@ __all__ = [
     "GundamCard",
     "OnePieceCard",
     "MagicCard",
+    "DigimonCard",
     "UserCollection",
     "Deck",
     "DeckCard",
     "DeckConsideringCard",
+    "DeckEggCard",
 ]

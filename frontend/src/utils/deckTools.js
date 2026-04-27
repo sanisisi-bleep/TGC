@@ -1,6 +1,7 @@
 export const MAX_COPIES_PER_CARD = 4;
 export const GUNDAM_COLORS = ['Blue', 'Green', 'Red', 'Purple', 'White'];
 export const ONE_PIECE_COLORS = ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'];
+export const DIGIMON_COLORS = ['Red', 'Blue', 'Yellow', 'Green', 'White', 'Black', 'Purple'];
 const DEFAULT_DECK_RULES = {
   deckMinCards: 0,
   deckMaxCards: 999,
@@ -8,6 +9,8 @@ const DEFAULT_DECK_RULES = {
   requiredLeaderCards: 0,
   requiredMainDeckCards: 0,
   maxMainDeckCards: 999,
+  requiredEggCards: 0,
+  maxEggCards: 0,
   maxDonCards: 0,
   allowOptionalDonDeck: false,
   enforceColorIdentity: false,
@@ -38,6 +41,20 @@ export const TCG_DECK_RULES = {
     enforceColorIdentity: true,
     maxDeckColors: 0,
   },
+  digimon: {
+    deckMinCards: 50,
+    deckMaxCards: 55,
+    maxCopiesPerCard: 4,
+    requiredLeaderCards: 0,
+    requiredMainDeckCards: 50,
+    maxMainDeckCards: 50,
+    requiredEggCards: 0,
+    maxEggCards: 5,
+    maxDonCards: 0,
+    allowOptionalDonDeck: false,
+    enforceColorIdentity: false,
+    maxDeckColors: 0,
+  },
   magic: {
     deckMinCards: 60,
     deckMaxCards: 999,
@@ -51,7 +68,7 @@ export const TCG_DECK_RULES = {
     maxDeckColors: 0,
   },
 };
-const DECK_ROLE_ORDER = { leader: 0, main: 1, don: 2 };
+const DECK_ROLE_ORDER = { leader: 0, egg: 1, main: 2, don: 3 };
 const DECK_COLOR_TONES = {
   Blue: { solid: '#2d6cdf', border: '#17479c', text: '#ffffff' },
   Green: { solid: '#2f8f5b', border: '#1d6440', text: '#ffffff' },
@@ -110,9 +127,32 @@ export const getOnePieceColorLabels = (rawColor) => {
   ));
 };
 
+export const getDigimonDeckRole = (cardType) => {
+  const normalizedCardType = (cardType || '').trim().toLowerCase();
+  if (normalizedCardType === 'digi-egg' || normalizedCardType === 'digiegg') {
+    return 'egg';
+  }
+  return 'main';
+};
+
+export const getDigimonColorLabels = (rawColor) => {
+  const normalizedColor = (rawColor || '').trim();
+  if (!normalizedColor) {
+    return [];
+  }
+
+  return DIGIMON_COLORS.filter((color) => (
+    new RegExp(`\\b${color}\\b`, 'i').test(normalizedColor)
+  ));
+};
+
 export const getDeckCardRole = (activeTcgSlug, cardType) => {
   if (activeTcgSlug === 'one-piece') {
     return getOnePieceDeckRole(cardType);
+  }
+
+  if (activeTcgSlug === 'digimon') {
+    return getDigimonDeckRole(cardType);
   }
 
   return 'main';
@@ -121,6 +161,10 @@ export const getDeckCardRole = (activeTcgSlug, cardType) => {
 export const getDeckCardColorLabels = (activeTcgSlug, rawColor) => {
   if (activeTcgSlug === 'one-piece') {
     return getOnePieceColorLabels(rawColor);
+  }
+
+  if (activeTcgSlug === 'digimon') {
+    return getDigimonColorLabels(rawColor);
   }
 
   if (activeTcgSlug === 'gundam') {
@@ -139,6 +183,10 @@ export const getDeckRuleSummary = (activeTcgSlug) => {
 
   if (activeTcgSlug === 'gundam') {
     return 'Regla rapida de Gundam: 50 cartas, hasta 4 copias por numero y un maximo de 2 colores por mazo.';
+  }
+
+  if (activeTcgSlug === 'digimon') {
+    return 'Regla rapida de Digimon: 50 cartas en el main deck, hasta 5 Digi-Egg y un maximo de 4 copias por numero.';
   }
 
   return '';
@@ -162,6 +210,15 @@ const buildGundamSearchDeckSummary = (deck, rules) => {
   const colorSummary = formatDeckColorList(deckColorLabels) || 'sin fijar';
 
   return `Main ${totalCards}/${requiredMainDeckCards} | Colores ${colorSummary}`;
+};
+
+const buildDigimonSearchDeckSummary = (deck, rules) => {
+  const mainDeckCards = Number(deck?.main_deck_cards) || 0;
+  const requiredMainDeckCards = Number(deck?.required_main_deck_cards) || rules.requiredMainDeckCards || 50;
+  const eggCards = Number(deck?.egg_cards) || 0;
+  const maxEggCards = Number(deck?.max_egg_cards) || rules.maxEggCards || 5;
+
+  return `Main ${mainDeckCards}/${requiredMainDeckCards} | Eggs ${eggCards}/${maxEggCards}`;
 };
 
 const buildGenericSearchDeckSummary = (deck, rules) => {
@@ -259,6 +316,24 @@ export const getNewDeckCreationPlan = (activeTcgSlug, card, quantity) => {
       helper: cardColors.length > 0
         ? `El mazo arrancara con los colores ${formatDeckColorList(cardColors)}.`
         : 'El mazo se creara y podras completarlo hasta 50 cartas.',
+    };
+  }
+
+  if (activeTcgSlug === 'digimon') {
+    if (cardRole === 'egg') {
+      return {
+        canCreate: true,
+        shouldAddCardAfterCreate: true,
+        buttonLabel: 'Crear y anadir',
+        helper: `Se creara el mazo y ${quantityLabel} ira al Digi-Egg Deck.`,
+      };
+    }
+
+    return {
+      canCreate: true,
+      shouldAddCardAfterCreate: true,
+      buttonLabel: 'Crear y anadir',
+      helper: `Se creara el mazo y ${quantityLabel} ira al main deck de Digimon.`,
     };
   }
 
@@ -398,6 +473,38 @@ export const getSearchDeckOptionState = ({ activeTcgSlug, deck, card, quantity }
     };
   }
 
+  if (activeTcgSlug === 'digimon') {
+    const mainDeckCards = Number(deck?.main_deck_cards) || 0;
+    const requiredMainDeckCards = Number(deck?.required_main_deck_cards) || rules.requiredMainDeckCards || 50;
+    const eggCards = Number(deck?.egg_cards) || 0;
+    const maxEggCards = Number(deck?.max_egg_cards) || rules.maxEggCards || 5;
+    const summary = buildDigimonSearchDeckSummary(deck, rules);
+
+    if (cardRole === 'egg' && eggCards + normalizedQuantity > maxEggCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: `Con ${quantityLabel} superarias las ${maxEggCards} cartas del Digi-Egg Deck.`,
+      };
+    }
+
+    if (cardRole !== 'egg' && mainDeckCards + normalizedQuantity > requiredMainDeckCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: `Con ${quantityLabel} superarias las ${requiredMainDeckCards} cartas del main deck.`,
+      };
+    }
+
+    return {
+      disabled: false,
+      summary,
+      helper: cardRole === 'egg'
+        ? `Anadir ${quantityLabel} al Digi-Egg Deck.`
+        : `Anadir ${quantityLabel} al main deck.`,
+    };
+  }
+
   return {
     disabled: false,
     summary: buildGenericSearchDeckSummary(deck, rules),
@@ -493,8 +600,13 @@ const getExportableDeckCards = (deck) => (
     .filter((card) => (Number(card?.quantity) || 0) > 0)
 );
 
+const getExportableEggDeckCards = (deck) => (
+  (deck?.egg_cards || [])
+    .filter((card) => (Number(card?.quantity) || 0) > 0)
+);
+
 export const buildDeckExportPayload = (deck) => ({
-  format: 'tgc-deck-v1',
+  format: 'tgc-deck-v2',
   exported_at: new Date().toISOString(),
   deck: {
     name: deck.name,
@@ -503,7 +615,15 @@ export const buildDeckExportPayload = (deck) => ({
     total_cards: deck.total_cards,
     cards: getExportableDeckCards(deck).map((card) => ({
       card_id: card.id,
-      source_card_id: card.source_card_id,
+      source_card_id: card.deck_key || card.source_card_id,
+      version: card.version,
+      name: card.name,
+      set_name: card.set_name,
+      quantity: card.quantity,
+    })),
+    egg_cards: getExportableEggDeckCards(deck).map((card) => ({
+      card_id: card.id,
+      source_card_id: card.deck_key || card.source_card_id,
       version: card.version,
       name: card.name,
       set_name: card.set_name,
@@ -512,8 +632,8 @@ export const buildDeckExportPayload = (deck) => ({
   },
 });
 
-export const buildDeckListText = (deck) => (
-  getExportableDeckCards(deck)
+export const buildDeckListText = (deck) => {
+  const mainCards = getExportableDeckCards(deck)
     .slice()
     .sort((left, right) => {
       const leftOrder = DECK_ROLE_ORDER[left.deck_role] ?? 9;
@@ -521,11 +641,27 @@ export const buildDeckListText = (deck) => (
       if (leftOrder !== rightOrder) {
         return leftOrder - rightOrder;
       }
-      return (left.source_card_id || '').localeCompare(right.source_card_id || '');
+      return (left.deck_key || left.source_card_id || '').localeCompare(right.deck_key || right.source_card_id || '');
     })
-    .map((card) => `${Number(card.quantity)}x${card.source_card_id || `CARD-${card.id}`}`)
-    .join('\n')
-);
+    .map((card) => `${Number(card.quantity)}x${card.deck_key || card.source_card_id || `CARD-${card.id}`}`);
+
+  if (deck?.composition?.format_mode !== 'digimon') {
+    return mainCards.join('\n');
+  }
+
+  const eggCards = getExportableEggDeckCards(deck)
+    .slice()
+    .sort((left, right) => (
+      (left.deck_key || left.source_card_id || '').localeCompare(right.deck_key || right.source_card_id || '')
+    ))
+    .map((card) => `${Number(card.quantity)}x${card.deck_key || card.source_card_id || `CARD-${card.id}`}`);
+
+  return [
+    '# Main Deck',
+    ...mainCards,
+    ...(eggCards.length > 0 ? ['', '# Digi-Egg Deck', ...eggCards] : []),
+  ].join('\n');
+};
 
 export const downloadJson = (filename, payload) => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -593,6 +729,12 @@ const OPENING_HAND_RULES_BY_FORMAT = Object.freeze({
     mulliganMode: 'reshuffle',
     mulliganSummary: 'Devuelve la mano al mazo, baraja y roba 5 nuevas.',
   }),
+  digimon: Object.freeze({
+    handSize: 5,
+    mulliganLimit: 1,
+    mulliganMode: 'reshuffle',
+    mulliganSummary: 'Devuelve la mano al mazo, baraja y roba 5 nuevas.',
+  }),
 });
 
 export const getDeckOpeningRules = (formatMode) => (
@@ -628,7 +770,12 @@ const buildOpeningHandInsights = (cards = [], formatMode = 'standard') => {
 
   cards.forEach((card) => {
     const quantity = Number(card?.quantity) || 0;
-    if (quantity <= 0 || card?.deck_role === 'leader' || card?.deck_role === 'don') {
+    if (
+      quantity <= 0
+      || card?.deck_role === 'leader'
+      || card?.deck_role === 'don'
+      || card?.deck_role === 'egg'
+    ) {
       return;
     }
 
@@ -654,13 +801,17 @@ const buildOpeningHandInsights = (cards = [], formatMode = 'standard') => {
   const uniqueMainDeckCards = simulatorPool.length;
   const openingHandSize = Math.min(openingRules.handSize, totalMainDeckCards);
 
+  const simulatorScopeCopy = formatMode === 'digimon'
+    ? 'El simulador roba solo del main deck. Digi-Eggs y Considering se quedan fuera.'
+    : 'El simulador roba solo del mazo principal. Leader, DON!! y Considering se quedan fuera.';
+
   return {
     openingRules,
     openingHandSize,
     totalMainDeckCards,
     uniqueMainDeckCards,
     simulatorPool,
-    simulatorScopeCopy: 'El simulador roba solo del mazo principal. Leader, DON!! y Considering se quedan fuera.',
+    simulatorScopeCopy,
   };
 };
 
@@ -786,6 +937,10 @@ export const buildDeckStats = (deck) => {
     donCards: composition?.don_cards || 0,
     recommendedDonCards: composition?.recommended_don_cards || 0,
     donIsOptional: Boolean(composition?.don_is_optional),
+    eggCards: Number(composition?.egg_cards) || Number(deck.egg_total_cards) || 0,
+    requiredEggCards: Number(composition?.required_egg_cards) || 0,
+    maxEggCards: Number(composition?.max_egg_cards) || 0,
+    eggUniqueCards: Number(deck.egg_unique_cards) || 0,
     leaderColorLabels: composition?.leader_color_labels || [],
     offColorCards: composition?.off_color_cards || [],
     copyLimitExceededCards: composition?.copy_limit_exceeded_cards || [],
@@ -946,11 +1101,18 @@ export const applyDeckAssignmentMutation = (deck, cardId, payload) => {
 export const parseImportedDeckFile = (payload, fallbackTgcId) => {
   const deckPayload = payload?.deck || payload;
   const cards = Array.isArray(deckPayload?.cards) ? deckPayload.cards : [];
+  const eggCards = Array.isArray(deckPayload?.egg_cards) ? deckPayload.egg_cards : [];
 
   return {
     name: deckPayload?.name || 'Mazo importado',
     tgc_id: deckPayload?.tgc_id || fallbackTgcId || null,
     cards: cards.map((card) => ({
+      card_id: card.card_id ?? null,
+      source_card_id: card.source_card_id ?? null,
+      version: card.version ?? null,
+      quantity: Number(card.quantity) || 0,
+    })),
+    egg_cards: eggCards.map((card) => ({
       card_id: card.card_id ?? null,
       source_card_id: card.source_card_id ?? null,
       version: card.version ?? null,
@@ -969,24 +1131,46 @@ export const parseDeckListText = (rawContent, fallbackTgcId) => {
     throw new Error('El archivo no contiene cartas importables.');
   }
 
-  const cards = lines.map((line, index) => {
+  const cards = [];
+  const eggCards = [];
+  let currentSection = 'main';
+
+  lines.forEach((line, index) => {
+    if (/^#\s*main deck$/i.test(line)) {
+      currentSection = 'main';
+      return;
+    }
+
+    if (/^#\s*digi-egg deck$/i.test(line)) {
+      currentSection = 'egg';
+      return;
+    }
+
     const match = line.match(/^(\d+)\s*x\s*([A-Za-z0-9._-]+)$/i);
 
     if (!match) {
       throw new Error(`Linea ${index + 1} invalida: ${line}`);
     }
 
-    return {
+    const parsedCard = {
       card_id: null,
       source_card_id: match[2],
       version: null,
       quantity: Number(match[1]),
     };
+
+    if (currentSection === 'egg') {
+      eggCards.push(parsedCard);
+      return;
+    }
+
+    cards.push(parsedCard);
   });
 
   return {
     name: 'Mazo importado',
     tgc_id: fallbackTgcId || null,
     cards,
+    egg_cards: eggCards,
   };
 };

@@ -51,6 +51,18 @@ const buildCollectionMeta = (card, tcgSlug) => (
   ].join(' | ')
 );
 
+const getCollectionDeckSectionLabel = (section) => {
+  if (section === 'egg') {
+    return 'Egg';
+  }
+
+  if (section === 'don') {
+    return 'DON';
+  }
+
+  return 'Main';
+};
+
 const compareCollectionCards = (leftCard, rightCard, direction = 'asc') => {
   const directionMultiplier = direction === 'desc' ? -1 : 1;
   const versionDifference = compareCollectionCodes(
@@ -659,12 +671,12 @@ function Collection({ activeTcgSlug, activeTgc }) {
                       <div className="deck-link-list">
                         {item.decks.map((deck) => (
                           <button
-                            key={deck.id}
+                            key={`${deck.id}-${deck.section || 'main'}`}
                             type="button"
                             className="deck-link-button"
                             onClick={() => openDeck(deck.id)}
                           >
-                            {deck.name} x{deck.quantity}
+                            {deck.name} {getCollectionDeckSectionLabel(deck.section)} x{deck.quantity}
                           </button>
                         ))}
                       </div>

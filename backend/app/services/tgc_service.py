@@ -1,12 +1,13 @@
 from app.models import Tgc
 from app.database.repositories.tgc_repository import TgcRepository
 from sqlalchemy.orm import Session
-from app.services.game_rules import GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME, MAGIC_TCG_NAME
+from app.services.game_rules import DIGIMON_TCG_NAME, GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME, MAGIC_TCG_NAME
 
 
 DEFAULT_TGCS = [
     {"name": GUNDAM_TGC_NAME, "description": "Gundam Card Game"},
     {"name": ONE_PIECE_TCG_NAME, "description": "One Piece Card Game"},
+    {"name": DIGIMON_TCG_NAME, "description": "Digimon Card Game"},
     {"name": MAGIC_TCG_NAME, "description": "Magic: The Gathering"},
 ]
 

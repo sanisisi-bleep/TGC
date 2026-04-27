@@ -93,9 +93,15 @@ function Decks({ activeTcgSlug, activeTgc }) {
   );
   const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
   const selectedDeckIsOnePiece = selectedDeck?.composition?.format_mode === 'one-piece';
+  const selectedDeckIsDigimon = selectedDeck?.composition?.format_mode === 'digimon';
   const selectedDeckConsideringTotal = Number(selectedDeck?.considering_total_cards) || 0;
+  const selectedDeckDistinctCards = selectedDeckIsDigimon
+    ? (selectedDeck?.cards?.length || 0) + (selectedDeck?.egg_cards?.length || 0)
+    : (selectedDeck?.cards?.length || 0);
   const selectedDeckSummary = selectedDeckIsOnePiece
     ? `Leader ${selectedDeck?.leader_cards || 0}/${selectedDeck?.required_leader_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | DON ${selectedDeck?.don_cards || 0}/${selectedDeck?.recommended_don_cards || 10}`
+    : selectedDeckIsDigimon
+      ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | Eggs ${selectedDeck?.egg_cards || 0}/${selectedDeck?.max_egg_cards || 5}`
     : `${selectedDeck?.total_cards || 0} cartas en total`;
 
   useEffect(() => {
@@ -440,7 +446,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
         payload = parseDeckListText(rawContent, activeTgc?.id);
       }
 
-      if (!payload.cards.length) {
+      if (!payload.cards.length && !(payload.egg_cards || []).length) {
         throw new Error('El archivo no contiene cartas importables.');
       }
 
@@ -650,6 +656,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
           />
           <span className="deck-import-copy">
             Importa un mazo desde JSON o desde una lista tipo 4xST01-005.
+            {activeTcgSlug === 'digimon' ? ' Si quieres, separa los huevos con una seccion # Digi-Egg Deck.' : ''}
           </span>
         </div>
       </section>
@@ -706,7 +713,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
                       </button>
                     </div>
                     <p>
-                      {`${selectedDeck?.cards?.length || 0} cartas distintas | ${selectedDeckSummary}${selectedDeckConsideringTotal > 0 ? ` | Considering ${selectedDeckConsideringTotal}` : ''}`}
+                      {`${selectedDeckDistinctCards} cartas distintas | ${selectedDeckSummary}${selectedDeckConsideringTotal > 0 ? ` | Considering ${selectedDeckConsideringTotal}` : ''}`}
                     </p>
                     <div className="deck-status-row">
                       <span className={`deck-status-chip ${selectedDeck?.is_complete ? 'is-complete' : 'is-incomplete'}`}>
@@ -715,6 +722,8 @@ function Decks({ activeTcgSlug, activeTgc }) {
                       <span className="deck-status-chip deck-progress-chip">
                         {selectedDeckIsOnePiece
                           ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50}`
+                          : selectedDeckIsDigimon
+                            ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50}`
                           : `${selectedDeck?.total_cards || 0}/${selectedDeck?.max_cards || 50}`}
                       </span>
                       {selectedDeckIsOnePiece && (
@@ -726,6 +735,11 @@ function Decks({ activeTcgSlug, activeTgc }) {
                             DON {selectedDeck?.don_cards || 0}/{selectedDeck?.recommended_don_cards || 10}
                           </span>
                         </>
+                      )}
+                      {selectedDeckIsDigimon && (
+                        <span className="deck-status-chip deck-progress-chip">
+                          Eggs {selectedDeck?.egg_cards || 0}/{selectedDeck?.max_egg_cards || 5}
+                        </span>
                       )}
                       {(selectedDeck?.missing_copies || 0) > 0 && (
                         <span className="deck-status-chip deck-missing-chip">
@@ -803,6 +817,56 @@ function Decks({ activeTcgSlug, activeTgc }) {
                   <div className="empty-state subtle-empty">
                     <p>Este mazo todavia no tiene cartas.</p>
                   </div>
+                )}
+
+                {selectedDeckIsDigimon && (
+                  <section className="deck-considering-section panel">
+                    <div className="deck-considering-header">
+                      <div>
+                        <span className="eyebrow">Digi-Egg Deck</span>
+                        <h3>Huevos del mazo</h3>
+                        <p>
+                          Esta seccion no entra en la mano inicial y se valida aparte del main deck.
+                        </p>
+                      </div>
+                      <div className="deck-status-row">
+                        <span className="deck-status-chip deck-progress-chip">
+                          {selectedDeck?.egg_unique_cards || 0} distintas
+                        </span>
+                        <span className="deck-status-chip deck-progress-chip">
+                          {selectedDeck?.egg_total_cards || 0} copias
+                        </span>
+                      </div>
+                    </div>
+
+                    {(selectedDeck?.egg_cards || []).length > 0 ? (
+                      <div
+                        className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}
+                      >
+                        {(selectedDeck?.egg_cards || []).map((card) => (
+                          <DeckCardRow
+                            key={`egg-${card.id}`}
+                            card={card}
+                            deckCardView={deckCardView}
+                            advancedDeckControlsEnabled={advancedDeckControlsEnabled}
+                            editingAssignmentCardId={editingAssignmentCardId}
+                            updatingAssignmentCardId={updatingAssignmentCardId}
+                            updatingDeckCardId={updatingDeckCardId}
+                            maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                            onToggleAssignmentEditor={toggleAssignmentEditor}
+                            onAdjustCoverage={adjustDeckCoverage}
+                            onAdjustQuantity={(cardId, delta) => adjustDeckCardQuantity(selectedDeck.id, cardId, delta)}
+                            onMoveToConsidering={(cardId) => moveDeckCardToConsideringHandler(selectedDeck.id, cardId)}
+                            onOpenCard={setSelectedCard}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="empty-state subtle-empty">
+                        <p>Todavia no has anadido cartas al Digi-Egg Deck.</p>
+                      </div>
+                    )}
+                  </section>
                 )}
 
                 <section className="deck-considering-section panel">

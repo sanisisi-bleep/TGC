@@ -4,10 +4,13 @@ from typing import List, Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.models import Card, Deck, DeckCard, DeckConsideringCard, Tgc, User, UserCollection
+from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, Tgc, User, UserCollection
 from app.services.game_rules import (
+    DIGIMON_TCG_NAME,
     GUNDAM_TGC_NAME,
     ONE_PIECE_TCG_NAME,
+    get_digimon_card_role,
+    get_digimon_colors,
     get_gundam_colors,
     get_one_piece_card_role,
     get_one_piece_colors,
@@ -26,12 +29,6 @@ class DeckService:
             raise ValueError("Deck not found")
         return deck
 
-    def _get_deck_card_or_error(self, deck_id: int, card_id: int) -> DeckCard:
-        deck_card = self.db.query(DeckCard).filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id).first()
-        if not deck_card:
-            raise ValueError("Card not found in deck")
-        return deck_card
-
     def _get_deck_considering_card_or_error(self, deck_id: int, card_id: int) -> DeckConsideringCard:
         considering_card = (
             self.db.query(DeckConsideringCard)
@@ -41,6 +38,21 @@ class DeckService:
         if not considering_card:
             raise ValueError("Card not found in considering")
         return considering_card
+
+    def _get_any_deck_card_or_error(self, deck_id: int, card_id: int):
+        deck_card = self.db.query(DeckCard).filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id).first()
+        if deck_card:
+            return "main", deck_card
+
+        deck_egg_card = (
+            self.db.query(DeckEggCard)
+            .filter(DeckEggCard.deck_id == deck_id, DeckEggCard.card_id == card_id)
+            .first()
+        )
+        if deck_egg_card:
+            return "egg", deck_egg_card
+
+        raise ValueError("Card not found in deck")
 
     def _get_rules_for_deck(self, deck: Deck):
         deck_tgc = self._resolve_deck_tgc(deck)
@@ -113,23 +125,46 @@ class DeckService:
             or 0
         )
 
+    def _get_egg_total_quantity(self, deck_id: int) -> int:
+        return (
+            self.db.query(func.coalesce(func.sum(DeckEggCard.quantity), 0))
+            .filter(DeckEggCard.deck_id == deck_id)
+            .scalar()
+            or 0
+        )
+
     def _is_one_piece_tgc(self, deck_tgc) -> bool:
         return bool(deck_tgc and deck_tgc.name == ONE_PIECE_TCG_NAME)
 
     def _is_gundam_tgc(self, deck_tgc) -> bool:
         return bool(deck_tgc and deck_tgc.name == GUNDAM_TGC_NAME)
 
+    def _is_digimon_tgc(self, deck_tgc) -> bool:
+        return bool(deck_tgc and deck_tgc.name == DIGIMON_TCG_NAME)
+
     def _get_card_role(self, deck_tgc, card: Card) -> str:
         if self._is_one_piece_tgc(deck_tgc):
             return get_one_piece_card_role(card.card_type)
+        if self._is_digimon_tgc(deck_tgc):
+            return get_digimon_card_role(card.card_type)
         return "main"
+
+    def _get_card_storage_section(self, deck_tgc, card: Card) -> str:
+        return "egg" if self._is_digimon_tgc(deck_tgc) and self._get_card_role(deck_tgc, card) == "egg" else "main"
 
     def _get_card_colors(self, deck_tgc, card: Card) -> set[str]:
         if self._is_one_piece_tgc(deck_tgc):
             return set(get_one_piece_colors(card.color))
         if self._is_gundam_tgc(deck_tgc):
             return set(get_gundam_colors(card.color))
+        if self._is_digimon_tgc(deck_tgc):
+            return set(get_digimon_colors(card.color))
         return set()
+
+    def _get_copy_limit_key(self, deck_tgc, card: Card) -> str:
+        if self._is_digimon_tgc(deck_tgc):
+            return (card.deck_key or card.source_card_id or f"CARD-{card.id}").strip()
+        return (card.source_card_id or f"CARD-{card.id}").strip()
 
     def _get_card_quantity_limit(self, deck_tgc, rules: dict, card: Card) -> int:
         if self._is_one_piece_tgc(deck_tgc):
@@ -164,6 +199,13 @@ class DeckService:
 
         card = source_query.first()
         if not card:
+            fallback_query = query.filter(func.coalesce(Card.deck_key, "") == source_card_id)
+
+            if version:
+                fallback_query = fallback_query.filter(func.coalesce(Card.version, "") == version)
+
+            card = fallback_query.first()
+        if not card:
             raise ValueError(f"Card not found for import: {source_card_id}")
 
         return card
@@ -185,12 +227,48 @@ class DeckService:
         )
         return [
             {
-                "deck_card": deck_card,
+                "deck_item": deck_card,
                 "card": card,
                 "quantity": deck_card.quantity,
+                "storage_section": "main",
             }
             for deck_card, card in rows
         ]
+
+    def _get_egg_entries(self, deck_id: int):
+        rows = (
+            self.db.query(DeckEggCard, Card)
+            .join(Card, Card.id == DeckEggCard.card_id)
+            .filter(DeckEggCard.deck_id == deck_id)
+            .order_by(DeckEggCard.id.asc(), Card.id.asc())
+            .all()
+        )
+        return [
+            {
+                "deck_item": deck_egg_card,
+                "card": card,
+                "quantity": deck_egg_card.quantity,
+                "storage_section": "egg",
+            }
+            for deck_egg_card, card in rows
+        ]
+
+    def _get_playable_entries(self, deck_id: int):
+        return [*self._get_deck_entries(deck_id), *self._get_egg_entries(deck_id)]
+
+    def _get_storage_total_quantity(self, deck_id: int, storage_section: str) -> int:
+        if storage_section == "egg":
+            return self._get_egg_total_quantity(deck_id)
+        return self._get_deck_total_quantity(deck_id)
+
+    def _get_storage_card_record(self, deck_id: int, card_id: int, storage_section: str):
+        if storage_section == "egg":
+            return (
+                self.db.query(DeckEggCard)
+                .filter(DeckEggCard.deck_id == deck_id, DeckEggCard.card_id == card_id)
+                .first()
+            )
+        return self.db.query(DeckCard).filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id).first()
 
     def _get_considering_entries(self, deck_id: int):
         rows = (
@@ -209,20 +287,22 @@ class DeckService:
             for considering_card, card in rows
         ]
 
-    def _build_candidate_deck_entries(self, deck_id: int, target_card: Card, next_quantity: int):
-        entries = self._get_deck_entries(deck_id)
+    def _build_candidate_deck_entries(self, deck_tgc, deck_id: int, target_card: Card, next_quantity: int):
+        entries = self._get_playable_entries(deck_id)
+        target_section = self._get_card_storage_section(deck_tgc, target_card)
         replaced = False
         candidate_entries = []
 
         for entry in entries:
-            if entry["card"].id == target_card.id:
+            if entry["storage_section"] == target_section and entry["card"].id == target_card.id:
                 replaced = True
                 if next_quantity > 0:
                     candidate_entries.append(
                         {
-                            "deck_card": entry["deck_card"],
+                            "deck_item": entry["deck_item"],
                             "card": entry["card"],
                             "quantity": next_quantity,
+                            "storage_section": entry["storage_section"],
                         }
                     )
                 continue
@@ -232,16 +312,17 @@ class DeckService:
         if not replaced and next_quantity > 0:
             candidate_entries.append(
                 {
-                    "deck_card": None,
+                    "deck_item": None,
                     "card": target_card,
                     "quantity": next_quantity,
+                    "storage_section": target_section,
                 }
             )
 
         return candidate_entries
 
     def _build_generic_deck_composition(self, rules: dict, deck_entries: List[dict]):
-        total_cards = sum(entry["quantity"] for entry in deck_entries)
+        total_cards = sum(entry["quantity"] for entry in deck_entries if entry["storage_section"] == "main")
         required_main_cards = rules.get("required_main_deck_cards") or rules["deck_max_cards"]
         max_main_cards = rules.get("max_main_deck_cards") or rules["deck_max_cards"]
 
@@ -259,6 +340,11 @@ class DeckService:
             "don_is_optional": rules.get("allow_optional_don_deck", False),
             "missing_don_cards": 0,
             "extra_don_cards": 0,
+            "egg_cards": 0,
+            "required_egg_cards": rules.get("required_egg_cards", 0),
+            "max_egg_cards": rules.get("max_egg_cards", 0),
+            "missing_egg_cards": 0,
+            "extra_egg_cards": 0,
             "leader_color_labels": [],
             "deck_color_labels": [],
             "max_deck_colors": rules.get("max_deck_colors", 0),
@@ -270,7 +356,7 @@ class DeckService:
         }
 
     def _build_gundam_deck_composition(self, rules: dict, deck_entries: List[dict]):
-        total_cards = sum(entry["quantity"] for entry in deck_entries)
+        total_cards = sum(entry["quantity"] for entry in deck_entries if entry["storage_section"] == "main")
         max_deck_colors = max(int(rules.get("max_deck_colors") or 0), 0)
         deck_color_labels = []
         deck_color_set = set()
@@ -281,7 +367,7 @@ class DeckService:
         for entry in deck_entries:
             card = entry["card"]
             quantity = entry["quantity"]
-            source_card_id = (card.source_card_id or f"CARD-{card.id}").strip()
+            source_card_id = self._get_copy_limit_key(None, card)
             copy_counts_by_code[source_card_id] = copy_counts_by_code.get(source_card_id, 0) + quantity
             main_card_names[source_card_id] = card.name
 
@@ -332,6 +418,11 @@ class DeckService:
             "don_is_optional": False,
             "missing_don_cards": 0,
             "extra_don_cards": 0,
+            "egg_cards": 0,
+            "required_egg_cards": 0,
+            "max_egg_cards": 0,
+            "missing_egg_cards": 0,
+            "extra_egg_cards": 0,
             "leader_color_labels": [],
             "deck_color_labels": deck_color_labels,
             "max_deck_colors": max_deck_colors,
@@ -381,7 +472,7 @@ class DeckService:
                     "colors": colors,
                 }
             )
-            source_card_id = (card.source_card_id or f"CARD-{card.id}").strip()
+            source_card_id = self._get_copy_limit_key(None, card)
             copy_counts_by_code[source_card_id] = copy_counts_by_code.get(source_card_id, 0) + quantity
             main_card_names[source_card_id] = card.name
 
@@ -424,6 +515,11 @@ class DeckService:
             "don_is_optional": rules["allow_optional_don_deck"],
             "missing_don_cards": missing_don_cards,
             "extra_don_cards": max(don_cards - rules["max_don_cards"], 0),
+            "egg_cards": 0,
+            "required_egg_cards": 0,
+            "max_egg_cards": 0,
+            "missing_egg_cards": 0,
+            "extra_egg_cards": 0,
             "leader_color_labels": leader_color_labels,
             "deck_color_labels": leader_color_labels,
             "max_deck_colors": 0,
@@ -441,11 +537,75 @@ class DeckService:
             ),
         }
 
+    def _build_digimon_deck_composition(self, rules: dict, deck_entries: List[dict]):
+        main_deck_cards = 0
+        egg_cards = 0
+        copy_counts_by_code = {}
+        card_names = {}
+
+        for entry in deck_entries:
+            card = entry["card"]
+            quantity = entry["quantity"]
+            role = get_digimon_card_role(card.card_type)
+            source_card_id = (card.deck_key or card.source_card_id or f"CARD-{card.id}").strip()
+            copy_counts_by_code[source_card_id] = copy_counts_by_code.get(source_card_id, 0) + quantity
+            card_names[source_card_id] = card.name
+
+            if role == "egg":
+                egg_cards += quantity
+            else:
+                main_deck_cards += quantity
+
+        copy_limit_exceeded_cards = [
+            {
+                "source_card_id": source_card_id,
+                "name": card_names.get(source_card_id) or source_card_id,
+                "quantity": quantity,
+            }
+            for source_card_id, quantity in copy_counts_by_code.items()
+            if quantity > rules["max_copies_per_card"]
+        ]
+
+        return {
+            "format_mode": "digimon",
+            "leader_cards": 0,
+            "required_leader_cards": 0,
+            "main_deck_cards": main_deck_cards,
+            "required_main_deck_cards": rules["required_main_deck_cards"],
+            "max_main_deck_cards": rules["max_main_deck_cards"],
+            "missing_main_deck_cards": max(rules["required_main_deck_cards"] - main_deck_cards, 0),
+            "extra_main_deck_cards": max(main_deck_cards - rules["max_main_deck_cards"], 0),
+            "don_cards": 0,
+            "recommended_don_cards": 0,
+            "don_is_optional": False,
+            "missing_don_cards": 0,
+            "extra_don_cards": 0,
+            "egg_cards": egg_cards,
+            "required_egg_cards": rules.get("required_egg_cards", 0),
+            "max_egg_cards": rules.get("max_egg_cards", 0),
+            "missing_egg_cards": max((rules.get("required_egg_cards", 0) or 0) - egg_cards, 0),
+            "extra_egg_cards": max(egg_cards - (rules.get("max_egg_cards", 0) or 0), 0),
+            "leader_color_labels": [],
+            "deck_color_labels": [],
+            "max_deck_colors": 0,
+            "off_color_cards": [],
+            "copy_limit_exceeded_cards": copy_limit_exceeded_cards,
+            "color_match_ready": False,
+            "is_color_valid": True,
+            "is_valid": (
+                main_deck_cards == rules["required_main_deck_cards"]
+                and egg_cards <= (rules.get("max_egg_cards", 0) or 0)
+                and not copy_limit_exceeded_cards
+            ),
+        }
+
     def _build_deck_composition(self, deck_tgc, rules: dict, deck_entries: List[dict]):
         if self._is_one_piece_tgc(deck_tgc):
             return self._build_one_piece_deck_composition(rules, deck_entries)
         if self._is_gundam_tgc(deck_tgc):
             return self._build_gundam_deck_composition(rules, deck_entries)
+        if self._is_digimon_tgc(deck_tgc):
+            return self._build_digimon_deck_composition(rules, deck_entries)
         return self._build_generic_deck_composition(rules, deck_entries)
 
     def _validate_generic_quantity_rules(self, deck_tgc, rules: dict, next_quantity: int, next_total: int, card: Card):
@@ -455,7 +615,7 @@ class DeckService:
                 f"You can only have up to {card_limit} copies of this card in this deck"
             )
 
-        if not self._is_one_piece_tgc(deck_tgc) and next_total > rules["deck_max_cards"]:
+        if not self._is_one_piece_tgc(deck_tgc) and not self._is_digimon_tgc(deck_tgc) and next_total > rules["deck_max_cards"]:
             raise ValueError(
                 f"{deck_tgc.name if deck_tgc else 'This TCG'} decks cannot exceed {rules['deck_max_cards']} cards"
             )
@@ -531,6 +691,22 @@ class DeckService:
         if require_complete and composition["main_deck_cards"] != rules["required_main_deck_cards"]:
             raise ValueError("Un mazo de Gundam debe tener exactamente 50 cartas.")
 
+    def _validate_digimon_composition(self, rules: dict, composition: dict, require_complete: bool):
+        if composition["main_deck_cards"] > rules["max_main_deck_cards"]:
+            raise ValueError("El mazo principal de Digimon no puede superar 50 cartas.")
+
+        if composition["egg_cards"] > rules["max_egg_cards"]:
+            raise ValueError("El Digi-Egg Deck de Digimon no puede superar 5 cartas.")
+
+        if composition["copy_limit_exceeded_cards"]:
+            exceeded_card = composition["copy_limit_exceeded_cards"][0]
+            raise ValueError(
+                f"En Digimon solo puedes llevar hasta 4 copias del numero {exceeded_card['source_card_id']}."
+            )
+
+        if require_complete and composition["main_deck_cards"] != rules["required_main_deck_cards"]:
+            raise ValueError("Un mazo de Digimon debe tener exactamente 50 cartas en el mazo principal.")
+
     def _validate_deck_composition(self, deck_tgc, rules: dict, deck_entries: List[dict], card: Card, is_increase: bool = False, require_complete: bool = False):
         composition = self._build_deck_composition(deck_tgc, rules, deck_entries)
 
@@ -538,10 +714,12 @@ class DeckService:
             self._validate_one_piece_composition(rules, composition, card, is_increase, require_complete)
         elif self._is_gundam_tgc(deck_tgc):
             self._validate_gundam_composition(rules, composition, require_complete)
+        elif self._is_digimon_tgc(deck_tgc):
+            self._validate_digimon_composition(rules, composition, require_complete)
 
         return composition
 
-    def _serialize_shared_deck_card(self, deck_tgc, rules: dict, deck_card: DeckCard, card: Card, composition: dict):
+    def _serialize_playable_deck_card(self, deck_tgc, rules: dict, deck_item, card: Card, composition: dict, storage_section: str):
         role = self._get_card_role(deck_tgc, card)
         card_colors = self._get_card_colors(deck_tgc, card)
         color_matches_rule = True
@@ -562,6 +740,7 @@ class DeckService:
         return {
             "id": card.id,
             "source_card_id": card.source_card_id,
+            "deck_key": card.deck_key or card.source_card_id,
             "name": card.name,
             "image_url": normalize_card_image_url(card.image_url),
             "card_type": card.card_type,
@@ -571,8 +750,9 @@ class DeckService:
             "rarity": card.rarity,
             "set_name": card.set_name,
             "version": card.version,
-            "quantity": deck_card.quantity,
+            "quantity": deck_item.quantity,
             "deck_role": role,
+            "deck_section": storage_section,
             "max_quantity_allowed": self._get_card_quantity_limit(deck_tgc, rules, card),
             "color_matches_leader": color_matches_rule,
             "color_warning_text": color_warning_text,
@@ -583,6 +763,7 @@ class DeckService:
         return {
             "id": card.id,
             "source_card_id": card.source_card_id,
+            "deck_key": card.deck_key or card.source_card_id,
             "name": card.name,
             "image_url": normalize_card_image_url(card.image_url),
             "card_type": card.card_type,
@@ -594,6 +775,7 @@ class DeckService:
             "version": card.version,
             "quantity": considering_card.quantity,
             "deck_role": role,
+            "deck_section": "considering",
             "max_quantity_allowed": self._get_card_quantity_limit(deck_tgc, rules, card),
         }
 
@@ -610,7 +792,7 @@ class DeckService:
             "max_copies_per_card": rules["max_copies_per_card"],
             "remaining_cards": (
                 max(rules["deck_max_cards"] - composition["main_deck_cards"], 0)
-                if self._is_one_piece_tgc(deck_tgc)
+                if self._is_one_piece_tgc(deck_tgc) or self._is_digimon_tgc(deck_tgc)
                 else max(rules["deck_max_cards"] - total_cards, 0)
             ),
             "is_complete": composition["is_valid"],
@@ -622,52 +804,100 @@ class DeckService:
             "don_cards": composition["don_cards"],
             "recommended_don_cards": composition["recommended_don_cards"],
             "don_is_optional": composition["don_is_optional"],
+            "egg_cards": composition.get("egg_cards", 0),
+            "required_egg_cards": composition.get("required_egg_cards", 0),
+            "max_egg_cards": composition.get("max_egg_cards", 0),
             "leader_color_labels": composition["leader_color_labels"],
             "deck_color_labels": composition.get("deck_color_labels", []),
             "max_deck_colors": composition.get("max_deck_colors", 0),
             "off_color_cards": composition["off_color_cards"],
+            "egg_total_cards": 0,
+            "egg_unique_cards": 0,
             "considering_total_cards": 0,
             "considering_unique_cards": 0,
         }
 
     def _serialize_deck_payload(self, deck: Deck, deck_tgc, rules: dict, user_id: Optional[int] = None, include_share_token: bool = False):
         deck_entries = self._get_deck_entries(deck.id)
+        egg_entries = self._get_egg_entries(deck.id)
         considering_entries = self._get_considering_entries(deck.id)
-        composition = self._build_deck_composition(deck_tgc, rules, deck_entries)
-        total_cards = sum(entry["quantity"] for entry in deck_entries)
+        playable_entries = [*deck_entries, *egg_entries]
+        composition = self._build_deck_composition(deck_tgc, rules, playable_entries)
+        total_cards = sum(entry["quantity"] for entry in playable_entries)
+        egg_total_cards = sum(entry["quantity"] for entry in egg_entries)
         considering_total_cards = sum(entry["quantity"] for entry in considering_entries)
         advanced_mode = self._is_advanced_mode_enabled(user_id) if user_id is not None else False
-        tracked_card_ids = [entry["card"].id for entry in deck_entries] + [entry["card"].id for entry in considering_entries]
+        tracked_card_ids = (
+            [entry["card"].id for entry in playable_entries]
+            + [entry["card"].id for entry in considering_entries]
+        )
         owned_quantities = self._get_owned_quantities_map(
             user_id,
             tracked_card_ids,
         ) if user_id is not None else {}
 
         serialized_cards = []
+        serialized_egg_cards = []
         serialized_considering_cards = []
         missing_copies = 0
 
         for entry in deck_entries:
-            deck_card = entry["deck_card"]
+            deck_item = entry["deck_item"]
             card = entry["card"]
-            base_payload = self._serialize_shared_deck_card(deck_tgc, rules, deck_card, card, composition)
+            base_payload = self._serialize_playable_deck_card(
+                deck_tgc,
+                rules,
+                deck_item,
+                card,
+                composition,
+                entry["storage_section"],
+            )
 
             if user_id is not None:
                 owned_quantity = owned_quantities.get(card.id, 0)
-                fulfilled_quantity = self._resolve_covered_quantity(deck_card, owned_quantity, advanced_mode)
-                missing_quantity = max(deck_card.quantity - fulfilled_quantity, 0)
+                fulfilled_quantity = self._resolve_covered_quantity(deck_item, owned_quantity, advanced_mode)
+                missing_quantity = max(deck_item.quantity - fulfilled_quantity, 0)
                 missing_copies += missing_quantity
                 base_payload.update(
                     {
-                        "assigned_quantity": deck_card.assigned_quantity,
+                        "assigned_quantity": deck_item.assigned_quantity,
                         "owned_quantity": owned_quantity,
                         "fulfilled_quantity": fulfilled_quantity,
                         "missing_quantity": missing_quantity,
-                        "manual_assignment_active": advanced_mode and deck_card.assigned_quantity is not None,
+                        "manual_assignment_active": advanced_mode and deck_item.assigned_quantity is not None,
                     }
                 )
 
             serialized_cards.append(base_payload)
+
+        for entry in egg_entries:
+            deck_item = entry["deck_item"]
+            card = entry["card"]
+            base_payload = self._serialize_playable_deck_card(
+                deck_tgc,
+                rules,
+                deck_item,
+                card,
+                composition,
+                entry["storage_section"],
+            )
+
+            if user_id is not None:
+                owned_quantity = owned_quantities.get(card.id, 0)
+                fulfilled_quantity = self._resolve_covered_quantity(deck_item, owned_quantity, advanced_mode)
+                missing_quantity = max(deck_item.quantity - fulfilled_quantity, 0)
+                missing_copies += missing_quantity
+                base_payload.update(
+                    {
+                        "assigned_quantity": deck_item.assigned_quantity,
+                        "owned_quantity": owned_quantity,
+                        "fulfilled_quantity": fulfilled_quantity,
+                        "missing_quantity": missing_quantity,
+                        "manual_assignment_active": advanced_mode and deck_item.assigned_quantity is not None,
+                    }
+                )
+
+            serialized_egg_cards.append(base_payload)
 
         for entry in considering_entries:
             considering_card = entry["considering_card"]
@@ -679,11 +909,18 @@ class DeckService:
 
             serialized_considering_cards.append(base_payload)
 
-        role_order = {"leader": 0, "main": 1, "don": 2}
+        role_order = {"leader": 0, "egg": 1, "main": 2, "don": 3}
         serialized_cards.sort(
             key=lambda item: (
                 role_order.get(item["deck_role"], 9),
                 item["cost"] if item["cost"] is not None else 999,
+                item["name"].lower(),
+                item["source_card_id"] or "",
+            )
+        )
+        serialized_egg_cards.sort(
+            key=lambda item: (
+                item["lv"] if item["lv"] is not None else 999,
                 item["name"].lower(),
                 item["source_card_id"] or "",
             )
@@ -699,6 +936,9 @@ class DeckService:
 
         response = self._build_deck_response_base(deck, deck_tgc, rules, composition, total_cards)
         response["cards"] = serialized_cards
+        response["egg_cards"] = serialized_egg_cards
+        response["egg_total_cards"] = egg_total_cards
+        response["egg_unique_cards"] = len(serialized_egg_cards)
         response["considering_cards"] = serialized_considering_cards
         response["considering_total_cards"] = considering_total_cards
         response["considering_unique_cards"] = len(serialized_considering_cards)
@@ -755,8 +995,16 @@ class DeckService:
         self.db.refresh(deck)
         return deck
 
-    def import_deck(self, user_id: int, name: Optional[str], tgc_id: Optional[int], cards: List[dict]):
-        if not cards:
+    def import_deck(
+        self,
+        user_id: int,
+        name: Optional[str],
+        tgc_id: Optional[int],
+        cards: List[dict],
+        egg_cards: Optional[List[dict]] = None,
+    ):
+        egg_cards = egg_cards or []
+        if not cards and not egg_cards:
             raise ValueError("Imported deck must include at least one card")
 
         target_tgc = self._get_tgc_by_id(tgc_id) if tgc_id is not None else self._get_default_tgc()
@@ -765,27 +1013,30 @@ class DeckService:
         resolved_tgc_id = target_tgc.id if target_tgc else None
         rules = get_tcg_rules(target_tgc.name if target_tgc else None)
 
-        aggregated_cards = {}
+        aggregated_cards = {"main": {}, "egg": {}}
         deck_entries = []
 
-        for raw_card in cards:
+        for raw_card in [*cards, *egg_cards]:
             quantity = int(raw_card.get("quantity") or 0)
             if quantity <= 0:
                 raise ValueError("Imported card quantity must be greater than zero")
 
             card = self._resolve_import_card(resolved_tgc_id, raw_card)
-            current_quantity = aggregated_cards.get(card.id, 0)
-            aggregated_cards[card.id] = current_quantity + quantity
+            storage_section = self._get_card_storage_section(target_tgc, card)
+            current_quantity = aggregated_cards[storage_section].get(card.id, 0)
+            aggregated_cards[storage_section][card.id] = current_quantity + quantity
 
-        for card_id, quantity in aggregated_cards.items():
-            card = self.db.query(Card).filter(Card.id == card_id).first()
-            deck_entries.append(
-                {
-                    "deck_card": None,
-                    "card": card,
-                    "quantity": quantity,
-                }
-            )
+        for storage_section in ("main", "egg"):
+            for card_id, quantity in aggregated_cards[storage_section].items():
+                card = self.db.query(Card).filter(Card.id == card_id).first()
+                deck_entries.append(
+                    {
+                        "deck_item": None,
+                        "card": card,
+                        "quantity": quantity,
+                        "storage_section": storage_section,
+                    }
+                )
 
         self._validate_deck_composition(
             target_tgc,
@@ -801,8 +1052,9 @@ class DeckService:
         self.db.flush()
 
         for entry in deck_entries:
+            model_class = DeckEggCard if entry["storage_section"] == "egg" else DeckCard
             self.db.add(
-                DeckCard(
+                model_class(
                     deck_id=deck.id,
                     card_id=entry["card"].id,
                     quantity=entry["quantity"],
@@ -829,6 +1081,7 @@ class DeckService:
         deck = self._get_user_deck_or_error(deck_id, user_id)
 
         self.db.query(DeckCard).filter(DeckCard.deck_id == deck.id).delete(synchronize_session=False)
+        self.db.query(DeckEggCard).filter(DeckEggCard.deck_id == deck.id).delete(synchronize_session=False)
         self.db.query(DeckConsideringCard).filter(DeckConsideringCard.deck_id == deck.id).delete(synchronize_session=False)
         self.db.delete(deck)
         self.db.commit()
@@ -849,6 +1102,17 @@ class DeckService:
         for source_card in source_cards:
             self.db.add(
                 DeckCard(
+                    deck_id=cloned_deck.id,
+                    card_id=source_card.card_id,
+                    quantity=source_card.quantity,
+                    assigned_quantity=source_card.assigned_quantity,
+                )
+            )
+
+        source_egg_cards = self.db.query(DeckEggCard).filter(DeckEggCard.deck_id == source_deck.id).all()
+        for source_card in source_egg_cards:
+            self.db.add(
+                DeckEggCard(
                     deck_id=cloned_deck.id,
                     card_id=source_card.card_id,
                     quantity=source_card.quantity,
@@ -906,14 +1170,15 @@ class DeckService:
         if card.tgc_id != (deck_tgc.id if deck_tgc else card.tgc_id):
             raise ValueError("Card belongs to a different TCG")
 
-        deck_card = self.db.query(DeckCard).filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id).first()
+        storage_section = self._get_card_storage_section(deck_tgc, card)
+        deck_card = self._get_storage_card_record(deck_id, card_id, storage_section)
         current_quantity = deck_card.quantity if deck_card else 0
         next_quantity = current_quantity + quantity
-        total_cards_in_deck = self._get_deck_total_quantity(deck_id)
+        total_cards_in_deck = self._get_storage_total_quantity(deck_id, storage_section)
         next_total = total_cards_in_deck - current_quantity + next_quantity
 
         self._validate_generic_quantity_rules(deck_tgc, rules, next_quantity, next_total, card)
-        candidate_entries = self._build_candidate_deck_entries(deck_id, card, next_quantity)
+        candidate_entries = self._build_candidate_deck_entries(deck_tgc, deck_id, card, next_quantity)
         self._validate_deck_composition(deck_tgc, rules, candidate_entries, card, is_increase=True)
 
         if deck_card:
@@ -921,7 +1186,8 @@ class DeckService:
             if deck_card.assigned_quantity is not None:
                 deck_card.assigned_quantity = min(deck_card.assigned_quantity, deck_card.quantity)
         else:
-            deck_card = DeckCard(deck_id=deck_id, card_id=card_id, quantity=quantity)
+            model_class = DeckEggCard if storage_section == "egg" else DeckCard
+            deck_card = model_class(deck_id=deck_id, card_id=card_id, quantity=quantity)
             self.db.add(deck_card)
 
         self.db.commit()
@@ -929,6 +1195,7 @@ class DeckService:
         return {
             "quantity": deck_card.quantity,
             "assigned_quantity": deck_card.assigned_quantity,
+            "deck_section": storage_section,
         }
 
     def add_card_to_considering(self, deck_id: int, card_id: int, quantity: int, user_id: int):
@@ -987,7 +1254,7 @@ class DeckService:
     def move_card_to_considering(self, deck_id: int, card_id: int, quantity: int, user_id: int):
         deck = self._get_user_deck_or_error(deck_id, user_id)
         deck_tgc, rules = self._get_rules_for_deck(deck)
-        deck_card = self._get_deck_card_or_error(deck_id, card_id)
+        storage_section, deck_card = self._get_any_deck_card_or_error(deck_id, card_id)
 
         if quantity <= 0:
             raise ValueError("Quantity must be greater than zero")
@@ -1024,6 +1291,7 @@ class DeckService:
         self.db.refresh(considering_card)
         return {
             "deck_quantity": max(next_deck_quantity, 0),
+            "deck_section": storage_section,
             "considering_quantity": considering_card.quantity,
             "assigned_quantity": assigned_quantity,
         }
@@ -1039,24 +1307,22 @@ class DeckService:
             raise ValueError("Not enough copies in considering to move")
 
         card = self.db.query(Card).filter(Card.id == card_id).first()
-        deck_card = (
-            self.db.query(DeckCard)
-            .filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id)
-            .first()
-        )
+        storage_section = self._get_card_storage_section(deck_tgc, card)
+        deck_card = self._get_storage_card_record(deck_id, card_id, storage_section)
         current_quantity = deck_card.quantity if deck_card else 0
         next_quantity = current_quantity + quantity
-        total_cards_in_deck = self._get_deck_total_quantity(deck_id)
+        total_cards_in_deck = self._get_storage_total_quantity(deck_id, storage_section)
         next_total = total_cards_in_deck - current_quantity + next_quantity
 
         self._validate_generic_quantity_rules(deck_tgc, rules, next_quantity, next_total, card)
-        candidate_entries = self._build_candidate_deck_entries(deck_id, card, next_quantity)
+        candidate_entries = self._build_candidate_deck_entries(deck_tgc, deck_id, card, next_quantity)
         self._validate_deck_composition(deck_tgc, rules, candidate_entries, card, is_increase=True)
 
         if deck_card:
             deck_card.quantity = next_quantity
         else:
-            deck_card = DeckCard(deck_id=deck_id, card_id=card_id, quantity=quantity)
+            model_class = DeckEggCard if storage_section == "egg" else DeckCard
+            deck_card = model_class(deck_id=deck_id, card_id=card_id, quantity=quantity)
             self.db.add(deck_card)
 
         next_considering_quantity = considering_card.quantity - quantity
@@ -1071,6 +1337,7 @@ class DeckService:
         self.db.refresh(deck_card)
         return {
             "deck_quantity": deck_card.quantity,
+            "deck_section": storage_section,
             "considering_quantity": considering_quantity,
             "assigned_quantity": deck_card.assigned_quantity,
         }
@@ -1078,17 +1345,17 @@ class DeckService:
     def adjust_deck_card_quantity(self, deck_id: int, card_id: int, delta: int, user_id: int):
         deck = self._get_user_deck_or_error(deck_id, user_id)
         deck_tgc, rules = self._get_rules_for_deck(deck)
-        deck_card = self._get_deck_card_or_error(deck_id, card_id)
+        storage_section, deck_card = self._get_any_deck_card_or_error(deck_id, card_id)
         card = self.db.query(Card).filter(Card.id == card_id).first()
 
         next_quantity = deck_card.quantity + delta
-        total_cards_in_deck = self._get_deck_total_quantity(deck_id)
+        total_cards_in_deck = self._get_storage_total_quantity(deck_id, storage_section)
         next_total = total_cards_in_deck - deck_card.quantity + max(next_quantity, 0)
 
         if next_quantity > 0:
             self._validate_generic_quantity_rules(deck_tgc, rules, next_quantity, next_total, card)
 
-        candidate_entries = self._build_candidate_deck_entries(deck_id, card, max(next_quantity, 0))
+        candidate_entries = self._build_candidate_deck_entries(deck_tgc, deck_id, card, max(next_quantity, 0))
         composition = self._validate_deck_composition(
             deck_tgc,
             rules,
@@ -1110,6 +1377,7 @@ class DeckService:
             self.db.commit()
             return {
                 "quantity": 0,
+                "deck_section": storage_section,
                 "assigned_quantity": None,
                 "deck": deck_overview,
             }
@@ -1121,13 +1389,14 @@ class DeckService:
         self.db.refresh(deck_card)
         return {
             "quantity": deck_card.quantity,
+            "deck_section": storage_section,
             "assigned_quantity": deck_card.assigned_quantity,
             "deck": deck_overview,
         }
 
     def adjust_deck_card_assignment(self, deck_id: int, card_id: int, delta: int, user_id: int):
         self._get_user_deck_or_error(deck_id, user_id)
-        deck_card = self._get_deck_card_or_error(deck_id, card_id)
+        storage_section, deck_card = self._get_any_deck_card_or_error(deck_id, card_id)
 
         owned_quantity = self._get_owned_quantity(user_id, card_id)
         max_coverable_quantity = min(deck_card.quantity, owned_quantity)
@@ -1147,5 +1416,6 @@ class DeckService:
         self.db.refresh(deck_card)
         return {
             "quantity": deck_card.quantity,
+            "deck_section": storage_section,
             "assigned_quantity": deck_card.assigned_quantity,
         }

@@ -39,7 +39,11 @@ function SearchDeckPickerModal({
       <div className="deck-picker-modal panel" onClick={(e) => e.stopPropagation()}>
         <div className="settings-panel-header">
           <h2>Anadir a mazo</h2>
-          <p>Elige si {deckPickerCard.name} va al mazo principal o se queda en considering.</p>
+          <p>
+            {activeTcgSlug === 'digimon'
+              ? `Elige si ${deckPickerCard.name} entra al mazo o se queda en considering. Si es un Digi-Egg, ira directo a su seccion.`
+              : `Elige si ${deckPickerCard.name} va al mazo principal o se queda en considering.`}
+          </p>
           {ruleSummary ? <p>{ruleSummary}</p> : null}
         </div>
 

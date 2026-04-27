@@ -13,6 +13,8 @@ function DeckConsideringRow({
   const isUpdating = updatingConsideringCardId === card.id;
   const roleLabel = card.deck_role === 'leader'
     ? 'Leader'
+    : card.deck_role === 'egg'
+      ? 'Digi-Egg'
     : card.deck_role === 'don'
       ? 'DON!!'
       : 'Main';
@@ -86,7 +88,11 @@ function DeckConsideringRow({
           onClick={() => onMoveToMainDeck(card.id)}
           disabled={isMoving}
         >
-          {isMoving ? 'Moviendo...' : 'Pasar 1 al mazo'}
+          {isMoving
+            ? 'Moviendo...'
+            : card.deck_role === 'egg'
+              ? 'Pasar 1 al Digi-Egg'
+              : 'Pasar 1 al mazo'}
         </button>
 
         <span className="deck-card-limit-note">Max {card.max_quantity_allowed || 4}</span>

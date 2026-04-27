@@ -7,7 +7,7 @@ from html import unescape
 import requests
 
 from app.env import load_environment
-from app.models import Card, Tgc, GundamCard, OnePieceCard, DeckCard, DeckConsideringCard, UserCollection
+from app.models import Card, Tgc, GundamCard, OnePieceCard, DeckCard, DeckConsideringCard, DeckEggCard, UserCollection
 from app.database.repositories.tgc_repository import TgcRepository
 from app.services.game_rules import GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME
 
@@ -817,7 +817,14 @@ def prune_stale_cards(db, stale_cards):
         .distinct()
         .all()
     }
-    referenced_ids = referenced_collection_ids | referenced_deck_ids | referenced_considering_ids
+    referenced_egg_ids = {
+        card_id
+        for (card_id,) in db.query(DeckEggCard.card_id)
+        .filter(DeckEggCard.card_id.in_(stale_card_ids))
+        .distinct()
+        .all()
+    }
+    referenced_ids = referenced_collection_ids | referenced_deck_ids | referenced_considering_ids | referenced_egg_ids
     deletable_ids = [card_id for card_id in stale_card_ids if card_id not in referenced_ids]
 
     if deletable_ids:

@@ -1,5 +1,11 @@
 import React from 'react';
 
+const hasCardValue = (value) => (
+  value !== null
+  && value !== undefined
+  && `${value}`.trim() !== ''
+);
+
 function CardDetailModal({
   card,
   activeTcgSlug,
@@ -19,34 +25,54 @@ function CardDetailModal({
     { label: 'Version', value: card.version || 'Sin version' },
   ];
 
-  if (card.lv) {
+  if (hasCardValue(card.lv)) {
     primaryFacts.push({ label: 'Nivel', value: card.lv });
   }
 
-  if (card.cost) {
+  if (hasCardValue(card.cost)) {
     primaryFacts.push({ label: 'Costo', value: card.cost });
   }
 
-  if (card.ap) {
+  if (hasCardValue(card.ap)) {
     primaryFacts.push({
-      label: activeTcgSlug === 'one-piece' ? 'Poder' : 'AP',
+      label: activeTcgSlug === 'one-piece' ? 'Poder' : activeTcgSlug === 'digimon' ? 'Play Cost' : 'AP',
       value: card.ap,
     });
   }
 
-  if (card.hp) {
+  if (hasCardValue(card.hp)) {
     primaryFacts.push({ label: 'HP', value: card.hp });
   }
 
-  if (card.traits) {
+  if (hasCardValue(card.dp)) {
+    primaryFacts.push({ label: 'DP', value: card.dp });
+  }
+
+  if (hasCardValue(card.form)) {
+    primaryFacts.push({ label: 'Forma', value: card.form });
+  }
+
+  if (hasCardValue(card.attribute)) {
+    primaryFacts.push({ label: 'Atributo', value: card.attribute });
+  }
+
+  if (hasCardValue(card.type_line)) {
+    primaryFacts.push({ label: 'Linea de tipo', value: card.type_line });
+  }
+
+  if (card.is_alternative_art) {
+    primaryFacts.push({ label: 'Arte alternativo', value: 'Si' });
+  }
+
+  if (hasCardValue(card.traits)) {
     primaryFacts.push({ label: 'Traits', value: card.traits });
   }
 
-  if (card.link) {
+  if (hasCardValue(card.link)) {
     primaryFacts.push({ label: 'Link', value: card.link });
   }
 
-  if (card.zones) {
+  if (hasCardValue(card.zones)) {
     primaryFacts.push({ label: 'Zonas', value: card.zones });
   }
 
@@ -56,8 +82,36 @@ function CardDetailModal({
       value: card.abilities,
     },
     {
+      label: 'Digievolucion',
+      value: card.digivolution_requirements,
+    },
+    {
+      label: 'Condicion especial',
+      value: card.special_digivolution,
+    },
+    {
+      label: 'Efecto heredado',
+      value: card.inherited_effect,
+    },
+    {
+      label: 'Efecto de security',
+      value: card.security_effect,
+    },
+    {
+      label: 'Texto de regla',
+      value: card.rule_text,
+    },
+    {
       label: 'Descripcion',
       value: card.description,
+    },
+    {
+      label: 'Notas',
+      value: card.notes,
+    },
+    {
+      label: 'Q&A',
+      value: card.qa,
     },
   ].filter((block) => Boolean(block.value));
 

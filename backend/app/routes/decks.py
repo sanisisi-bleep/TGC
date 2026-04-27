@@ -58,6 +58,7 @@ class DeckImportPayload(BaseModel):
     name: Optional[str] = None
     tgc_id: Optional[int] = None
     cards: List[DeckImportCard] = Field(default_factory=list)
+    egg_cards: List[DeckImportCard] = Field(default_factory=list)
 
 
 def _deck_service(db: Session) -> DeckService:
@@ -158,6 +159,7 @@ def import_deck(payload: DeckImportPayload, db: Session = Depends(get_db), curre
             payload.name,
             payload.tgc_id,
             [card.dict() for card in payload.cards],
+            [card.dict() for card in payload.egg_cards],
         )
         logger.info(
             "Deck imported",
@@ -167,6 +169,7 @@ def import_deck(payload: DeckImportPayload, db: Session = Depends(get_db), curre
                 user_id=current_user.id,
                 username=current_user.username,
                 imported_cards=len(payload.cards),
+                imported_egg_cards=len(payload.egg_cards),
                 tgc_id=payload.tgc_id,
             ),
         )
@@ -179,6 +182,7 @@ def import_deck(payload: DeckImportPayload, db: Session = Depends(get_db), curre
             user_id=current_user.id,
             username=current_user.username,
             imported_cards=len(payload.cards),
+            imported_egg_cards=len(payload.egg_cards),
             tgc_id=payload.tgc_id,
         )
 

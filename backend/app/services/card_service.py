@@ -3,12 +3,12 @@ import re
 from collections import defaultdict
 from typing import List, Optional
 
-from sqlalchemy import func, or_
+from sqlalchemy import func, literal, or_
 from sqlalchemy.orm import Session
 
-from app.models import Card, UserCollection, Deck, DeckCard, Tgc, User
+from app.models import Card, Deck, DeckCard, DeckEggCard, Tgc, User, UserCollection
 from app.database.repositories.card_repository import CardRepository
-from app.services.game_rules import GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME, get_one_piece_card_role
+from app.services.game_rules import DIGIMON_TCG_NAME, GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME, get_one_piece_card_role
 from app.services.image_service import build_card_thumbnail_url, normalize_card_image_url
 
 SUPPORTED_CARD_SORTS = {"name-asc", "collection-asc", "collection-desc"}
@@ -21,10 +21,11 @@ class CardService:
 
     def serialize_card(self, card: Card):
         image_url = normalize_card_image_url(card.image_url)
-        return {
+        payload = {
             "id": card.id,
             "tgc_id": card.tgc_id,
             "source_card_id": card.source_card_id,
+            "deck_key": card.deck_key or card.source_card_id,
             "name": card.name,
             "card_type": self._normalize_card_value(card.card_type),
             "lv": card.lv,
@@ -45,6 +46,26 @@ class CardService:
             "image_url": image_url,
             "thumbnail_url": build_card_thumbnail_url(image_url),
         }
+
+        if card.digimon_data:
+            payload.update(
+                {
+                    "dp": card.digimon_data.dp,
+                    "form": self._normalize_card_value(card.digimon_data.form),
+                    "attribute": self._normalize_card_value(card.digimon_data.attribute),
+                    "type_line": card.digimon_data.type_line,
+                    "digivolution_requirements": card.digimon_data.digivolution_requirements,
+                    "special_digivolution": card.digimon_data.special_digivolution,
+                    "inherited_effect": card.digimon_data.inherited_effect,
+                    "security_effect": card.digimon_data.security_effect,
+                    "rule_text": card.digimon_data.rule_text,
+                    "notes": card.digimon_data.notes,
+                    "qa": card.digimon_data.qa,
+                    "is_alternative_art": bool(card.digimon_data.is_alternative_art),
+                }
+            )
+
+        return payload
 
     def _normalize_card_value(self, value: Optional[str]) -> Optional[str]:
         if value is None:
@@ -401,6 +422,7 @@ class CardService:
                     DeckCard.card_id.label("card_id"),
                     DeckCard.quantity.label("quantity"),
                     DeckCard.assigned_quantity.label("assigned_quantity"),
+                    literal("main").label("deck_section"),
                 )
                 .join(DeckCard, Deck.id == DeckCard.deck_id)
                 .filter(Deck.user_id == user_id, DeckCard.card_id.in_(collection_card_ids))
@@ -413,6 +435,28 @@ class CardService:
                     deck_query = deck_query.filter(Deck.tgc_id == tgc_id)
 
             for deck_row in deck_query.all():
+                deck_rows_by_card_id[deck_row.card_id].append(deck_row)
+
+            egg_deck_query = (
+                self.db.query(
+                    Deck.id.label("deck_id"),
+                    Deck.name.label("deck_name"),
+                    DeckEggCard.card_id.label("card_id"),
+                    DeckEggCard.quantity.label("quantity"),
+                    DeckEggCard.assigned_quantity.label("assigned_quantity"),
+                    literal("egg").label("deck_section"),
+                )
+                .join(DeckEggCard, Deck.id == DeckEggCard.deck_id)
+                .filter(Deck.user_id == user_id, DeckEggCard.card_id.in_(collection_card_ids))
+            )
+
+            if tgc_id is not None:
+                if default_tgc_id and tgc_id == default_tgc_id:
+                    egg_deck_query = egg_deck_query.filter(or_(Deck.tgc_id == tgc_id, Deck.tgc_id.is_(None)))
+                else:
+                    egg_deck_query = egg_deck_query.filter(Deck.tgc_id == tgc_id)
+
+            for deck_row in egg_deck_query.all():
                 deck_rows_by_card_id[deck_row.card_id].append(deck_row)
 
         result = []
@@ -435,6 +479,7 @@ class CardService:
                         "id": deck_row.deck_id,
                         "name": deck_row.deck_name,
                         "quantity": deck_row.quantity,
+                        "section": getattr(deck_row, "deck_section", "main"),
                     }
                     for deck_row in deck_rows
                 ],
