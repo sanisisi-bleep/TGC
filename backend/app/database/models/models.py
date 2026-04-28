@@ -76,9 +76,10 @@ class GundamCard(Base):
     trait = Column(Text)
     link = Column(Text)
     effect = Column(Text)
-    source_title = Column(String(255))
-    get_it = Column(String(255))
+    source_title = Column(Text)
+    get_it = Column(Text)
     artist = Column(String(255))
+    qa = Column(Text)
 
     card = relationship("Card", back_populates="gundam_data")
 

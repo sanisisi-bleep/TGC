@@ -65,6 +65,15 @@ class CardService:
                 }
             )
 
+        if card.gundam_data:
+            payload.update(
+                {
+                    "source_title": self._normalize_card_value(card.gundam_data.source_title),
+                    "get_it": self._normalize_card_value(card.gundam_data.get_it),
+                    "qa": card.gundam_data.qa,
+                }
+            )
+
         return payload
 
     def _normalize_card_value(self, value: Optional[str]) -> Optional[str]:

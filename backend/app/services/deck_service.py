@@ -162,7 +162,7 @@ class DeckService:
         return set()
 
     def _get_copy_limit_key(self, deck_tgc, card: Card) -> str:
-        if self._is_digimon_tgc(deck_tgc):
+        if self._is_digimon_tgc(deck_tgc) or self._is_gundam_tgc(deck_tgc):
             return (card.deck_key or card.source_card_id or f"CARD-{card.id}").strip()
         return (card.source_card_id or f"CARD-{card.id}").strip()
 

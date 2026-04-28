@@ -87,6 +87,14 @@ function CardDetailModal({
       value: card.abilities,
     },
     {
+      label: 'Titulo de origen',
+      value: activeTcgSlug === 'gundam' ? card.source_title : null,
+    },
+    {
+      label: 'Donde se consigue',
+      value: activeTcgSlug === 'gundam' ? card.get_it : null,
+    },
+    {
       label: 'Digievolucion',
       value: card.digivolution_requirements,
     },

@@ -9,7 +9,11 @@ def normalize_card_image_url(image_url: str | None) -> str | None:
     if "images.weserv.nl/" in normalized:
         return normalized
 
-    if "en.onepiece-cardgame.com/images/cardlist/card/" in normalized:
+    if (
+        "en.onepiece-cardgame.com/images/cardlist/card/" in normalized
+        or "www.gundam-gcg.com/" in normalized
+        or "gundam-gcg.com/" in normalized
+    ):
         if normalized.startswith("https://"):
             normalized = normalized[len("https://"):]
         elif normalized.startswith("http://"):
