@@ -332,6 +332,7 @@ def add_card_to_deck(deck_id: int, card: DeckCardCreate, db: Session = Depends(g
             card.card_id,
             quantity=result["quantity"],
             assigned_quantity=result["assigned_quantity"],
+            deck_section=result["deck_section"],
         )
     except ValueError as error:
         _raise_deck_http_error(
@@ -406,6 +407,7 @@ def adjust_card_in_deck(deck_id: int, card_id: int, payload: DeckCardAdjust, db:
             card_id,
             quantity=result["quantity"],
             assigned_quantity=result["assigned_quantity"],
+            deck_section=result["deck_section"],
             deck=result["deck"],
         )
     except ValueError as error:
@@ -481,6 +483,7 @@ def adjust_card_assignment_in_deck(deck_id: int, card_id: int, payload: DeckCard
             card_id,
             assigned_quantity=result["assigned_quantity"],
             quantity=result["quantity"],
+            deck_section=result["deck_section"],
         )
     except ValueError as error:
         _raise_deck_http_error(
@@ -520,6 +523,7 @@ def move_card_to_considering(deck_id: int, card_id: int, payload: DeckCardTransf
             quantity=result["deck_quantity"],
             considering_quantity=result["considering_quantity"],
             assigned_quantity=result["assigned_quantity"],
+            deck_section=result["deck_section"],
         )
     except ValueError as error:
         _raise_deck_http_error(
@@ -559,6 +563,7 @@ def move_card_to_main_deck(deck_id: int, card_id: int, payload: DeckCardTransfer
             quantity=result["deck_quantity"],
             considering_quantity=result["considering_quantity"],
             assigned_quantity=result["assigned_quantity"],
+            deck_section=result["deck_section"],
         )
     except ValueError as error:
         _raise_deck_http_error(

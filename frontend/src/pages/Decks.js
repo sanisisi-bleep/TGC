@@ -14,6 +14,7 @@ import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
 import { getGameConfig } from '../tcgConfig';
 import { getApiErrorMessage } from '../utils/apiMessages';
+import { applyCollectionDeckUsageUpdate, renameDeckInCollection } from '../utils/collectionCache';
 import {
   MAX_COPIES_PER_CARD,
   applyDeckAssignmentMutation,
@@ -138,12 +139,71 @@ function Decks({ activeTcgSlug, activeTgc }) {
     });
   }, [deckListQuery.error, selectedDeckQuery.error, showToast]);
 
+  const invalidateCollectionQuery = useCallback(() => {
+    if (!activeTgc?.id) {
+      return Promise.resolve();
+    }
+
+    return queryClient.invalidateQueries({ queryKey: queryKeys.collection(activeTgc.id) });
+  }, [activeTgc?.id, queryClient]);
+
+  const invalidateDeckOptionsQuery = useCallback(() => {
+    if (!activeTgc?.id) {
+      return Promise.resolve();
+    }
+
+    return queryClient.invalidateQueries({ queryKey: queryKeys.deckOptions(activeTgc.id) });
+  }, [activeTgc?.id, queryClient]);
+
+  const syncCollectionDeckUsage = useCallback(({
+    cardId,
+    quantity,
+    assignedQuantity,
+    deckSection = 'main',
+  }) => {
+    if (!activeTgc?.id || !selectedDeck?.id) {
+      return;
+    }
+
+    queryClient.setQueryData(queryKeys.collection(activeTgc.id), (current) => (
+      applyCollectionDeckUsageUpdate(current, {
+        cardId,
+        deckId: selectedDeck.id,
+        deckName: selectedDeck.name,
+        deckSection,
+        quantity,
+        assignedQuantity,
+        advancedMode: advancedDeckControlsEnabled,
+      })
+    ));
+  }, [
+    activeTgc?.id,
+    advancedDeckControlsEnabled,
+    queryClient,
+    selectedDeck?.id,
+    selectedDeck?.name,
+  ]);
+
   const createDeckMutation = useMutation({
     mutationFn: createDeck,
     onSuccess: (createdDeck) => {
       queryClient.setQueryData(queryKeys.decks(activeTgc?.id), (current) => (
         Array.isArray(current) ? [createdDeck, ...current] : [createdDeck]
       ));
+      queryClient.setQueryData(queryKeys.deckOptions(activeTgc?.id), (current) => {
+        if (!Array.isArray(current)) {
+          return current;
+        }
+
+        return [
+          {
+            id: createdDeck.id,
+            name: createdDeck.name,
+            tgc_id: createdDeck.tgc_id,
+          },
+          ...current,
+        ];
+      });
       setNewDeckName('');
       showToast({ type: 'success', message: 'Mazo creado.' });
     },
@@ -161,14 +221,18 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
   const deleteDeckMutation = useMutation({
     mutationFn: deleteDeck,
-    onSuccess: (_data, deckId) => {
+    onSuccess: async (_data, deckId) => {
       queryClient.setQueryData(queryKeys.decks(activeTgc?.id), (current) => (
+        Array.isArray(current) ? current.filter((deck) => deck.id !== deckId) : current
+      ));
+      queryClient.setQueryData(queryKeys.deckOptions(activeTgc?.id), (current) => (
         Array.isArray(current) ? current.filter((deck) => deck.id !== deckId) : current
       ));
       queryClient.removeQueries({ queryKey: queryKeys.deckDetail(deckId) });
       if (selectedDeckId === deckId) {
         setSelectedDeckId(null);
       }
+      await invalidateCollectionQuery();
       showToast({ type: 'success', message: 'Mazo borrado.' });
     },
     onError: (error) => {
@@ -189,7 +253,11 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const cloneDeckMutation = useMutation({
     mutationFn: cloneDeck,
     onSuccess: async (response) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+        invalidateDeckOptionsQuery(),
+        invalidateCollectionQuery(),
+      ]);
       if (response?.deck_id) {
         setSelectedDeckId(response.deck_id);
       }
@@ -212,7 +280,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
   const renameDeckMutation = useMutation({
     mutationFn: ({ deckId, name }) => renameDeck(deckId, { name }),
-    onSuccess: (response, variables) => {
+    onSuccess: async (response, variables) => {
       const nextName = response?.name || variables.name;
       setDraftDeckName(nextName);
       queryClient.setQueryData(queryKeys.deckDetail(variables.deckId), (current) => (
@@ -223,6 +291,15 @@ function Decks({ activeTcgSlug, activeTgc }) {
           ? current.map((deck) => (deck.id === variables.deckId ? { ...deck, name: nextName } : deck))
           : current
       ));
+      queryClient.setQueryData(queryKeys.deckOptions(activeTgc?.id), (current) => (
+        Array.isArray(current)
+          ? current.map((deck) => (deck.id === variables.deckId ? { ...deck, name: nextName } : deck))
+          : current
+      ));
+      queryClient.setQueryData(queryKeys.collection(activeTgc?.id), (current) => (
+        renameDeckInCollection(current, variables.deckId, nextName)
+      ));
+      await invalidateCollectionQuery();
       showToast({ type: 'success', message: 'Nombre del mazo actualizado.' });
     },
     onError: (error) => {
@@ -242,15 +319,22 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
   const adjustDeckCardMutation = useMutation({
     mutationFn: ({ deckId, cardId, delta }) => adjustDeckCard(deckId, cardId, delta),
-    onSuccess: (payload, variables) => {
+    onSuccess: async (payload, variables) => {
       queryClient.setQueryData(queryKeys.deckDetail(variables.deckId), (current) => (
         applyDeckQuantityMutation(current, variables.cardId, payload || {})
       ));
+      syncCollectionDeckUsage({
+        cardId: variables.cardId,
+        quantity: payload?.quantity ?? 0,
+        assignedQuantity: payload?.assigned_quantity,
+        deckSection: payload?.deck_section || 'main',
+      });
       if (payload?.deck) {
         queryClient.setQueryData(queryKeys.decks(activeTgc?.id), (current) => (
           mergeDeckOverviewInList(Array.isArray(current) ? current : [], payload.deck)
         ));
       }
+      await invalidateCollectionQuery();
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -269,10 +353,17 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
   const adjustAssignmentMutation = useMutation({
     mutationFn: ({ deckId, cardId, delta }) => adjustDeckAssignment(deckId, cardId, delta),
-    onSuccess: (payload, variables) => {
+    onSuccess: async (payload, variables) => {
       queryClient.setQueryData(queryKeys.deckDetail(variables.deckId), (current) => (
         applyDeckAssignmentMutation(current, variables.cardId, payload || {})
       ));
+      syncCollectionDeckUsage({
+        cardId: variables.cardId,
+        quantity: payload?.quantity ?? 0,
+        assignedQuantity: payload?.assigned_quantity,
+        deckSection: payload?.deck_section || 'main',
+      });
+      await invalidateCollectionQuery();
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -314,10 +405,17 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
   const moveToConsideringMutation = useMutation({
     mutationFn: ({ deckId, cardId, quantity }) => moveDeckCardToConsidering(deckId, cardId, quantity),
-    onSuccess: async (_payload, variables) => {
+    onSuccess: async (payload, variables) => {
+      syncCollectionDeckUsage({
+        cardId: variables.cardId,
+        quantity: payload?.quantity ?? 0,
+        assignedQuantity: payload?.assigned_quantity,
+        deckSection: payload?.deck_section || 'main',
+      });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+        invalidateCollectionQuery(),
       ]);
       showToast({ type: 'success', message: 'Carta movida a considering.' });
     },
@@ -339,10 +437,17 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
   const moveFromConsideringMutation = useMutation({
     mutationFn: ({ deckId, cardId, quantity }) => moveConsideringCardToDeck(deckId, cardId, quantity),
-    onSuccess: async (_payload, variables) => {
+    onSuccess: async (payload, variables) => {
+      syncCollectionDeckUsage({
+        cardId: variables.cardId,
+        quantity: payload?.quantity ?? 0,
+        assignedQuantity: payload?.assigned_quantity,
+        deckSection: payload?.deck_section || 'main',
+      });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+        invalidateCollectionQuery(),
       ]);
       showToast({ type: 'success', message: 'Carta devuelta al mazo principal.' });
     },
@@ -364,7 +469,11 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const importDeckMutation = useMutation({
     mutationFn: importDeck,
     onSuccess: async (response) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+        invalidateDeckOptionsQuery(),
+        invalidateCollectionQuery(),
+      ]);
       if (response?.deck_id) {
         setSelectedDeckId(response.deck_id);
       }

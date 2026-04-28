@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import FilterAutocomplete from '../components/filters/FilterAutocomplete';
 import CardDetailModal from '../components/cards/CardDetailModal';
+import { useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
 import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
@@ -15,6 +16,7 @@ import {
   matchesCollectionCodeQuery,
   normalizeText,
 } from '../utils/setFilters';
+import { applyCollectionDeckUsageUpdate } from '../utils/collectionCache';
 import { addCardToDeck, adjustCollectionCard, getCollection, getDeckOptions } from '../services/api';
 
 const EMPTY_COLLECTION = [];
@@ -91,6 +93,7 @@ const isUnauthorizedError = (error) => error?.response?.status === 401;
 function Collection({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const collectionTitle = activeGame.collectionTitle || 'Mi Coleccion';
+  const { profile } = useSession();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -109,6 +112,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
   );
   const [selectedCard, setSelectedCard] = useState(null);
   const deferredCollectionSearchTerm = useDeferredValue(collectionSearchTerm);
+  const advancedMode = Boolean(profile?.advanced_mode);
 
   const collectionQuery = useQuery({
     queryKey: queryKeys.collection(activeTgc?.id),
@@ -186,41 +190,22 @@ function Collection({ activeTcgSlug, activeTgc }) {
   const updateCollectionAfterDeckAdd = useCallback((
     deckId,
     cardId,
-    addedQuantity = 1,
+    quantity,
+    assignedQuantity,
     deckSection = 'main'
   ) => {
     const deckName = decks.find((deck) => deck.id === deckId)?.name || 'Mazo';
 
-    updateCollectionQuery((current) => current.map((item) => {
-      if (item?.card?.id !== cardId) {
-        return item;
-      }
-
-      const nextDecks = (item.decks || []).some(
-        (deck) => deck.id === deckId && (deck.section || 'main') === deckSection
-      )
-        ? (item.decks || []).map((deck) => (
-          deck.id === deckId && (deck.section || 'main') === deckSection
-            ? { ...deck, quantity: (Number(deck.quantity) || 0) + addedQuantity }
-            : deck
-        ))
-        : [
-          ...(item.decks || []),
-          { id: deckId, name: deckName, quantity: addedQuantity, section: deckSection },
-        ];
-
-      const usedInDecks = nextDecks.reduce(
-        (total, deck) => total + (Number(deck.quantity) || 0),
-        0
-      );
-
-      return {
-        ...item,
-        decks: nextDecks,
-        available_quantity: Math.max((item.total_quantity || 0) - usedInDecks, 0),
-      };
+    updateCollectionQuery((current) => applyCollectionDeckUsageUpdate(current, {
+      cardId,
+      deckId,
+      deckName,
+      deckSection,
+      quantity,
+      assignedQuantity,
+      advancedMode,
     }));
-  }, [decks, updateCollectionQuery]);
+  }, [advancedMode, decks, updateCollectionQuery]);
 
   const adjustCollectionMutation = useMutation({
     mutationFn: ({ cardId, delta }) => adjustCollectionCard(cardId, delta),
@@ -261,19 +246,19 @@ function Collection({ activeTcgSlug, activeTgc }) {
   const addCardToDeckMutation = useMutation({
     mutationFn: ({ deckId, cardId, quantity }) => addCardToDeck(deckId, { card_id: cardId, quantity }),
     onSuccess: (data, variables) => {
-      const addedQuantity = Number(variables.quantity) || 1;
       updateCollectionAfterDeckAdd(
         variables.deckId,
         variables.cardId,
-        addedQuantity,
+        data?.quantity ?? variables.quantity,
+        data?.assigned_quantity,
         data?.deck_section || 'main'
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
       showToast({
         type: 'success',
-        message: addedQuantity === 1
+        message: Number(variables.quantity) === 1
           ? '1 copia agregada al mazo.'
-          : `${addedQuantity} copias agregadas al mazo.`,
+          : `${variables.quantity} copias agregadas al mazo.`,
       });
     },
     onError: (error) => {

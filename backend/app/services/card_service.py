@@ -562,6 +562,7 @@ class CardService:
                         "id": deck_row.deck_id,
                         "name": deck_row.deck_name,
                         "quantity": deck_row.quantity,
+                        "assigned_quantity": deck_row.assigned_quantity,
                         "section": getattr(deck_row, "deck_section", "main"),
                     }
                     for deck_row in deck_rows

@@ -7,11 +7,13 @@ import SearchDeckPickerModal from '../components/search/SearchDeckPickerModal';
 import SearchFiltersPanel from '../components/search/SearchFiltersPanel';
 import SearchResultsToolbar from '../components/search/SearchResultsToolbar';
 import { getGameConfig } from '../tcgConfig';
+import { useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { getNewDeckCreationPlan } from '../utils/deckTools';
 import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
+import { applyCollectionDeckUsageUpdate } from '../utils/collectionCache';
 import { buildSetFilterOptions } from '../utils/setFilters';
 import {
   readStoredEnumValue,
@@ -25,7 +27,7 @@ import {
   createDeck,
   getCardFacets,
   getCards,
-  getDecks,
+  getDeckOptions,
 } from '../services/api';
 
 const SEARCH_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
@@ -172,6 +174,7 @@ const useDebouncedValue = (value, delay) => {
 
 function Search({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
+  const { profile } = useSession();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -200,6 +203,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     SEARCH_CARD_VIEW_MODES,
     'detail'
   ));
+  const advancedMode = Boolean(profile?.advanced_mode);
 
   const cardsRequestParams = useMemo(
     () => buildCardsRequestParams({
@@ -278,10 +282,10 @@ function Search({ activeTcgSlug, activeTgc }) {
     staleTime: QUERY_STALE_TIMES.cardFacets,
   });
   const decksQuery = useQuery({
-    queryKey: queryKeys.decks(activeTgc?.id),
-    queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
+    queryKey: queryKeys.deckOptions(activeTgc?.id),
+    queryFn: ({ signal }) => getDeckOptions(activeTgc.id, signal),
     enabled: Boolean(activeTgc?.id && deckPickerCard),
-    staleTime: QUERY_STALE_TIMES.decks,
+    staleTime: QUERY_STALE_TIMES.deckOptions,
   });
 
   useEffect(() => {
@@ -324,8 +328,21 @@ function Search({ activeTcgSlug, activeTgc }) {
       card_id: cardId,
       quantity,
     }),
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
+      const deckName = decks.find((deck) => deck.id === variables.deckId)?.name || 'Mazo';
+      queryClient.setQueryData(queryKeys.collection(activeTgc?.id), (current) => (
+        applyCollectionDeckUsageUpdate(current, {
+          cardId: variables.cardId,
+          deckId: variables.deckId,
+          deckName,
+          deckSection: data?.deck_section || 'main',
+          quantity: data?.quantity ?? variables.quantity,
+          assignedQuantity: data?.assigned_quantity,
+          advancedMode,
+        })
+      ));
       queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.collection(activeTgc?.id) });
       showToast({
         type: 'success',
         message: variables.quantity === 1
@@ -375,6 +392,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     mutationFn: createDeck,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deckOptions(activeTgc?.id) });
     },
   });
 
@@ -522,9 +540,9 @@ function Search({ activeTcgSlug, activeTgc }) {
     }
 
     await queryClient.ensureQueryData({
-      queryKey: queryKeys.decks(activeTgc?.id),
-      queryFn: () => getDecks(activeTgc.id),
-      staleTime: QUERY_STALE_TIMES.decks,
+      queryKey: queryKeys.deckOptions(activeTgc?.id),
+      queryFn: () => getDeckOptions(activeTgc.id),
+      staleTime: QUERY_STALE_TIMES.deckOptions,
     });
   };
 
