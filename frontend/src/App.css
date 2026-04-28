@@ -3967,6 +3967,41 @@ textarea::placeholder {
   justify-content: end;
 }
 
+.deck-batch-editor {
+  width: 100%;
+}
+
+.deck-batch-controls {
+  display: grid;
+  grid-template-columns: 42px minmax(72px, 1fr) 42px;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.deck-batch-controls input {
+  min-width: 0;
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
+  border: 1px solid rgba(18, 48, 98, 0.16);
+  background: var(--surface);
+  color: var(--text);
+  text-align: center;
+  font-weight: 700;
+}
+
+.deck-batch-controls input:focus {
+  outline: none;
+  border-color: rgba(28, 99, 213, 0.34);
+  box-shadow: 0 0 0 3px rgba(28, 99, 213, 0.08);
+}
+
+.deck-batch-controls input::-webkit-outer-spin-button,
+.deck-batch-controls input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .deck-card-limit-note {
   font-size: 0.78rem;
   font-weight: 700;

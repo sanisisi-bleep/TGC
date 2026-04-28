@@ -3,14 +3,21 @@ import { isInteractiveElementTarget } from '../../utils/clickTargets';
 
 function DeckConsideringRow({
   card,
+  actionQuantity,
   movingConsideringCardId,
   updatingConsideringCardId,
+  onActionQuantityChange,
+  onApplyBatchQuantity,
   onAdjustQuantity,
   onMoveToMainDeck,
   onOpenCard,
 }) {
   const isMoving = movingConsideringCardId === card.id;
   const isUpdating = updatingConsideringCardId === card.id;
+  const requestedQuantity = Number.isInteger(Number(actionQuantity)) && Number(actionQuantity) > 0
+    ? Number(actionQuantity)
+    : 1;
+  const transferQuantity = Math.max(1, Math.min(requestedQuantity, Number(card.quantity) || 1));
   const roleLabel = card.deck_role === 'leader'
     ? 'Leader'
     : card.deck_role === 'egg'
@@ -81,18 +88,52 @@ function DeckConsideringRow({
             +
           </button>
         </div>
+        <div className="deck-batch-editor">
+          <div className="deck-batch-controls">
+            <button
+              type="button"
+              className="secondary-inline-button secondary-inline-button-icon"
+              onClick={() => onApplyBatchQuantity(card.id, -requestedQuantity)}
+              disabled={isUpdating}
+              aria-label="Quitar varias copias de considering"
+            >
+              -
+            </button>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={String(actionQuantity || '1')}
+              onChange={(event) => onActionQuantityChange(card.id, event.target.value)}
+              disabled={isUpdating}
+            />
+            <button
+              type="button"
+              className="secondary-inline-button secondary-inline-button-icon"
+              onClick={() => onApplyBatchQuantity(card.id, requestedQuantity)}
+              disabled={isUpdating}
+              aria-label="Anadir varias copias a considering"
+            >
+              +
+            </button>
+          </div>
+        </div>
 
         <button
           type="button"
           className="deck-action-button is-soft"
-          onClick={() => onMoveToMainDeck(card.id)}
+          onClick={() => onMoveToMainDeck(card.id, transferQuantity)}
           disabled={isMoving}
         >
           {isMoving
             ? 'Moviendo...'
             : card.deck_role === 'egg'
-              ? 'Pasar 1 al Digi-Egg'
-              : 'Pasar 1 al mazo'}
+              ? transferQuantity === 1
+                ? 'Pasar 1 al Digi-Egg'
+                : `Pasar x${transferQuantity} al Digi-Egg`
+              : transferQuantity === 1
+                ? 'Pasar 1 al mazo'
+                : `Pasar x${transferQuantity} al mazo`}
         </button>
 
         <span className="deck-card-limit-note">Max {card.max_quantity_allowed || 4}</span>

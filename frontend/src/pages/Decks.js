@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import CardDetailModal from '../components/cards/CardDetailModal';
@@ -68,6 +68,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const [updatingConsideringCardId, setUpdatingConsideringCardId] = useState(null);
   const [movingConsideringCardId, setMovingConsideringCardId] = useState(null);
   const [deckListPreview, setDeckListPreview] = useState(null);
+  const [deckQuantityDrafts, setDeckQuantityDrafts] = useState({});
   const importDeckInputRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -475,6 +476,38 @@ function Decks({ activeTcgSlug, activeTgc }) {
     createDeckMutation.mutate({ name: newDeckName, tgc_id: activeTgc.id });
   };
 
+  const normalizeDeckQuantityInput = useCallback((value) => {
+    const digitsOnly = String(value || '').replace(/[^\d]/g, '');
+    return digitsOnly ? digitsOnly.slice(0, 3) : '1';
+  }, []);
+
+  const setDeckActionQuantityDraft = useCallback((storageKey, value) => {
+    if (!storageKey) {
+      return;
+    }
+
+    const normalizedValue = normalizeDeckQuantityInput(value);
+    setDeckQuantityDrafts((current) => ({
+      ...current,
+      [storageKey]: normalizedValue,
+    }));
+  }, [normalizeDeckQuantityInput]);
+
+  const getDeckActionQuantity = useCallback((storageKey) => {
+    const draftValue = deckQuantityDrafts[storageKey];
+    const parsedValue = Number(draftValue);
+    return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : 1;
+  }, [deckQuantityDrafts]);
+
+  const commitDeckActionQuantity = useCallback((storageKey) => {
+    const quantity = getDeckActionQuantity(storageKey);
+    setDeckQuantityDrafts((current) => ({
+      ...current,
+      [storageKey]: String(quantity),
+    }));
+    return quantity;
+  }, [getDeckActionQuantity]);
+
   const deleteDeckHandler = (deckId, deckName) => {
     const confirmed = window.confirm(`Se borrara el mazo "${deckName}". Esta accion no se puede deshacer.`);
     if (!confirmed) {
@@ -559,20 +592,30 @@ function Decks({ activeTcgSlug, activeTgc }) {
     adjustDeckCardMutation.mutate({ deckId, cardId, delta });
   };
 
+  const adjustDeckCardQuantityBatch = (deckId, cardId, storageKey, delta) => {
+    const quantity = commitDeckActionQuantity(storageKey);
+    adjustDeckCardQuantity(deckId, cardId, delta < 0 ? -quantity : quantity);
+  };
+
   const adjustConsideringQuantity = (deckId, cardId, delta) => {
     setUpdatingConsideringCardId(cardId);
     adjustConsideringMutation.mutate({ deckId, cardId, delta });
   };
 
-  const moveDeckCardToConsideringHandler = (deckId, cardId) => {
-    setUpdatingDeckCardId(cardId);
-    setMovingConsideringCardId(cardId);
-    moveToConsideringMutation.mutate({ deckId, cardId, quantity: 1 });
+  const adjustConsideringQuantityBatch = (deckId, cardId, storageKey, delta) => {
+    const quantity = commitDeckActionQuantity(storageKey);
+    adjustConsideringQuantity(deckId, cardId, delta < 0 ? -quantity : quantity);
   };
 
-  const moveConsideringCardToDeckHandler = (deckId, cardId) => {
+  const moveDeckCardToConsideringHandler = (deckId, cardId, quantity = 1) => {
+    setUpdatingDeckCardId(cardId);
     setMovingConsideringCardId(cardId);
-    moveFromConsideringMutation.mutate({ deckId, cardId, quantity: 1 });
+    moveToConsideringMutation.mutate({ deckId, cardId, quantity });
+  };
+
+  const moveConsideringCardToDeckHandler = (deckId, cardId, quantity = 1) => {
+    setMovingConsideringCardId(cardId);
+    moveFromConsideringMutation.mutate({ deckId, cardId, quantity });
   };
 
   const adjustDeckCoverage = (cardId, delta) => {
@@ -798,16 +841,19 @@ function Decks({ activeTcgSlug, activeTgc }) {
                     <DeckCardRow
                       key={card.id}
                       card={card}
+                      actionQuantity={getDeckActionQuantity(`main:${card.id}`)}
                       deckCardView={deckCardView}
                       advancedDeckControlsEnabled={advancedDeckControlsEnabled}
                       editingAssignmentCardId={editingAssignmentCardId}
                       updatingAssignmentCardId={updatingAssignmentCardId}
                       updatingDeckCardId={updatingDeckCardId}
                       maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                      onActionQuantityChange={(cardId, value) => setDeckActionQuantityDraft(`main:${cardId}`, value)}
+                      onApplyBatchQuantity={(cardId, delta) => adjustDeckCardQuantityBatch(selectedDeck.id, cardId, `main:${cardId}`, delta)}
                       onToggleAssignmentEditor={toggleAssignmentEditor}
                       onAdjustCoverage={adjustDeckCoverage}
                       onAdjustQuantity={(cardId, delta) => adjustDeckCardQuantity(selectedDeck.id, cardId, delta)}
-                      onMoveToConsidering={(cardId) => moveDeckCardToConsideringHandler(selectedDeck.id, cardId)}
+                      onMoveToConsidering={(cardId, quantity) => moveDeckCardToConsideringHandler(selectedDeck.id, cardId, quantity)}
                       onOpenCard={setSelectedCard}
                     />
                   ))}
@@ -847,16 +893,19 @@ function Decks({ activeTcgSlug, activeTgc }) {
                           <DeckCardRow
                             key={`egg-${card.id}`}
                             card={card}
+                            actionQuantity={getDeckActionQuantity(`egg:${card.id}`)}
                             deckCardView={deckCardView}
                             advancedDeckControlsEnabled={advancedDeckControlsEnabled}
                             editingAssignmentCardId={editingAssignmentCardId}
                             updatingAssignmentCardId={updatingAssignmentCardId}
                             updatingDeckCardId={updatingDeckCardId}
                             maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                            onActionQuantityChange={(cardId, value) => setDeckActionQuantityDraft(`egg:${cardId}`, value)}
+                            onApplyBatchQuantity={(cardId, delta) => adjustDeckCardQuantityBatch(selectedDeck.id, cardId, `egg:${cardId}`, delta)}
                             onToggleAssignmentEditor={toggleAssignmentEditor}
                             onAdjustCoverage={adjustDeckCoverage}
                             onAdjustQuantity={(cardId, delta) => adjustDeckCardQuantity(selectedDeck.id, cardId, delta)}
-                            onMoveToConsidering={(cardId) => moveDeckCardToConsideringHandler(selectedDeck.id, cardId)}
+                            onMoveToConsidering={(cardId, quantity) => moveDeckCardToConsideringHandler(selectedDeck.id, cardId, quantity)}
                             onOpenCard={setSelectedCard}
                           />
                         ))}
@@ -895,10 +944,13 @@ function Decks({ activeTcgSlug, activeTgc }) {
                         <DeckConsideringRow
                           key={`considering-${card.id}`}
                           card={card}
+                          actionQuantity={getDeckActionQuantity(`considering:${card.id}`)}
                           movingConsideringCardId={movingConsideringCardId}
                           updatingConsideringCardId={updatingConsideringCardId}
+                          onActionQuantityChange={(cardId, value) => setDeckActionQuantityDraft(`considering:${cardId}`, value)}
+                          onApplyBatchQuantity={(cardId, delta) => adjustConsideringQuantityBatch(selectedDeck.id, cardId, `considering:${cardId}`, delta)}
                           onAdjustQuantity={(cardId, delta) => adjustConsideringQuantity(selectedDeck.id, cardId, delta)}
-                          onMoveToMainDeck={(cardId) => moveConsideringCardToDeckHandler(selectedDeck.id, cardId)}
+                          onMoveToMainDeck={(cardId, quantity) => moveConsideringCardToDeckHandler(selectedDeck.id, cardId, quantity)}
                           onOpenCard={setSelectedCard}
                         />
                       ))}

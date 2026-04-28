@@ -119,11 +119,9 @@ def is_official_like_card(card, detail):
         return True
     if detail and has_value(detail.get_it):
         return True
-    if clean_text(card.set_name) in OFFICIAL_SET_NAMES:
-        return True
-    if normalize_token(card.version) in OFFICIAL_SET_CODES:
-        return True
     if has_value(card.description) and "Where to get it:" in card.description:
+        return True
+    if has_value(card.image_url) and "gundam-gcg.com" in clean_text(card.image_url).lower():
         return True
     return False
 
@@ -294,8 +292,9 @@ def build_reference_mapping(db, gundam_tgc_id):
     }
 
     official_like_count = sum(
-        1 for card in gundam_cards
-        if has_value(getattr(detail_by_card_id.get(card.id), "qa", ""))
+        1
+        for card in gundam_cards
+        if is_official_like_card(card, detail_by_card_id.get(card.id))
     )
     if official_like_count == 0:
         raise ValueError(

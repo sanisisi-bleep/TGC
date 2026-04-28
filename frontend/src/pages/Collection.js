@@ -183,7 +183,12 @@ function Collection({ activeTcgSlug, activeTgc }) {
     });
   }, [activeTgc?.id, queryClient]);
 
-  const updateCollectionAfterDeckAdd = useCallback((deckId, cardId, addedQuantity = 1) => {
+  const updateCollectionAfterDeckAdd = useCallback((
+    deckId,
+    cardId,
+    addedQuantity = 1,
+    deckSection = 'main'
+  ) => {
     const deckName = decks.find((deck) => deck.id === deckId)?.name || 'Mazo';
 
     updateCollectionQuery((current) => current.map((item) => {
@@ -191,15 +196,17 @@ function Collection({ activeTcgSlug, activeTgc }) {
         return item;
       }
 
-      const nextDecks = (item.decks || []).some((deck) => deck.id === deckId)
+      const nextDecks = (item.decks || []).some(
+        (deck) => deck.id === deckId && (deck.section || 'main') === deckSection
+      )
         ? (item.decks || []).map((deck) => (
-          deck.id === deckId
+          deck.id === deckId && (deck.section || 'main') === deckSection
             ? { ...deck, quantity: (Number(deck.quantity) || 0) + addedQuantity }
             : deck
         ))
         : [
           ...(item.decks || []),
-          { id: deckId, name: deckName, quantity: addedQuantity },
+          { id: deckId, name: deckName, quantity: addedQuantity, section: deckSection },
         ];
 
       const usedInDecks = nextDecks.reduce(
@@ -252,11 +259,22 @@ function Collection({ activeTcgSlug, activeTgc }) {
   });
 
   const addCardToDeckMutation = useMutation({
-    mutationFn: ({ deckId, cardId }) => addCardToDeck(deckId, { card_id: cardId, quantity: 1 }),
-    onSuccess: (_data, variables) => {
-      updateCollectionAfterDeckAdd(variables.deckId, variables.cardId);
+    mutationFn: ({ deckId, cardId, quantity }) => addCardToDeck(deckId, { card_id: cardId, quantity }),
+    onSuccess: (data, variables) => {
+      const addedQuantity = Number(variables.quantity) || 1;
+      updateCollectionAfterDeckAdd(
+        variables.deckId,
+        variables.cardId,
+        addedQuantity,
+        data?.deck_section || 'main'
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
-      showToast({ type: 'success', message: 'Carta agregada al mazo.' });
+      showToast({
+        type: 'success',
+        message: addedQuantity === 1
+          ? '1 copia agregada al mazo.'
+          : `${addedQuantity} copias agregadas al mazo.`,
+      });
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -287,8 +305,26 @@ function Collection({ activeTcgSlug, activeTgc }) {
     adjustCollectionQuantity(cardId, direction === 'add' ? parsedValue : -parsedValue);
   };
 
+  const getCollectionActionQuantity = useCallback((cardId) => {
+    const rawValue = quantityInputs[cardId] || '1';
+    const parsedValue = Number(rawValue);
+
+    if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+      return null;
+    }
+
+    return parsedValue;
+  }, [quantityInputs]);
+
   const addCardToDeckFromCollection = (deckId, cardId) => {
-    addCardToDeckMutation.mutate({ deckId, cardId });
+    const quantity = getCollectionActionQuantity(cardId);
+
+    if (!quantity) {
+      showToast({ type: 'error', message: 'La cantidad a mover al mazo debe ser un numero entero mayor que 0.' });
+      return;
+    }
+
+    addCardToDeckMutation.mutate({ deckId, cardId, quantity });
   };
 
   const openDeck = (deckId) => {
@@ -566,6 +602,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
           const isUpdating = updatingCardId === item.card.id;
           const isInventoryView = collectionView === 'inventory';
           const collectionSet = item.card.set_name || 'Sin set';
+          const requestedDeckQuantity = getCollectionActionQuantity(item.card.id) || 1;
 
           return (
             <article
@@ -688,7 +725,9 @@ function Collection({ activeTcgSlug, activeTgc }) {
 
                 {!isInventoryView && (
                   <div className="collection-actions">
-                    <span className="collection-panel-label">Agregar al mazo</span>
+                    <span className="collection-panel-label">
+                      Agregar al mazo x{requestedDeckQuantity}
+                    </span>
                     <div className="deck-buttons">
                       {decks.map((deck) => (
                         <button
@@ -696,7 +735,9 @@ function Collection({ activeTcgSlug, activeTgc }) {
                           type="button"
                           onClick={() => addCardToDeckFromCollection(deck.id, item.card.id)}
                         >
-                          Agregar a {deck.name}
+                          {requestedDeckQuantity === 1
+                            ? `Agregar a ${deck.name}`
+                            : `Agregar x${requestedDeckQuantity} a ${deck.name}`}
                         </button>
                       ))}
                     </div>

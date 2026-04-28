@@ -285,7 +285,7 @@ function Search({ activeTcgSlug, activeTgc }) {
   });
 
   useEffect(() => {
-    const error = cardsQuery.error || facetsQuery.error || decksQuery.error;
+    const error = cardsQuery.error || selectedCardDetailQuery.error || facetsQuery.error || decksQuery.error;
     if (!error || isUnauthorizedError(error)) {
       return;
     }
@@ -294,7 +294,7 @@ function Search({ activeTcgSlug, activeTgc }) {
       type: 'error',
       message: getApiErrorMessage(error, 'No se pudieron cargar los datos del buscador.'),
     });
-  }, [cardsQuery.error, decksQuery.error, facetsQuery.error, showToast]);
+  }, [cardsQuery.error, decksQuery.error, facetsQuery.error, selectedCardDetailQuery.error, showToast]);
 
   const addToCollectionMutation = useMutation({
     mutationFn: addCardToCollection,
@@ -508,7 +508,7 @@ function Search({ activeTcgSlug, activeTgc }) {
   };
 
   const handleAddToDeck = async (cardId, quantityOverride = null) => {
-    const card = normalizeCardList(cardList).find((item) => item.id === cardId) || null;
+    const card = cardList.find((item) => item.id === cardId) || null;
     setDeckPickerCard(card);
     setNewDeckName(card ? `${card.name} Test` : '');
 

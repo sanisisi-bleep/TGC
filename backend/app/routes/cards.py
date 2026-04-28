@@ -12,6 +12,7 @@ router = APIRouter(prefix="/cards", tags=["cards"])
 
 CATALOG_CACHE_CONTROL = "public, max-age=60, s-maxage=300, stale-while-revalidate=3600"
 FACETS_CACHE_CONTROL = "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400"
+CARD_DETAIL_CACHE_CONTROL = "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400"
 
 
 def _apply_cache_headers(response: Response, cache_control: str):
@@ -68,7 +69,8 @@ def get_card_facets(response: Response, tgc_id: Optional[int] = None, db: Sessio
     return service.get_card_facets(tgc_id)
 
 @router.get("/{card_id}")
-def get_card_detail(card_id: int, db: Session = Depends(get_db)):
+def get_card_detail(response: Response, card_id: int, db: Session = Depends(get_db)):
+    _apply_cache_headers(response, CARD_DETAIL_CACHE_CONTROL)
     service = CardService(db)
     try:
         return service.get_card_by_id(card_id)

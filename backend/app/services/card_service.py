@@ -11,8 +11,7 @@ from app.database.repositories.card_repository import CardRepository
 from app.services.game_rules import DIGIMON_TCG_NAME, GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME, get_one_piece_card_role
 from app.services.image_service import (
     build_card_thumbnail_url,
-    build_gundam_card_image_url,
-    normalize_card_image_url,
+    resolve_card_image_url,
 )
 
 SUPPORTED_CARD_SORTS = {"name-asc", "collection-asc", "collection-desc"}
@@ -95,14 +94,11 @@ class CardService:
         return payload
 
     def _resolve_card_image_url(self, card: Card):
-        normalized_image_url = normalize_card_image_url(card.image_url)
-        if normalized_image_url:
-            return normalized_image_url
-
-        if self._get_tgc_name(card.tgc_id) == GUNDAM_TGC_NAME:
-            return build_gundam_card_image_url(card.source_card_id)
-
-        return normalized_image_url
+        return resolve_card_image_url(
+            card.image_url,
+            source_card_id=card.source_card_id,
+            tgc_name=self._get_tgc_name(card.tgc_id),
+        )
 
     def _normalize_card_value(self, value: Optional[str]) -> Optional[str]:
         if value is None:

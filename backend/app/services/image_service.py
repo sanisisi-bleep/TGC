@@ -30,6 +30,21 @@ def build_gundam_card_image_url(source_card_id: str | None) -> str | None:
     return _build_weserv_url(f"www.gundam-gcg.com/en/images/cards/card/{image_code}.webp")
 
 
+def resolve_card_image_url(
+    image_url: str | None,
+    source_card_id: str | None = None,
+    tgc_name: str | None = None,
+) -> str | None:
+    normalized_image_url = normalize_card_image_url(image_url)
+    if normalized_image_url:
+        return normalized_image_url
+
+    if tgc_name == "Gundam TGC":
+        return build_gundam_card_image_url(source_card_id)
+
+    return normalized_image_url
+
+
 def normalize_card_image_url(image_url: str | None) -> str | None:
     if not image_url:
         return image_url

@@ -16,7 +16,7 @@ from app.services.game_rules import (
     get_one_piece_colors,
     get_tcg_rules,
 )
-from app.services.image_service import build_gundam_card_image_url, normalize_card_image_url
+from app.services.image_service import resolve_card_image_url
 
 
 class DeckService:
@@ -167,14 +167,11 @@ class DeckService:
         return (card.source_card_id or f"CARD-{card.id}").strip()
 
     def _resolve_card_image_url(self, deck_tgc, card: Card):
-        normalized_image_url = normalize_card_image_url(card.image_url)
-        if normalized_image_url:
-            return normalized_image_url
-
-        if self._is_gundam_tgc(deck_tgc):
-            return build_gundam_card_image_url(card.source_card_id)
-
-        return normalized_image_url
+        return resolve_card_image_url(
+            card.image_url,
+            source_card_id=card.source_card_id,
+            tgc_name=deck_tgc.name if deck_tgc else None,
+        )
 
     def _get_card_quantity_limit(self, deck_tgc, rules: dict, card: Card) -> int:
         if self._is_one_piece_tgc(deck_tgc):

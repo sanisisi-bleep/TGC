@@ -20,10 +20,11 @@ load_environment()
 # - GUNDAM_PACKAGE_ID_FILTER="616104" para cargar solo ese package oficial.
 # - CARD_CODE_PREFIX="GD04-001" para reducir aun mas por codigo de carta.
 # - POPULATE_FETCH_ONLY="true" para probar el scrape sin escribir en BBDD.
+# - POPULATE_PRUNE_STALE="auto" limpia legacy sin tocar cargas filtradas.
 DEFAULT_DATABASE_TARGET = "PRO"
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_REQUEST_TIMEOUT = 30
-DEFAULT_PRUNE_STALE = False
+DEFAULT_PRUNE_STALE_MODE = "auto"
 DEFAULT_FETCH_ONLY = False
 DEFAULT_VERBOSE = False
 DEFAULT_INCLUDE_VARIANTS = True
@@ -106,6 +107,24 @@ def resolve_optional_bool(name, default=False):
     return raw_value.strip().strip('"').lower() in {"1", "true", "yes", "on"}
 
 
+def resolve_prune_mode(name, default="auto"):
+    raw_value = os.getenv(name, str(default)).strip().strip('"')
+    if not raw_value:
+        return default
+
+    normalized = raw_value.lower()
+    if normalized in {"auto", "true", "false"}:
+        return normalized
+    if normalized in {"1", "yes", "on"}:
+        return "true"
+    if normalized in {"0", "no", "off"}:
+        return "false"
+
+    raise ValueError(
+        f"Unsupported value for {name}: {raw_value}. Use auto, true or false."
+    )
+
+
 def resolve_csv_env(name, default=""):
     raw_value = os.getenv(name, default)
     return {
@@ -123,7 +142,10 @@ from app.database.connection import SessionLocal, init_db  # noqa: E402
 
 MAX_RETRIES = int(os.getenv("POPULATE_RETRIES", str(DEFAULT_MAX_RETRIES)))
 REQUEST_TIMEOUT = int(os.getenv("POPULATE_REQUEST_TIMEOUT", str(DEFAULT_REQUEST_TIMEOUT)))
-POPULATE_PRUNE_STALE = resolve_optional_bool("POPULATE_PRUNE_STALE", default=DEFAULT_PRUNE_STALE)
+POPULATE_PRUNE_STALE_MODE = resolve_prune_mode(
+    "POPULATE_PRUNE_STALE",
+    default=DEFAULT_PRUNE_STALE_MODE,
+)
 POPULATE_FETCH_ONLY = resolve_optional_bool("POPULATE_FETCH_ONLY", default=DEFAULT_FETCH_ONLY)
 POPULATE_VERBOSE = resolve_optional_bool("POPULATE_VERBOSE", default=DEFAULT_VERBOSE)
 INCLUDE_VARIANTS = resolve_optional_bool(
@@ -271,6 +293,12 @@ def build_filter_description():
     if CARD_END is not None:
         parts.append(f"end={CARD_END}")
     return ", ".join(parts) if parts else "all packages"
+
+
+def build_prune_mode_description():
+    if POPULATE_PRUNE_STALE_MODE == "auto":
+        return "auto (full imports only)"
+    return POPULATE_PRUNE_STALE_MODE
 
 
 def build_session():
@@ -769,7 +797,9 @@ def ensure_tgc(db):
 
 
 def should_prune_stale_cards():
-    return POPULATE_PRUNE_STALE and not HAS_ACTIVE_FILTERS
+    if POPULATE_PRUNE_STALE_MODE == "false":
+        return False
+    return not HAS_ACTIVE_FILTERS
 
 
 def prune_stale_cards(db, stale_cards):
@@ -952,7 +982,7 @@ def upsert_cards(db, tgc_id, scraped_cards):
 
 
 def main():
-    if POPULATE_PRUNE_STALE and HAS_ACTIVE_FILTERS:
+    if POPULATE_PRUNE_STALE_MODE == "true" and HAS_ACTIVE_FILTERS:
         raise ValueError(
             "Refusing to prune stale Gundam cards during a filtered import. "
             "Disable POPULATE_PRUNE_STALE or run a full import first."
@@ -964,6 +994,7 @@ def main():
     try:
         print(f"Database target: {POPULATE_DATABASE_TARGET}")
         print(f"Filter: {build_filter_description()}")
+        print(f"Prune stale mode: {build_prune_mode_description()}")
         print(f"Include variants: {INCLUDE_VARIANTS}")
 
         scraped_cards, failed_targets, duplicate_count, selected_packages = scrape_gundam_cards()

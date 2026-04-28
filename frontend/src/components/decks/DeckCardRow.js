@@ -4,11 +4,14 @@ import { isInteractiveElementTarget } from '../../utils/clickTargets';
 function DeckCardRow({
   card,
   deckCardView,
+  actionQuantity,
   advancedDeckControlsEnabled,
   editingAssignmentCardId,
   updatingAssignmentCardId,
   updatingDeckCardId,
   maxCopiesPerCard,
+  onActionQuantityChange,
+  onApplyBatchQuantity,
   onToggleAssignmentEditor,
   onAdjustCoverage,
   onAdjustQuantity,
@@ -22,6 +25,10 @@ function DeckCardRow({
   const isUpdatingQuantity = updatingDeckCardId === card.id;
   const maxCoveredCopies = Math.min(card.quantity || 0, card.owned_quantity || 0);
   const maxQuantity = card.max_quantity_allowed || maxCopiesPerCard || 4;
+  const requestedQuantity = Number.isInteger(Number(actionQuantity)) && Number(actionQuantity) > 0
+    ? Number(actionQuantity)
+    : 1;
+  const transferQuantity = Math.max(1, Math.min(requestedQuantity, Number(card.quantity) || 1));
   const roleLabel = card.deck_role === 'leader'
     ? 'Leader'
     : card.deck_role === 'egg'
@@ -174,15 +181,45 @@ function DeckCardRow({
             +
           </button>
         </div>
+        <div className="deck-batch-editor">
+          <div className="deck-batch-controls">
+            <button
+              type="button"
+              className="secondary-inline-button secondary-inline-button-icon"
+              onClick={() => onApplyBatchQuantity(card.id, -requestedQuantity)}
+              disabled={isUpdatingQuantity}
+              aria-label="Quitar varias copias del mazo"
+            >
+              -
+            </button>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={String(actionQuantity || '1')}
+              onChange={(event) => onActionQuantityChange(card.id, event.target.value)}
+              disabled={isUpdatingQuantity}
+            />
+            <button
+              type="button"
+              className="secondary-inline-button secondary-inline-button-icon"
+              onClick={() => onApplyBatchQuantity(card.id, requestedQuantity)}
+              disabled={isUpdatingQuantity}
+              aria-label="Anadir varias copias al mazo"
+            >
+              +
+            </button>
+          </div>
+        </div>
         <span className="deck-card-limit-note">Max {maxQuantity}</span>
         {onMoveToConsidering && (
           <button
             type="button"
             className="deck-action-button is-soft deck-inline-action"
-            onClick={() => onMoveToConsidering(card.id)}
+            onClick={() => onMoveToConsidering(card.id, transferQuantity)}
             disabled={isUpdatingQuantity || (card.quantity || 0) <= 0}
           >
-            Considering
+            {transferQuantity === 1 ? 'Considering' : `Considering x${transferQuantity}`}
           </button>
         )}
       </div>
