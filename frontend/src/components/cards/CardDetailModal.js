@@ -20,6 +20,7 @@ function CardDetailModal({
   }
 
   const showAdvancedQa = Boolean(profile?.advanced_mode);
+  const detailImageSrc = card.image_url || card.thumbnail_url || '';
 
   const primaryFacts = [
     { label: 'Codigo', value: card.source_card_id || 'Sin codigo' },
@@ -132,11 +133,18 @@ function CardDetailModal({
     <div className="card-modal" onClick={onClose}>
       <div className="card-detail card-detail-modal" onClick={(event) => event.stopPropagation()}>
         <div className="card-detail-top">
-          <img
-            src={card.image_url}
-            alt={card.name}
-            className="large-image card-detail-modal-image"
-          />
+          {detailImageSrc ? (
+            <img
+              src={detailImageSrc}
+              alt={card.name}
+              className="large-image card-detail-modal-image"
+              onError={(event) => {
+                if (card.thumbnail_url && event.currentTarget.src !== card.thumbnail_url) {
+                  event.currentTarget.src = card.thumbnail_url;
+                }
+              }}
+            />
+          ) : null}
 
           <div className="card-detail-copy">
             <div className="card-detail-header">
