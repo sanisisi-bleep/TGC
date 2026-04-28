@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database.connection import get_db
@@ -66,6 +66,14 @@ def get_card_facets(response: Response, tgc_id: Optional[int] = None, db: Sessio
     _apply_cache_headers(response, FACETS_CACHE_CONTROL)
     service = CardService(db)
     return service.get_card_facets(tgc_id)
+
+@router.get("/{card_id}")
+def get_card_detail(card_id: int, db: Session = Depends(get_db)):
+    service = CardService(db)
+    try:
+        return service.get_card_by_id(card_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 @router.post("")
 def create_card(

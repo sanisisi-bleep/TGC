@@ -30,6 +30,11 @@ export const getCards = async (params, signal) => {
   return response.data || null;
 };
 
+export const getCardDetail = async (cardId, signal) => {
+  const response = await apiClient.get(`/cards/${cardId}`, { signal });
+  return response.data || null;
+};
+
 export const getCardFacets = async (tgcId, signal) => {
   const response = await apiClient.get('/cards/facets', {
     params: { tgc_id: tgcId },

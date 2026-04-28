@@ -21,6 +21,7 @@ import {
   addCardToCollection,
   addCardToConsidering,
   addCardToDeck,
+  getCardDetail,
   createDeck,
   getCardFacets,
   getCards,
@@ -264,6 +265,12 @@ function Search({ activeTcgSlug, activeTgc }) {
     staleTime: QUERY_STALE_TIMES.cardsSearch,
     placeholderData: (previousData) => previousData,
   });
+  const selectedCardDetailQuery = useQuery({
+    queryKey: queryKeys.cardDetail(selectedCard?.id || 0),
+    queryFn: ({ signal }) => getCardDetail(selectedCard.id, signal),
+    enabled: Boolean(selectedCard?.id),
+    staleTime: QUERY_STALE_TIMES.cardDetail,
+  });
   const facetsQuery = useQuery({
     queryKey: queryKeys.cardFacets(activeTgc?.id),
     queryFn: ({ signal }) => getCardFacets(activeTgc.id, signal),
@@ -385,6 +392,20 @@ function Search({ activeTcgSlug, activeTgc }) {
   );
   const effectiveCardViewMode = isMobileLayout ? cardViewMode : 'detail';
   const cardList = normalizeCardList(pagination.items);
+  const resolvedSelectedCard = useMemo(() => {
+    if (!selectedCard) {
+      return null;
+    }
+
+    if (!selectedCardDetailQuery.data) {
+      return selectedCard;
+    }
+
+    return {
+      ...selectedCard,
+      ...selectedCardDetailQuery.data,
+    };
+  }, [selectedCard, selectedCardDetailQuery.data]);
 
   useEffect(() => {
     if (!cardsRequestParams || !pagination.has_next) {
@@ -785,7 +806,7 @@ function Search({ activeTcgSlug, activeTgc }) {
       </div>
 
       <SearchCardDetailModal
-        card={selectedCard}
+        card={resolvedSelectedCard}
         activeTcgSlug={activeTcgSlug}
         actionQuantity={selectedCard ? getActionQuantity(selectedCard.id) : DEFAULT_ACTION_QUANTITY}
         onActionQuantityChange={setActionQuantityDraft}

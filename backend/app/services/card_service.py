@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import List, Optional
 
 from sqlalchemy import func, literal, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.models import Card, Deck, DeckCard, DeckEggCard, Tgc, User, UserCollection
 from app.database.repositories.card_repository import CardRepository
@@ -23,9 +23,9 @@ class CardService:
         self.card_repo = CardRepository(db)
         self._tgc_name_cache = {}
 
-    def serialize_card(self, card: Card):
+    def _serialize_card_summary_base(self, card: Card):
         image_url = self._resolve_card_image_url(card)
-        payload = {
+        return {
             "id": card.id,
             "tgc_id": card.tgc_id,
             "source_card_id": card.source_card_id,
@@ -41,15 +41,29 @@ class CardService:
             "set_name": self._normalize_set_name(card.set_name, card.card_type, card.tgc_id),
             "version": self._normalize_card_value(card.version),
             "block": card.block,
-            "traits": card.traits,
-            "link": card.link,
-            "zones": card.zones,
-            "artist": card.artist,
-            "abilities": card.abilities,
-            "description": card.description,
             "image_url": image_url,
             "thumbnail_url": build_card_thumbnail_url(image_url),
         }
+
+    def _serialize_card_base(self, card: Card):
+        payload = self._serialize_card_summary_base(card)
+        payload.update(
+            {
+                "traits": card.traits,
+                "link": card.link,
+                "zones": card.zones,
+                "artist": card.artist,
+                "abilities": card.abilities,
+                "description": card.description,
+            }
+        )
+        return payload
+
+    def serialize_card_summary(self, card: Card):
+        return self._serialize_card_summary_base(card)
+
+    def serialize_card(self, card: Card):
+        payload = self._serialize_card_base(card)
 
         if card.digimon_data:
             payload.update(
@@ -306,15 +320,29 @@ class CardService:
         current_page = min(page, total_pages) if total_pages else 1
         offset = (current_page - 1) * limit
 
-        items = (
-            self._apply_sort(query, sort)
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        items = self._apply_sort(query, sort).options(
+            load_only(
+                Card.id,
+                Card.tgc_id,
+                Card.source_card_id,
+                Card.deck_key,
+                Card.name,
+                Card.card_type,
+                Card.lv,
+                Card.cost,
+                Card.ap,
+                Card.hp,
+                Card.color,
+                Card.rarity,
+                Card.set_name,
+                Card.version,
+                Card.block,
+                Card.image_url,
+            )
+        ).offset(offset).limit(limit).all()
 
         return {
-            "items": [self.serialize_card(card) for card in items],
+            "items": [self.serialize_card_summary(card) for card in items],
             "page": current_page,
             "limit": limit,
             "total": total,
@@ -322,6 +350,12 @@ class CardService:
             "has_previous": current_page > 1,
             "has_next": total_pages > 0 and current_page < total_pages,
         }
+
+    def get_card_by_id(self, card_id: int):
+        card = self.db.query(Card).filter(Card.id == card_id).first()
+        if not card:
+            raise ValueError("Card not found")
+        return self.serialize_card(card)
 
     def _get_distinct_card_values(self, column, tgc_id: Optional[int] = None):
         query = self.db.query(column).filter(column.isnot(None), column != "")
