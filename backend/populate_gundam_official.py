@@ -509,6 +509,7 @@ def parse_detail_card(detail_html, detail_url, package_option, raw_detail_search
 
     image_node = None
     for selector in (
+        ".cardImage img",
         ".swiper-slide img",
         ".cardVisual img",
         ".detailCol img",
@@ -517,6 +518,10 @@ def parse_detail_card(detail_html, detail_url, package_option, raw_detail_search
         image_node = soup.select_one(selector)
         if image_node and image_node.get("src"):
             break
+    if image_node is None:
+        fallback_image = soup.find("img")
+        if fallback_image and fallback_image.get("src"):
+            image_node = fallback_image
     image_url = urljoin(detail_url, image_node.get("src")) if image_node and image_node.get("src") else ""
 
     effect_node = soup.select_one(".cardDataRow.overview .dataTxt")

@@ -1,4 +1,33 @@
-from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+import re
+
+
+def _build_weserv_url(source_url: str) -> str:
+    return urlunsplit(
+        (
+            "https",
+            "images.weserv.nl",
+            "/",
+            urlencode({"url": source_url}),
+            "",
+        )
+    )
+
+
+def _normalize_gundam_image_code(source_card_id: str | None) -> str:
+    normalized = (source_card_id or "").strip().upper().replace("_", "-")
+    normalized = re.sub(r"\s+", "", normalized)
+    normalized = re.sub(r"-{2,}", "-", normalized)
+    normalized = re.sub(r"-P(\d+)$", lambda match: f"_p{match.group(1)}", normalized, flags=re.IGNORECASE)
+    return normalized
+
+
+def build_gundam_card_image_url(source_card_id: str | None) -> str | None:
+    image_code = _normalize_gundam_image_code(source_card_id)
+    if not image_code:
+        return None
+
+    return _build_weserv_url(f"www.gundam-gcg.com/en/images/cards/card/{image_code}.webp")
 
 
 def normalize_card_image_url(image_url: str | None) -> str | None:
@@ -18,9 +47,9 @@ def normalize_card_image_url(image_url: str | None) -> str | None:
             normalized = normalized[len("https://"):]
         elif normalized.startswith("http://"):
             normalized = normalized[len("http://"):]
-        return f"https://images.weserv.nl/?url={quote(normalized, safe='/:?=&.-_%')}"
+        return _build_weserv_url(normalized)
 
-    return image_url
+    return normalized
 
 
 def build_card_thumbnail_url(image_url: str | None, width: int = 360) -> str | None:

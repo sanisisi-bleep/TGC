@@ -16,7 +16,7 @@ from app.services.game_rules import (
     get_one_piece_colors,
     get_tcg_rules,
 )
-from app.services.image_service import normalize_card_image_url
+from app.services.image_service import build_gundam_card_image_url, normalize_card_image_url
 
 
 class DeckService:
@@ -165,6 +165,16 @@ class DeckService:
         if self._is_digimon_tgc(deck_tgc) or self._is_gundam_tgc(deck_tgc):
             return (card.deck_key or card.source_card_id or f"CARD-{card.id}").strip()
         return (card.source_card_id or f"CARD-{card.id}").strip()
+
+    def _resolve_card_image_url(self, deck_tgc, card: Card):
+        normalized_image_url = normalize_card_image_url(card.image_url)
+        if normalized_image_url:
+            return normalized_image_url
+
+        if self._is_gundam_tgc(deck_tgc):
+            return build_gundam_card_image_url(card.source_card_id)
+
+        return normalized_image_url
 
     def _get_card_quantity_limit(self, deck_tgc, rules: dict, card: Card) -> int:
         if self._is_one_piece_tgc(deck_tgc):
@@ -742,7 +752,7 @@ class DeckService:
             "source_card_id": card.source_card_id,
             "deck_key": card.deck_key or card.source_card_id,
             "name": card.name,
-            "image_url": normalize_card_image_url(card.image_url),
+            "image_url": self._resolve_card_image_url(deck_tgc, card),
             "card_type": card.card_type,
             "lv": card.lv,
             "cost": card.cost,
@@ -765,7 +775,7 @@ class DeckService:
             "source_card_id": card.source_card_id,
             "deck_key": card.deck_key or card.source_card_id,
             "name": card.name,
-            "image_url": normalize_card_image_url(card.image_url),
+            "image_url": self._resolve_card_image_url(deck_tgc, card),
             "card_type": card.card_type,
             "lv": card.lv,
             "cost": card.cost,

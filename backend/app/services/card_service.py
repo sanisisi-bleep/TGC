@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 from app.models import Card, Deck, DeckCard, DeckEggCard, Tgc, User, UserCollection
 from app.database.repositories.card_repository import CardRepository
 from app.services.game_rules import DIGIMON_TCG_NAME, GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME, get_one_piece_card_role
-from app.services.image_service import build_card_thumbnail_url, normalize_card_image_url
+from app.services.image_service import (
+    build_card_thumbnail_url,
+    build_gundam_card_image_url,
+    normalize_card_image_url,
+)
 
 SUPPORTED_CARD_SORTS = {"name-asc", "collection-asc", "collection-desc"}
 
@@ -20,7 +24,7 @@ class CardService:
         self._tgc_name_cache = {}
 
     def serialize_card(self, card: Card):
-        image_url = normalize_card_image_url(card.image_url)
+        image_url = self._resolve_card_image_url(card)
         payload = {
             "id": card.id,
             "tgc_id": card.tgc_id,
@@ -75,6 +79,16 @@ class CardService:
             )
 
         return payload
+
+    def _resolve_card_image_url(self, card: Card):
+        normalized_image_url = normalize_card_image_url(card.image_url)
+        if normalized_image_url:
+            return normalized_image_url
+
+        if self._get_tgc_name(card.tgc_id) == GUNDAM_TGC_NAME:
+            return build_gundam_card_image_url(card.source_card_id)
+
+        return normalized_image_url
 
     def _normalize_card_value(self, value: Optional[str]) -> Optional[str]:
         if value is None:
