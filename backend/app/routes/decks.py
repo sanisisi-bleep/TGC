@@ -102,6 +102,12 @@ def get_decks(tgc_id: Optional[int] = None, db: Session = Depends(get_db), curre
     return service.get_user_decks(current_user.id, tgc_id)
 
 
+@router.get("/options")
+def get_deck_options(tgc_id: Optional[int] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    return service.get_user_deck_options(current_user.id, tgc_id)
+
+
 @router.get("/{deck_id}")
 def get_deck_details(deck_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = _deck_service(db)

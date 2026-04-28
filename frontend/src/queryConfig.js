@@ -6,6 +6,7 @@ export const QUERY_STALE_TIMES = {
   cardFacets: 60 * 60 * 1000,
   collection: 5 * 60 * 1000,
   decks: 5 * 60 * 1000,
+  deckOptions: 10 * 60 * 1000,
   deckDetail: 2 * 60 * 1000,
 };
 

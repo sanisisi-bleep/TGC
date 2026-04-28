@@ -15,7 +15,7 @@ import {
   matchesCollectionCodeQuery,
   normalizeText,
 } from '../utils/setFilters';
-import { addCardToDeck, adjustCollectionCard, getCollection, getDecks } from '../services/api';
+import { addCardToDeck, adjustCollectionCard, getCollection, getDeckOptions } from '../services/api';
 
 const EMPTY_COLLECTION = [];
 const EMPTY_DECKS = [];
@@ -117,10 +117,10 @@ function Collection({ activeTcgSlug, activeTgc }) {
     staleTime: QUERY_STALE_TIMES.collection,
   });
   const decksQuery = useQuery({
-    queryKey: queryKeys.decks(activeTgc?.id),
-    queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
+    queryKey: queryKeys.deckOptions(activeTgc?.id),
+    queryFn: ({ signal }) => getDeckOptions(activeTgc.id, signal),
     enabled: Boolean(activeTgc?.id),
-    staleTime: QUERY_STALE_TIMES.decks,
+    staleTime: QUERY_STALE_TIMES.deckOptions,
   });
 
   const collection = useMemo(
@@ -458,7 +458,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
     setCollectionSort('name-asc');
   };
 
-  if ((collectionQuery.isPending || decksQuery.isPending) && safeCollection.length === 0) {
+  if (collectionQuery.isPending && safeCollection.length === 0) {
     return (
       <div className="collection page-shell">
         <section className="page-hero collection-hero">

@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import List, Optional
 
 from sqlalchemy import func, literal, or_
-from sqlalchemy.orm import Session, load_only
+from sqlalchemy.orm import Session, joinedload, load_only
 
 from app.models import Card, Deck, DeckCard, DeckEggCard, Tgc, User, UserCollection
 from app.database.repositories.card_repository import CardRepository
@@ -456,6 +456,36 @@ class CardService:
             self.db.query(UserCollection)
             .join(Card, Card.id == UserCollection.card_id)
             .filter(UserCollection.user_id == user_id)
+            .options(
+                joinedload(UserCollection.card).options(
+                    load_only(
+                        Card.id,
+                        Card.tgc_id,
+                        Card.source_card_id,
+                        Card.deck_key,
+                        Card.name,
+                        Card.card_type,
+                        Card.lv,
+                        Card.cost,
+                        Card.ap,
+                        Card.hp,
+                        Card.color,
+                        Card.rarity,
+                        Card.set_name,
+                        Card.version,
+                        Card.block,
+                        Card.traits,
+                        Card.link,
+                        Card.zones,
+                        Card.artist,
+                        Card.abilities,
+                        Card.description,
+                        Card.image_url,
+                    ),
+                    joinedload(Card.gundam_data),
+                    joinedload(Card.digimon_data),
+                ),
+            )
         )
 
         if tgc_id is not None:

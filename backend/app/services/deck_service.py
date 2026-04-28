@@ -976,6 +976,26 @@ class DeckService:
             summaries.append(self._serialize_deck_payload(deck, deck_tgc, rules))
         return summaries
 
+    def get_user_deck_options(self, user_id: int, tgc_id: Optional[int] = None):
+        query = self.db.query(Deck).filter(Deck.user_id == user_id)
+
+        if tgc_id is not None:
+            default_tgc = self._get_default_tgc()
+            if default_tgc and tgc_id == default_tgc.id:
+                query = query.filter(or_(Deck.tgc_id == tgc_id, Deck.tgc_id.is_(None)))
+            else:
+                query = query.filter(Deck.tgc_id == tgc_id)
+
+        decks = query.order_by(Deck.created_at.desc(), Deck.id.desc()).all()
+        return [
+            {
+                "id": deck.id,
+                "name": deck.name,
+                "tgc_id": deck.tgc_id,
+            }
+            for deck in decks
+        ]
+
     def get_deck_details(self, deck_id: int, user_id: int):
         deck = self._get_user_deck_or_error(deck_id, user_id)
         deck_tgc, rules = self._get_rules_for_deck(deck)

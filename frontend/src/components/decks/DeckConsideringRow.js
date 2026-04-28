@@ -93,7 +93,7 @@ function DeckConsideringRow({
             <button
               type="button"
               className="secondary-inline-button secondary-inline-button-icon"
-              onClick={() => onApplyBatchQuantity(card.id, -requestedQuantity)}
+              onClick={() => onApplyBatchQuantity(card.id, -1)}
               disabled={isUpdating}
               aria-label="Quitar varias copias de considering"
             >
@@ -110,7 +110,7 @@ function DeckConsideringRow({
             <button
               type="button"
               className="secondary-inline-button secondary-inline-button-icon"
-              onClick={() => onApplyBatchQuantity(card.id, requestedQuantity)}
+              onClick={() => onApplyBatchQuantity(card.id, 1)}
               disabled={isUpdating}
               aria-label="Anadir varias copias a considering"
             >
@@ -122,7 +122,7 @@ function DeckConsideringRow({
         <button
           type="button"
           className="deck-action-button is-soft"
-          onClick={() => onMoveToMainDeck(card.id, transferQuantity)}
+          onClick={() => onMoveToMainDeck(card.id)}
           disabled={isMoving}
         >
           {isMoving

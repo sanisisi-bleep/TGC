@@ -69,6 +69,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const [movingConsideringCardId, setMovingConsideringCardId] = useState(null);
   const [deckListPreview, setDeckListPreview] = useState(null);
   const [deckQuantityDrafts, setDeckQuantityDrafts] = useState({});
+  const deckQuantityDraftsRef = useRef({});
   const importDeckInputRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -487,6 +488,10 @@ function Decks({ activeTcgSlug, activeTgc }) {
     }
 
     const normalizedValue = normalizeDeckQuantityInput(value);
+    deckQuantityDraftsRef.current = {
+      ...deckQuantityDraftsRef.current,
+      [storageKey]: normalizedValue,
+    };
     setDeckQuantityDrafts((current) => ({
       ...current,
       [storageKey]: normalizedValue,
@@ -494,13 +499,17 @@ function Decks({ activeTcgSlug, activeTgc }) {
   }, [normalizeDeckQuantityInput]);
 
   const getDeckActionQuantity = useCallback((storageKey) => {
-    const draftValue = deckQuantityDrafts[storageKey];
+    const draftValue = deckQuantityDraftsRef.current[storageKey] ?? deckQuantityDrafts[storageKey];
     const parsedValue = Number(draftValue);
     return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : 1;
   }, [deckQuantityDrafts]);
 
   const commitDeckActionQuantity = useCallback((storageKey) => {
     const quantity = getDeckActionQuantity(storageKey);
+    deckQuantityDraftsRef.current = {
+      ...deckQuantityDraftsRef.current,
+      [storageKey]: String(quantity),
+    };
     setDeckQuantityDrafts((current) => ({
       ...current,
       [storageKey]: String(quantity),
@@ -592,9 +601,9 @@ function Decks({ activeTcgSlug, activeTgc }) {
     adjustDeckCardMutation.mutate({ deckId, cardId, delta });
   };
 
-  const adjustDeckCardQuantityBatch = (deckId, cardId, storageKey, delta) => {
+  const adjustDeckCardQuantityBatch = (deckId, cardId, storageKey, direction) => {
     const quantity = commitDeckActionQuantity(storageKey);
-    adjustDeckCardQuantity(deckId, cardId, delta < 0 ? -quantity : quantity);
+    adjustDeckCardQuantity(deckId, cardId, direction < 0 ? -quantity : quantity);
   };
 
   const adjustConsideringQuantity = (deckId, cardId, delta) => {
@@ -602,9 +611,9 @@ function Decks({ activeTcgSlug, activeTgc }) {
     adjustConsideringMutation.mutate({ deckId, cardId, delta });
   };
 
-  const adjustConsideringQuantityBatch = (deckId, cardId, storageKey, delta) => {
+  const adjustConsideringQuantityBatch = (deckId, cardId, storageKey, direction) => {
     const quantity = commitDeckActionQuantity(storageKey);
-    adjustConsideringQuantity(deckId, cardId, delta < 0 ? -quantity : quantity);
+    adjustConsideringQuantity(deckId, cardId, direction < 0 ? -quantity : quantity);
   };
 
   const moveDeckCardToConsideringHandler = (deckId, cardId, quantity = 1) => {
@@ -849,11 +858,15 @@ function Decks({ activeTcgSlug, activeTgc }) {
                       updatingDeckCardId={updatingDeckCardId}
                       maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
                       onActionQuantityChange={(cardId, value) => setDeckActionQuantityDraft(`main:${cardId}`, value)}
-                      onApplyBatchQuantity={(cardId, delta) => adjustDeckCardQuantityBatch(selectedDeck.id, cardId, `main:${cardId}`, delta)}
+                      onApplyBatchQuantity={(cardId, direction) => adjustDeckCardQuantityBatch(selectedDeck.id, cardId, `main:${cardId}`, direction)}
                       onToggleAssignmentEditor={toggleAssignmentEditor}
                       onAdjustCoverage={adjustDeckCoverage}
                       onAdjustQuantity={(cardId, delta) => adjustDeckCardQuantity(selectedDeck.id, cardId, delta)}
-                      onMoveToConsidering={(cardId, quantity) => moveDeckCardToConsideringHandler(selectedDeck.id, cardId, quantity)}
+                      onMoveToConsidering={(cardId) => moveDeckCardToConsideringHandler(
+                        selectedDeck.id,
+                        cardId,
+                        Math.min(commitDeckActionQuantity(`main:${cardId}`), Number(card.quantity) || 1),
+                      )}
                       onOpenCard={setSelectedCard}
                     />
                   ))}
@@ -901,11 +914,15 @@ function Decks({ activeTcgSlug, activeTgc }) {
                             updatingDeckCardId={updatingDeckCardId}
                             maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
                             onActionQuantityChange={(cardId, value) => setDeckActionQuantityDraft(`egg:${cardId}`, value)}
-                            onApplyBatchQuantity={(cardId, delta) => adjustDeckCardQuantityBatch(selectedDeck.id, cardId, `egg:${cardId}`, delta)}
+                            onApplyBatchQuantity={(cardId, direction) => adjustDeckCardQuantityBatch(selectedDeck.id, cardId, `egg:${cardId}`, direction)}
                             onToggleAssignmentEditor={toggleAssignmentEditor}
                             onAdjustCoverage={adjustDeckCoverage}
                             onAdjustQuantity={(cardId, delta) => adjustDeckCardQuantity(selectedDeck.id, cardId, delta)}
-                            onMoveToConsidering={(cardId, quantity) => moveDeckCardToConsideringHandler(selectedDeck.id, cardId, quantity)}
+                            onMoveToConsidering={(cardId) => moveDeckCardToConsideringHandler(
+                              selectedDeck.id,
+                              cardId,
+                              Math.min(commitDeckActionQuantity(`egg:${cardId}`), Number(card.quantity) || 1),
+                            )}
                             onOpenCard={setSelectedCard}
                           />
                         ))}
@@ -948,9 +965,13 @@ function Decks({ activeTcgSlug, activeTgc }) {
                           movingConsideringCardId={movingConsideringCardId}
                           updatingConsideringCardId={updatingConsideringCardId}
                           onActionQuantityChange={(cardId, value) => setDeckActionQuantityDraft(`considering:${cardId}`, value)}
-                          onApplyBatchQuantity={(cardId, delta) => adjustConsideringQuantityBatch(selectedDeck.id, cardId, `considering:${cardId}`, delta)}
+                          onApplyBatchQuantity={(cardId, direction) => adjustConsideringQuantityBatch(selectedDeck.id, cardId, `considering:${cardId}`, direction)}
                           onAdjustQuantity={(cardId, delta) => adjustConsideringQuantity(selectedDeck.id, cardId, delta)}
-                          onMoveToMainDeck={(cardId, quantity) => moveConsideringCardToDeckHandler(selectedDeck.id, cardId, quantity)}
+                          onMoveToMainDeck={(cardId) => moveConsideringCardToDeckHandler(
+                            selectedDeck.id,
+                            cardId,
+                            Math.min(commitDeckActionQuantity(`considering:${cardId}`), Number(card.quantity) || 1),
+                          )}
                           onOpenCard={setSelectedCard}
                         />
                       ))}

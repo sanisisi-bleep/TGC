@@ -186,7 +186,7 @@ function DeckCardRow({
             <button
               type="button"
               className="secondary-inline-button secondary-inline-button-icon"
-              onClick={() => onApplyBatchQuantity(card.id, -requestedQuantity)}
+              onClick={() => onApplyBatchQuantity(card.id, -1)}
               disabled={isUpdatingQuantity}
               aria-label="Quitar varias copias del mazo"
             >
@@ -203,7 +203,7 @@ function DeckCardRow({
             <button
               type="button"
               className="secondary-inline-button secondary-inline-button-icon"
-              onClick={() => onApplyBatchQuantity(card.id, requestedQuantity)}
+              onClick={() => onApplyBatchQuantity(card.id, 1)}
               disabled={isUpdatingQuantity}
               aria-label="Anadir varias copias al mazo"
             >
@@ -216,7 +216,7 @@ function DeckCardRow({
           <button
             type="button"
             className="deck-action-button is-soft deck-inline-action"
-            onClick={() => onMoveToConsidering(card.id, transferQuantity)}
+            onClick={() => onMoveToConsidering(card.id)}
             disabled={isUpdatingQuantity || (card.quantity || 0) <= 0}
           >
             {transferQuantity === 1 ? 'Considering' : `Considering x${transferQuantity}`}

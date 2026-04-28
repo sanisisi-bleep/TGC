@@ -69,6 +69,14 @@ export const getDecks = async (tgcId, signal) => {
   return Array.isArray(response.data) ? response.data : [];
 };
 
+export const getDeckOptions = async (tgcId, signal) => {
+  const response = await apiClient.get('/decks/options', {
+    params: { tgc_id: tgcId },
+    signal,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+};
+
 export const getDeckDetail = async (deckId, signal) => {
   const response = await apiClient.get(`/decks/${deckId}`, { signal });
   return response.data || null;
