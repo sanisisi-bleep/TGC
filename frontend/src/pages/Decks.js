@@ -2,21 +2,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import CardDetailModal from '../components/cards/CardDetailModal';
-import DeckCardRow from '../components/decks/DeckCardRow';
-import DeckConsideringRow from '../components/decks/DeckConsideringRow';
-import DeckDetailActions from '../components/decks/DeckDetailActions';
+import DeckDetailModal from '../components/decks/DeckDetailModal';
 import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
-import DeckStatsPanel from '../components/decks/DeckStatsPanel';
 import DeckSummaryCard from '../components/decks/DeckSummaryCard';
 import { isUnauthorizedError, useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
+import usePositiveIntegerDraftMap from '../hooks/usePositiveIntegerDraftMap';
 import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
 import { getGameConfig } from '../tcgConfig';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { applyCollectionDeckUsageUpdate, renameDeckInCollection } from '../utils/collectionCache';
 import {
-  MAX_COPIES_PER_CARD,
   applyDeckAssignmentMutation,
   applyDeckQuantityMutation,
   buildDeckExportPayload,
@@ -69,8 +66,6 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const [updatingConsideringCardId, setUpdatingConsideringCardId] = useState(null);
   const [movingConsideringCardId, setMovingConsideringCardId] = useState(null);
   const [deckListPreview, setDeckListPreview] = useState(null);
-  const [deckQuantityDrafts, setDeckQuantityDrafts] = useState({});
-  const deckQuantityDraftsRef = useRef({});
   const importDeckInputRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -106,6 +101,16 @@ function Decks({ activeTcgSlug, activeTgc }) {
     : selectedDeckIsDigimon
       ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | Eggs ${selectedDeck?.egg_cards || 0}/${selectedDeck?.max_egg_cards || 5}`
     : `${selectedDeck?.total_cards || 0} cartas en total`;
+  const {
+    setDraft: setDeckActionQuantityDraft,
+    getQuantity: getDeckActionQuantity,
+    commitQuantity: commitDeckActionQuantity,
+    resetDrafts: resetDeckActionQuantityDrafts,
+  } = usePositiveIntegerDraftMap({
+    defaultQuantity: 1,
+    maxDigits: 3,
+    allowEmpty: false,
+  });
 
   useEffect(() => {
     localStorage.setItem('deckCardViewMode', deckCardView);
@@ -116,6 +121,12 @@ function Decks({ activeTcgSlug, activeTgc }) {
       setDraftDeckName(selectedDeck.name);
     }
   }, [selectedDeck?.name]);
+
+  useEffect(() => {
+    if (!selectedDeckId) {
+      resetDeckActionQuantityDrafts();
+    }
+  }, [resetDeckActionQuantityDrafts, selectedDeckId]);
 
   useEffect(() => {
     const deckId = location.state?.openDeckId;
@@ -586,46 +597,6 @@ function Decks({ activeTcgSlug, activeTgc }) {
     createDeckMutation.mutate({ name: newDeckName, tgc_id: activeTgc.id });
   };
 
-  const normalizeDeckQuantityInput = useCallback((value) => {
-    const digitsOnly = String(value || '').replace(/[^\d]/g, '');
-    return digitsOnly ? digitsOnly.slice(0, 3) : '1';
-  }, []);
-
-  const setDeckActionQuantityDraft = useCallback((storageKey, value) => {
-    if (!storageKey) {
-      return;
-    }
-
-    const normalizedValue = normalizeDeckQuantityInput(value);
-    deckQuantityDraftsRef.current = {
-      ...deckQuantityDraftsRef.current,
-      [storageKey]: normalizedValue,
-    };
-    setDeckQuantityDrafts((current) => ({
-      ...current,
-      [storageKey]: normalizedValue,
-    }));
-  }, [normalizeDeckQuantityInput]);
-
-  const getDeckActionQuantity = useCallback((storageKey) => {
-    const draftValue = deckQuantityDraftsRef.current[storageKey] ?? deckQuantityDrafts[storageKey];
-    const parsedValue = Number(draftValue);
-    return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : 1;
-  }, [deckQuantityDrafts]);
-
-  const commitDeckActionQuantity = useCallback((storageKey) => {
-    const quantity = getDeckActionQuantity(storageKey);
-    deckQuantityDraftsRef.current = {
-      ...deckQuantityDraftsRef.current,
-      [storageKey]: String(quantity),
-    };
-    setDeckQuantityDrafts((current) => ({
-      ...current,
-      [storageKey]: String(quantity),
-    }));
-    return quantity;
-  }, [getDeckActionQuantity]);
-
   const deleteDeckHandler = (deckId, deckName) => {
     const confirmed = window.confirm(`Se borrara el mazo "${deckName}". Esta accion no se puede deshacer.`);
     if (!confirmed) {
@@ -845,261 +816,50 @@ function Decks({ activeTcgSlug, activeTgc }) {
         )}
       </section>
 
-      {selectedDeckId && (
-        <div className="card-modal deck-modal" onClick={closeDeckDetails}>
-          <div className="deck-detail panel" onClick={(e) => e.stopPropagation()}>
-            {selectedDeckQuery.isPending && !selectedDeck ? (
-              <div className="deck-detail-loading">
-                <h2>Cargando mazo...</h2>
-              </div>
-            ) : selectedDeck ? (
-              <>
-                <div className="deck-detail-header">
-                  <div>
-                    <span className="eyebrow">Detalle del mazo</span>
-                    <div className="deck-title-edit">
-                      <input
-                        type="text"
-                        value={draftDeckName}
-                        onChange={(e) => setDraftDeckName(e.target.value)}
-                        maxLength={100}
-                      />
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={renameDeckHandler}
-                        disabled={renamingDeckId === selectedDeck?.id}
-                      >
-                        {renamingDeckId === selectedDeck?.id ? 'Guardando...' : 'Renombrar'}
-                      </button>
-                    </div>
-                    <p>
-                      {`${selectedDeckDistinctCards} cartas distintas | ${selectedDeckSummary}${selectedDeckConsideringTotal > 0 ? ` | Considering ${selectedDeckConsideringTotal}` : ''}`}
-                    </p>
-                    <div className="deck-status-row">
-                      <span className={`deck-status-chip ${selectedDeck?.is_complete ? 'is-complete' : 'is-incomplete'}`}>
-                        {selectedDeck?.is_complete ? 'Mazo completo' : 'Mazo incompleto'}
-                      </span>
-                      <span className="deck-status-chip deck-progress-chip">
-                        {selectedDeckIsOnePiece
-                          ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50}`
-                          : selectedDeckIsDigimon
-                            ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50}`
-                          : `${selectedDeck?.total_cards || 0}/${selectedDeck?.max_cards || 50}`}
-                      </span>
-                      {selectedDeckIsOnePiece && (
-                        <>
-                          <span className="deck-status-chip deck-progress-chip">
-                            Leader {selectedDeck?.leader_cards || 0}/{selectedDeck?.required_leader_cards || 1}
-                          </span>
-                          <span className="deck-status-chip deck-progress-chip">
-                            DON {selectedDeck?.don_cards || 0}/{selectedDeck?.recommended_don_cards || 10}
-                          </span>
-                        </>
-                      )}
-                      {selectedDeckIsDigimon && (
-                        <span className="deck-status-chip deck-progress-chip">
-                          Eggs {selectedDeck?.egg_cards || 0}/{selectedDeck?.max_egg_cards || 5}
-                        </span>
-                      )}
-                      {(selectedDeck?.missing_copies || 0) > 0 && (
-                        <span className="deck-status-chip deck-missing-chip">
-                          Faltan {selectedDeck?.missing_copies} copias
-                        </span>
-                      )}
-                      {selectedDeckConsideringTotal > 0 && (
-                        <span className="deck-status-chip deck-progress-chip">
-                          Considering {selectedDeckConsideringTotal}
-                        </span>
-                      )}
-                    </div>
-                    <div className="view-toggle deck-view-toggle" role="tablist" aria-label="Vista del mazo">
-                      <button
-                        type="button"
-                        className={deckCardView === 'detail' ? 'is-active' : ''}
-                        onClick={() => setDeckCardView('detail')}
-                      >
-                        Ficha
-                      </button>
-                      <button
-                        type="button"
-                        className={deckCardView === 'grid' ? 'is-active' : ''}
-                        onClick={() => setDeckCardView('grid')}
-                      >
-                        Cuadricula
-                      </button>
-                      <button
-                        type="button"
-                        className={deckCardView === 'inventory' ? 'is-active' : ''}
-                        onClick={() => setDeckCardView('inventory')}
-                      >
-                        Solo copias
-                      </button>
-                    </div>
-                  </div>
-                  <DeckDetailActions
-                    onOpenList={() => openDeckListPreview(selectedDeck)}
-                    onExportJson={() => exportDeckHandler(selectedDeck)}
-                    onShare={() => shareDeckHandler(selectedDeck)}
-                    onClone={() => cloneDeckHandler(selectedDeck.id)}
-                    onDelete={() => deleteDeckHandler(selectedDeck.id, selectedDeck.name)}
-                    onClose={closeDeckDetails}
-                    isSharing={sharingDeckId === selectedDeck?.id}
-                    isCloning={cloningDeckId === selectedDeck?.id}
-                    isDeleting={deletingDeckId === selectedDeck?.id}
-                  />
-                </div>
-
-                <DeckStatsPanel stats={deckStats} />
-
-                <div
-                  className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}
-                >
-                  {(selectedDeck?.cards || []).map((card) => (
-                    <DeckCardRow
-                      key={card.id}
-                      card={card}
-                      actionQuantity={getDeckActionQuantity(`main:${card.id}`)}
-                      deckCardView={deckCardView}
-                      advancedDeckControlsEnabled={advancedDeckControlsEnabled}
-                      editingAssignmentCardId={editingAssignmentCardId}
-                      updatingAssignmentCardId={updatingAssignmentCardId}
-                      updatingDeckCardId={updatingDeckCardId}
-                      maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
-                      onActionQuantityChange={(cardId, value) => setDeckActionQuantityDraft(`main:${cardId}`, value)}
-                      onApplyBatchQuantity={(cardId, direction) => adjustDeckCardQuantityBatch(selectedDeck.id, cardId, `main:${cardId}`, direction)}
-                      onToggleAssignmentEditor={toggleAssignmentEditor}
-                      onAdjustCoverage={adjustDeckCoverage}
-                      onAdjustQuantity={(cardId, delta) => adjustDeckCardQuantity(selectedDeck.id, cardId, delta)}
-                      onMoveToConsidering={(cardId) => moveDeckCardToConsideringHandler(
-                        selectedDeck.id,
-                        cardId,
-                        Math.min(commitDeckActionQuantity(`main:${cardId}`), Number(card.quantity) || 1),
-                      )}
-                      onOpenCard={setSelectedCard}
-                    />
-                  ))}
-                </div>
-
-                {(selectedDeck?.cards || []).length === 0 && (
-                  <div className="empty-state subtle-empty">
-                    <p>Este mazo todavia no tiene cartas.</p>
-                  </div>
-                )}
-
-                {selectedDeckIsDigimon && (
-                  <section className="deck-considering-section panel">
-                    <div className="deck-considering-header">
-                      <div>
-                        <span className="eyebrow">Digi-Egg Deck</span>
-                        <h3>Huevos del mazo</h3>
-                        <p>
-                          Esta seccion no entra en la mano inicial y se valida aparte del main deck.
-                        </p>
-                      </div>
-                      <div className="deck-status-row">
-                        <span className="deck-status-chip deck-progress-chip">
-                          {selectedDeck?.egg_unique_cards || 0} distintas
-                        </span>
-                        <span className="deck-status-chip deck-progress-chip">
-                          {selectedDeck?.egg_total_cards || 0} copias
-                        </span>
-                      </div>
-                    </div>
-
-                    {(selectedDeck?.egg_cards || []).length > 0 ? (
-                      <div
-                        className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}
-                      >
-                        {(selectedDeck?.egg_cards || []).map((card) => (
-                          <DeckCardRow
-                            key={`egg-${card.id}`}
-                            card={card}
-                            actionQuantity={getDeckActionQuantity(`egg:${card.id}`)}
-                            deckCardView={deckCardView}
-                            advancedDeckControlsEnabled={advancedDeckControlsEnabled}
-                            editingAssignmentCardId={editingAssignmentCardId}
-                            updatingAssignmentCardId={updatingAssignmentCardId}
-                            updatingDeckCardId={updatingDeckCardId}
-                            maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
-                            onActionQuantityChange={(cardId, value) => setDeckActionQuantityDraft(`egg:${cardId}`, value)}
-                            onApplyBatchQuantity={(cardId, direction) => adjustDeckCardQuantityBatch(selectedDeck.id, cardId, `egg:${cardId}`, direction)}
-                            onToggleAssignmentEditor={toggleAssignmentEditor}
-                            onAdjustCoverage={adjustDeckCoverage}
-                            onAdjustQuantity={(cardId, delta) => adjustDeckCardQuantity(selectedDeck.id, cardId, delta)}
-                            onMoveToConsidering={(cardId) => moveDeckCardToConsideringHandler(
-                              selectedDeck.id,
-                              cardId,
-                              Math.min(commitDeckActionQuantity(`egg:${cardId}`), Number(card.quantity) || 1),
-                            )}
-                            onOpenCard={setSelectedCard}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="empty-state subtle-empty">
-                        <p>Todavia no has anadido cartas al Digi-Egg Deck.</p>
-                      </div>
-                    )}
-                  </section>
-                )}
-
-                <section className="deck-considering-section panel">
-                  <div className="deck-considering-header">
-                    <div>
-                      <span className="eyebrow">Considering</span>
-                      <h3>Cartas en observacion</h3>
-                      <p>
-                        Guarda aqui pruebas y opciones sin que cuenten para la lista principal,
-                        la curva ni la mano inicial.
-                      </p>
-                    </div>
-                    <div className="deck-status-row">
-                      <span className="deck-status-chip deck-progress-chip">
-                        {selectedDeck?.considering_unique_cards || 0} distintas
-                      </span>
-                      <span className="deck-status-chip deck-progress-chip">
-                        {selectedDeckConsideringTotal} copias
-                      </span>
-                    </div>
-                  </div>
-
-                  {(selectedDeck?.considering_cards || []).length > 0 ? (
-                    <div className="deck-considering-list">
-                      {(selectedDeck?.considering_cards || []).map((card) => (
-                        <DeckConsideringRow
-                          key={`considering-${card.id}`}
-                          card={card}
-                          actionQuantity={getDeckActionQuantity(`considering:${card.id}`)}
-                          movingConsideringCardId={movingConsideringCardId}
-                          updatingConsideringCardId={updatingConsideringCardId}
-                          onActionQuantityChange={(cardId, value) => setDeckActionQuantityDraft(`considering:${cardId}`, value)}
-                          onApplyBatchQuantity={(cardId, direction) => adjustConsideringQuantityBatch(selectedDeck.id, cardId, `considering:${cardId}`, direction)}
-                          onAdjustQuantity={(cardId, delta) => adjustConsideringQuantity(selectedDeck.id, cardId, delta)}
-                          onMoveToMainDeck={(cardId) => moveConsideringCardToDeckHandler(
-                            selectedDeck.id,
-                            cardId,
-                            Math.min(commitDeckActionQuantity(`considering:${cardId}`), Number(card.quantity) || 1),
-                          )}
-                          onOpenCard={setSelectedCard}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="empty-state subtle-empty">
-                      <p>Todavia no has guardado cartas en considering para este mazo.</p>
-                    </div>
-                  )}
-                </section>
-              </>
-            ) : (
-              <div className="deck-detail-loading">
-                <h2>No se pudo cargar el mazo.</h2>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <DeckDetailModal
+        isOpen={Boolean(selectedDeckId)}
+        isLoading={selectedDeckQuery.isPending}
+        selectedDeck={selectedDeck}
+        selectedDeckDistinctCards={selectedDeckDistinctCards}
+        selectedDeckSummary={selectedDeckSummary}
+        selectedDeckConsideringTotal={selectedDeckConsideringTotal}
+        selectedDeckIsOnePiece={selectedDeckIsOnePiece}
+        selectedDeckIsDigimon={selectedDeckIsDigimon}
+        deckCardView={deckCardView}
+        onDeckCardViewChange={setDeckCardView}
+        deckStats={deckStats}
+        draftDeckName={draftDeckName}
+        onDraftDeckNameChange={setDraftDeckName}
+        renamingDeckId={renamingDeckId}
+        onRenameDeck={renameDeckHandler}
+        sharingDeckId={sharingDeckId}
+        cloningDeckId={cloningDeckId}
+        deletingDeckId={deletingDeckId}
+        onShareDeck={shareDeckHandler}
+        onCloneDeck={cloneDeckHandler}
+        onDeleteDeck={deleteDeckHandler}
+        onClose={closeDeckDetails}
+        onOpenDeckList={openDeckListPreview}
+        onExportDeck={exportDeckHandler}
+        advancedDeckControlsEnabled={advancedDeckControlsEnabled}
+        editingAssignmentCardId={editingAssignmentCardId}
+        updatingAssignmentCardId={updatingAssignmentCardId}
+        updatingDeckCardId={updatingDeckCardId}
+        movingConsideringCardId={movingConsideringCardId}
+        updatingConsideringCardId={updatingConsideringCardId}
+        getDeckActionQuantity={getDeckActionQuantity}
+        onDeckActionQuantityChange={setDeckActionQuantityDraft}
+        commitDeckActionQuantity={commitDeckActionQuantity}
+        onToggleAssignmentEditor={toggleAssignmentEditor}
+        onAdjustCoverage={adjustDeckCoverage}
+        onApplyDeckBatchQuantity={adjustDeckCardQuantityBatch}
+        onAdjustDeckQuantity={adjustDeckCardQuantity}
+        onMoveDeckCardToConsidering={moveDeckCardToConsideringHandler}
+        onApplyConsideringBatchQuantity={adjustConsideringQuantityBatch}
+        onAdjustConsideringQuantity={adjustConsideringQuantity}
+        onMoveConsideringCardToDeck={moveConsideringCardToDeckHandler}
+        onOpenCard={setSelectedCard}
+      />
 
       <CardDetailModal
         card={selectedCard}

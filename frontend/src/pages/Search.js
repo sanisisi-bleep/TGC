@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import SearchCardDetailModal from '../components/search/SearchCardDetailModal';
@@ -9,6 +9,7 @@ import SearchResultsToolbar from '../components/search/SearchResultsToolbar';
 import { getGameConfig } from '../tcgConfig';
 import { useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
+import usePositiveIntegerDraftMap from '../hooks/usePositiveIntegerDraftMap';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { getNewDeckCreationPlan } from '../utils/deckTools';
 import queryKeys from '../queryKeys';
@@ -146,18 +147,6 @@ const normalizeDeckList = (payload) => (Array.isArray(payload) ? payload : EMPTY
 const normalizeCardList = (payload) => (Array.isArray(payload) ? payload : EMPTY_CARDS);
 const isUnauthorizedError = (error) => error?.response?.status === 401;
 
-const normalizeQuantityInput = (value) => value.replace(/[^\d]/g, '');
-
-const clampActionQuantity = (value) => {
-  const parsedValue = Number.parseInt(value, 10);
-
-  if (!Number.isFinite(parsedValue) || parsedValue < DEFAULT_ACTION_QUANTITY) {
-    return DEFAULT_ACTION_QUANTITY;
-  }
-
-  return Math.min(parsedValue, MAX_ACTION_QUANTITY);
-};
-
 const useDebouncedValue = (value, delay) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -189,7 +178,6 @@ function Search({ activeTcgSlug, activeTgc }) {
   const [selectedCard, setSelectedCard] = useState(null);
   const [deckPickerCard, setDeckPickerCard] = useState(null);
   const [newDeckName, setNewDeckName] = useState('');
-  const [actionQuantityDrafts, setActionQuantityDrafts] = useState({});
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState('name-asc');
   const [pageSize, setPageSize] = useState(() => readStoredEnumValue(
@@ -204,6 +192,18 @@ function Search({ activeTcgSlug, activeTgc }) {
     'detail'
   ));
   const advancedMode = Boolean(profile?.advanced_mode);
+  const {
+    setDraft: setActionQuantityDraft,
+    getQuantity: getActionQuantity,
+    commitQuantity: commitActionQuantity,
+    stepQuantity: stepActionQuantity,
+    resetDrafts: resetActionQuantityDrafts,
+  } = usePositiveIntegerDraftMap({
+    defaultQuantity: DEFAULT_ACTION_QUANTITY,
+    maxValue: MAX_ACTION_QUANTITY,
+    maxDigits: 2,
+    allowEmpty: true,
+  });
 
   const cardsRequestParams = useMemo(
     () => buildCardsRequestParams({
@@ -259,8 +259,8 @@ function Search({ activeTcgSlug, activeTgc }) {
     setSelectedCard(null);
     setDeckPickerCard(null);
     setNewDeckName('');
-    setActionQuantityDrafts({});
-  }, [activeTcgSlug, activeTgc?.id]);
+    resetActionQuantityDrafts();
+  }, [activeTcgSlug, activeTgc?.id, resetActionQuantityDrafts]);
 
   const cardsQuery = useQuery({
     queryKey: queryKeys.cardsSearch(cardsRequestParams || { tgc_id: activeTgc?.id || 0 }),
@@ -453,55 +453,6 @@ function Search({ activeTcgSlug, activeTgc }) {
     }
   }, [page, pagination.page]);
 
-  const setActionQuantityDraft = useCallback((cardId, value) => {
-    if (!cardId) {
-      return;
-    }
-
-    const normalizedValue = normalizeQuantityInput(String(value));
-    setActionQuantityDrafts((current) => ({
-      ...current,
-      [cardId]: normalizedValue,
-    }));
-  }, []);
-
-  const getActionQuantity = useCallback((cardId) => {
-    const draftValue = actionQuantityDrafts[cardId];
-    if (!draftValue) {
-      return DEFAULT_ACTION_QUANTITY;
-    }
-
-    return clampActionQuantity(draftValue);
-  }, [actionQuantityDrafts]);
-
-  const commitActionQuantity = useCallback((cardId) => {
-    if (!cardId) {
-      return DEFAULT_ACTION_QUANTITY;
-    }
-
-    const normalizedValue = clampActionQuantity(actionQuantityDrafts[cardId]);
-    setActionQuantityDrafts((current) => ({
-      ...current,
-      [cardId]: String(normalizedValue),
-    }));
-    return normalizedValue;
-  }, [actionQuantityDrafts]);
-
-  const stepActionQuantity = useCallback((cardId, delta) => {
-    if (!cardId) {
-      return;
-    }
-
-    const nextQuantity = Math.max(
-      DEFAULT_ACTION_QUANTITY,
-      Math.min(getActionQuantity(cardId) + delta, MAX_ACTION_QUANTITY)
-    );
-    setActionQuantityDrafts((current) => ({
-      ...current,
-      [cardId]: String(nextQuantity),
-    }));
-  }, [getActionQuantity]);
-
   const handleAddToCollection = async (cardId, quantityOverride = null) => {
     const parsedCardId = Number(cardId);
 
@@ -513,10 +464,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     const quantity = quantityOverride ?? commitActionQuantity(parsedCardId);
 
     if (quantityOverride !== null) {
-      setActionQuantityDrafts((current) => ({
-        ...current,
-        [parsedCardId]: String(quantityOverride),
-      }));
+      setActionQuantityDraft(parsedCardId, quantityOverride);
     }
 
     addToCollectionMutation.mutate({
@@ -531,10 +479,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     setNewDeckName(card ? `${card.name} Test` : '');
 
     if (quantityOverride !== null) {
-      setActionQuantityDrafts((current) => ({
-        ...current,
-        [cardId]: String(quantityOverride),
-      }));
+      setActionQuantityDraft(cardId, quantityOverride);
     } else {
       commitActionQuantity(cardId);
     }
