@@ -7,6 +7,7 @@ export const queryKeys = {
   collection: (tgcId) => ['collection', tgcId],
   decks: (tgcId) => ['decks', tgcId],
   deckOptions: (tgcId) => ['decks', 'options', tgcId],
+  searchDeckOptions: (tgcId) => ['decks', 'search-options', tgcId],
   deckDetail: (deckId) => ['decks', 'detail', deckId],
   sharedDeck: (shareToken) => ['decks', 'shared', shareToken],
   adminUsers: () => ['settings', 'users'],

@@ -285,6 +285,50 @@ class DeckServicePayloadMixin:
             for deck in decks
         ]
 
+    def get_user_deck_search_options(self, user_id: int, tgc_id: Optional[int] = None):
+        query = self.db.query(Deck).filter(Deck.user_id == user_id)
+
+        if tgc_id is not None:
+            default_tgc = self._get_default_tgc()
+            if default_tgc and tgc_id == default_tgc.id:
+                query = query.filter(or_(Deck.tgc_id == tgc_id, Deck.tgc_id.is_(None)))
+            else:
+                query = query.filter(Deck.tgc_id == tgc_id)
+
+        decks = query.order_by(Deck.created_at.desc(), Deck.id.desc()).all()
+        options = []
+
+        for deck in decks:
+            deck_tgc, rules = self._get_rules_for_deck(deck)
+            playable_entries = self._get_playable_entries(deck.id)
+            composition = self._build_deck_composition(deck_tgc, rules, playable_entries)
+            total_cards = sum(entry["quantity"] for entry in playable_entries)
+            options.append(
+                {
+                    "id": deck.id,
+                    "name": deck.name,
+                    "tgc_id": deck.tgc_id,
+                    "tgc_name": deck_tgc.name if deck_tgc else GUNDAM_TGC_NAME,
+                    "format_mode": composition["format_mode"],
+                    "total_cards": total_cards,
+                    "max_cards": rules["deck_max_cards"],
+                    "leader_cards": composition["leader_cards"],
+                    "required_leader_cards": composition["required_leader_cards"],
+                    "main_deck_cards": composition["main_deck_cards"],
+                    "required_main_deck_cards": composition["required_main_deck_cards"],
+                    "don_cards": composition["don_cards"],
+                    "recommended_don_cards": composition["recommended_don_cards"],
+                    "egg_cards": composition.get("egg_cards", 0),
+                    "max_egg_cards": composition.get("max_egg_cards", 0),
+                    "leader_color_labels": composition["leader_color_labels"],
+                    "deck_color_labels": composition.get("deck_color_labels", []),
+                    "max_deck_colors": composition.get("max_deck_colors", 0),
+                    "is_complete": composition["is_valid"],
+                }
+            )
+
+        return options
+
     def get_deck_details(self, deck_id: int, user_id: int):
         deck = self._get_user_deck_or_error(deck_id, user_id)
         deck_tgc, rules = self._get_rules_for_deck(deck)

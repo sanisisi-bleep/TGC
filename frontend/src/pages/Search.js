@@ -28,7 +28,7 @@ import {
   createDeck,
   getCardFacets,
   getCards,
-  getDeckOptions,
+  getSearchDeckOptions,
 } from '../services/api';
 
 const SEARCH_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
@@ -282,10 +282,10 @@ function Search({ activeTcgSlug, activeTgc }) {
     staleTime: QUERY_STALE_TIMES.cardFacets,
   });
   const decksQuery = useQuery({
-    queryKey: queryKeys.deckOptions(activeTgc?.id),
-    queryFn: ({ signal }) => getDeckOptions(activeTgc.id, signal),
+    queryKey: queryKeys.searchDeckOptions(activeTgc?.id),
+    queryFn: ({ signal }) => getSearchDeckOptions(activeTgc.id, signal),
     enabled: Boolean(activeTgc?.id && deckPickerCard),
-    staleTime: QUERY_STALE_TIMES.deckOptions,
+    staleTime: QUERY_STALE_TIMES.searchDeckOptions,
   });
 
   useEffect(() => {
@@ -343,6 +343,7 @@ function Search({ activeTcgSlug, activeTgc }) {
       ));
       queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.collection(activeTgc?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc?.id) });
       showToast({
         type: 'success',
         message: variables.quantity === 1
@@ -369,6 +370,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc?.id) });
       showToast({
         type: 'success',
         message: variables.quantity === 1
@@ -392,7 +394,7 @@ function Search({ activeTcgSlug, activeTgc }) {
     mutationFn: createDeck,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.deckOptions(activeTgc?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc?.id) });
     },
   });
 
@@ -485,9 +487,9 @@ function Search({ activeTcgSlug, activeTgc }) {
     }
 
     await queryClient.ensureQueryData({
-      queryKey: queryKeys.deckOptions(activeTgc?.id),
-      queryFn: () => getDeckOptions(activeTgc.id),
-      staleTime: QUERY_STALE_TIMES.deckOptions,
+      queryKey: queryKeys.searchDeckOptions(activeTgc?.id),
+      queryFn: () => getSearchDeckOptions(activeTgc.id),
+      staleTime: QUERY_STALE_TIMES.searchDeckOptions,
     });
   };
 

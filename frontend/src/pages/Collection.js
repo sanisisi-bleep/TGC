@@ -254,6 +254,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
         data?.deck_section || 'main'
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc?.id) });
       showToast({
         type: 'success',
         message: Number(variables.quantity) === 1

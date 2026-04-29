@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { isUnauthorizedError, useSession } from '../context/SessionContext';
@@ -38,6 +38,8 @@ const DEFAULT_FEEDBACK_DRAFT = {
   message: '',
   allowContact: true,
 };
+const FEEDBACK_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const FEEDBACK_ATTACHMENT_ACCEPT = 'image/*,video/*,audio/*';
 
 const readFeedbackDraft = () => {
   if (typeof window === 'undefined') {
@@ -61,7 +63,32 @@ const readFeedbackDraft = () => {
   }
 };
 
-const buildFeedbackPreview = (draft, profile) => {
+const formatFeedbackAttachmentSize = (size) => {
+  if (!Number.isFinite(size) || size <= 0) {
+    return '0 B';
+  }
+
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+};
+
+const isSupportedFeedbackAttachment = (file) => {
+  const normalizedType = String(file?.type || '').toLowerCase();
+  return (
+    normalizedType.startsWith('image/') ||
+    normalizedType.startsWith('video/') ||
+    normalizedType.startsWith('audio/')
+  );
+};
+
+const buildFeedbackPreview = (draft, profile, attachment) => {
   const categoryLabel = FEEDBACK_CATEGORIES.find((item) => item.value === draft.category)?.label || 'General';
   const authorName = profile.display_name || profile.username || 'Usuario sin nombre visible';
   const lines = [
@@ -69,6 +96,9 @@ const buildFeedbackPreview = (draft, profile) => {
     `Categoria: ${categoryLabel}`,
     `Asunto: ${draft.subject.trim() || 'Sin asunto'}`,
     draft.allowContact ? `Contacto: ${authorName} (${profile.email || 'sin email'})` : 'Contacto: no mostrar datos personales',
+    attachment
+      ? `Adjunto: ${attachment.name} (${formatFeedbackAttachmentSize(attachment.size)})`
+      : 'Adjunto: ninguno',
     '',
     'Mensaje:',
     draft.message.trim() || 'Sin detalles todavia.',
@@ -117,6 +147,8 @@ function Settings() {
   const [newPassword, setNewPassword] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
   const [feedbackDraft, setFeedbackDraft] = useState(readFeedbackDraft);
+  const [feedbackAttachment, setFeedbackAttachment] = useState(null);
+  const feedbackFileInputRef = useRef(null);
 
   const tgcCatalogQuery = useQuery({
     queryKey: queryKeys.tgcCatalog(),
@@ -133,11 +165,13 @@ function Settings() {
   const users = adminUsersQuery.data || [];
   const loading = !authReady || tgcCatalogQuery.isPending;
   const feedbackPreview = useMemo(
-    () => buildFeedbackPreview(feedbackDraft, profile),
-    [feedbackDraft, profile]
+    () => buildFeedbackPreview(feedbackDraft, profile, feedbackAttachment),
+    [feedbackAttachment, feedbackDraft, profile]
   );
-  const hasFeedbackContent = Boolean(
-    feedbackDraft.subject.trim() || feedbackDraft.message.trim()
+  const hasFeedbackPayload = Boolean(
+    feedbackDraft.subject.trim() ||
+    feedbackDraft.message.trim() ||
+    feedbackAttachment
   );
 
   useEffect(() => {
@@ -256,6 +290,11 @@ function Settings() {
     mutationFn: sendFeedbackRequest,
     onSuccess: () => {
       setFeedbackDraft(DEFAULT_FEEDBACK_DRAFT);
+      setFeedbackAttachment(null);
+
+      if (feedbackFileInputRef.current) {
+        feedbackFileInputRef.current.value = '';
+      }
 
       try {
         window.localStorage.removeItem(FEEDBACK_STORAGE_KEY);
@@ -313,6 +352,42 @@ function Settings() {
     }));
   };
 
+  const clearFeedbackAttachment = () => {
+    setFeedbackAttachment(null);
+    if (feedbackFileInputRef.current) {
+      feedbackFileInputRef.current.value = '';
+    }
+  };
+
+  const handleFeedbackAttachmentChange = (event) => {
+    const nextFile = event.target.files?.[0] || null;
+
+    if (!nextFile) {
+      setFeedbackAttachment(null);
+      return;
+    }
+
+    if (!isSupportedFeedbackAttachment(nextFile)) {
+      clearFeedbackAttachment();
+      showToast({
+        type: 'error',
+        message: 'Solo se permiten archivos multimedia de imagen, video o audio.',
+      });
+      return;
+    }
+
+    if (nextFile.size > FEEDBACK_MAX_ATTACHMENT_BYTES) {
+      clearFeedbackAttachment();
+      showToast({
+        type: 'error',
+        message: 'El archivo supera el limite de 5 MB.',
+      });
+      return;
+    }
+
+    setFeedbackAttachment(nextFile);
+  };
+
   const saveProfile = (e) => {
     e.preventDefault();
 
@@ -356,10 +431,10 @@ function Settings() {
   };
 
   const copyFeedbackDraft = async () => {
-    if (!hasFeedbackContent) {
+    if (!hasFeedbackPayload) {
       showToast({
         type: 'error',
-        message: 'Escribe al menos un asunto o un mensaje antes de copiar la sugerencia.',
+        message: 'Escribe algo o adjunta un archivo antes de copiar la sugerencia.',
       });
       return;
     }
@@ -379,10 +454,10 @@ function Settings() {
   };
 
   const sendFeedback = () => {
-    if (!hasFeedbackContent) {
+    if (!feedbackDraft.message.trim() && !feedbackAttachment) {
       showToast({
         type: 'error',
-        message: 'Escribe algo en el borrador antes de enviar la sugerencia.',
+        message: 'Escribe un mensaje o adjunta un archivo multimedia antes de enviar la sugerencia.',
       });
       return;
     }
@@ -392,11 +467,13 @@ function Settings() {
       subject: feedbackDraft.subject.trim(),
       message: feedbackDraft.message.trim(),
       allow_contact: Boolean(feedbackDraft.allowContact),
+      attachment: feedbackAttachment,
     });
   };
 
   const clearFeedbackDraft = () => {
     setFeedbackDraft(DEFAULT_FEEDBACK_DRAFT);
+    clearFeedbackAttachment();
 
     try {
       window.localStorage.removeItem(FEEDBACK_STORAGE_KEY);
@@ -617,6 +694,36 @@ function Settings() {
                 placeholder="Cuenta que te gustaria mejorar, que fallo has visto o que echas en falta."
               />
             </label>
+
+            <div className="settings-field settings-field-full settings-attachment-field">
+              <span>Adjunto multimedia</span>
+              <label className="settings-file-picker">
+                <input
+                  ref={feedbackFileInputRef}
+                  type="file"
+                  accept={FEEDBACK_ATTACHMENT_ACCEPT}
+                  onChange={handleFeedbackAttachmentChange}
+                />
+                <strong>{feedbackAttachment ? 'Cambiar archivo' : 'Seleccionar archivo'}</strong>
+                <small>Imagen, video o audio. Maximo 5 MB.</small>
+              </label>
+
+              {feedbackAttachment && (
+                <div className="settings-file-chip">
+                  <div className="settings-file-chip-copy">
+                    <strong>{feedbackAttachment.name}</strong>
+                    <span>{formatFeedbackAttachmentSize(feedbackAttachment.size)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="settings-ghost-button"
+                    onClick={clearFeedbackAttachment}
+                  >
+                    Quitar
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="settings-field settings-field-full settings-switch-field">
               <span>Permitir contacto</span>

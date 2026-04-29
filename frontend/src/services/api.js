@@ -77,6 +77,14 @@ export const getDeckOptions = async (tgcId, signal) => {
   return Array.isArray(response.data) ? response.data : [];
 };
 
+export const getSearchDeckOptions = async (tgcId, signal) => {
+  const response = await apiClient.get('/decks/search-options', {
+    params: { tgc_id: tgcId },
+    signal,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+};
+
 export const getDeckDetail = async (deckId, signal) => {
   const response = await apiClient.get(`/decks/${deckId}`, { signal });
   return response.data || null;
@@ -163,7 +171,17 @@ export const changePassword = async (payload) => {
 };
 
 export const sendFeedback = async (payload) => {
-  const response = await apiClient.post('/settings/feedback', payload);
+  const formData = new FormData();
+  formData.append('category', payload.category || '');
+  formData.append('subject', payload.subject || '');
+  formData.append('message', payload.message || '');
+  formData.append('allow_contact', String(Boolean(payload.allow_contact)));
+
+  if (typeof File !== 'undefined' && payload.attachment instanceof File) {
+    formData.append('attachment', payload.attachment);
+  }
+
+  const response = await apiClient.post('/settings/feedback', formData);
   return response.data || null;
 };
 

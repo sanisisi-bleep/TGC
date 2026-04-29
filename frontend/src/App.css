@@ -4260,6 +4260,70 @@ textarea::placeholder {
   cursor: wait;
 }
 
+.settings-attachment-field {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.settings-file-picker {
+  position: relative;
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 32%, var(--line));
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  overflow: hidden;
+}
+
+.settings-file-picker input[type='file'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.settings-file-picker strong {
+  font-family: 'Space Grotesk', sans-serif;
+  color: var(--text);
+}
+
+.settings-file-picker small {
+  color: var(--text-soft);
+}
+
+.settings-file-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.settings-file-chip-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.settings-file-chip-copy strong,
+.settings-file-chip-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-file-chip-copy strong {
+  color: var(--text);
+}
+
+.settings-file-chip-copy span {
+  color: var(--text-soft);
+}
+
 .settings-feedback-preview {
   display: grid;
   gap: 0.65rem;

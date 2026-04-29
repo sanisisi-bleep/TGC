@@ -2,11 +2,13 @@ import os
 import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
+from pathlib import Path
 
 from app.logger import build_log_extra, logger
 
 
 DEFAULT_FEEDBACK_TO_EMAIL = "multiversetgc@gmail.com"
+FEEDBACK_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
 
 
 class FeedbackDeliveryError(Exception):
@@ -15,6 +17,13 @@ class FeedbackDeliveryError(Exception):
 
 class FeedbackConfigurationError(FeedbackDeliveryError):
     pass
+
+
+@dataclass(frozen=True)
+class FeedbackAttachment:
+    filename: str
+    content_type: str
+    data: bytes
 
 
 @dataclass(frozen=True)
@@ -28,6 +37,7 @@ class FeedbackSubmission:
     display_name: str
     role: str
     user_id: int
+    attachment: FeedbackAttachment | None = None
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -96,11 +106,31 @@ def _build_feedback_message(submission: FeedbackSubmission, config: dict):
         f"User ID: {submission.user_id}",
         f"Contacto permitido: {'si' if submission.allow_contact else 'no'}",
         f"Contacto: {contact_line}",
+        (
+            f"Adjunto: {submission.attachment.filename} "
+            f"({submission.attachment.content_type}, {len(submission.attachment.data)} bytes)"
+            if submission.attachment
+            else "Adjunto: ninguno"
+        ),
         "",
         "Mensaje:",
         submission.message.strip() or "Sin detalles.",
     ]
     message.set_content("\n".join(body_lines))
+
+    if submission.attachment:
+        safe_name = Path(submission.attachment.filename or "adjunto").name[:255] or "adjunto"
+        content_type = (submission.attachment.content_type or "application/octet-stream").strip().lower()
+        maintype, _, subtype = content_type.partition("/")
+        if not maintype or not subtype:
+            maintype, subtype = "application", "octet-stream"
+        message.add_attachment(
+            submission.attachment.data,
+            maintype=maintype,
+            subtype=subtype,
+            filename=safe_name,
+        )
+
     return message
 
 
@@ -131,6 +161,8 @@ def deliver_feedback_email(submission: FeedbackSubmission):
                 user_id=submission.user_id,
                 feedback_category=submission.category,
                 feedback_subject=submission.subject.strip() or "Sin asunto",
+                has_attachment=bool(submission.attachment),
+                attachment_filename=submission.attachment.filename if submission.attachment else None,
                 error=str(exc),
             ),
         )
@@ -145,5 +177,7 @@ def deliver_feedback_email(submission: FeedbackSubmission):
             feedback_category=submission.category,
             feedback_subject=submission.subject.strip() or "Sin asunto",
             feedback_to_email=config["feedback_to_email"],
+            has_attachment=bool(submission.attachment),
+            attachment_filename=submission.attachment.filename if submission.attachment else None,
         ),
     )

@@ -166,6 +166,14 @@ function Decks({ activeTcgSlug, activeTgc }) {
     return queryClient.invalidateQueries({ queryKey: queryKeys.deckOptions(activeTgc.id) });
   }, [activeTgc?.id, queryClient]);
 
+  const invalidateSearchDeckOptionsQuery = useCallback(() => {
+    if (!activeTgc?.id) {
+      return Promise.resolve();
+    }
+
+    return queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc.id) });
+  }, [activeTgc?.id, queryClient]);
+
   const syncCollectionDeckUsage = useCallback(({
     cardId,
     quantity,
@@ -215,6 +223,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
           ...current,
         ];
       });
+      queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc?.id) });
       setNewDeckName('');
       showToast({ type: 'success', message: 'Mazo creado.' });
     },
@@ -239,6 +248,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
       queryClient.setQueryData(queryKeys.deckOptions(activeTgc?.id), (current) => (
         Array.isArray(current) ? current.filter((deck) => deck.id !== deckId) : current
       ));
+      queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc?.id) });
       queryClient.removeQueries({ queryKey: queryKeys.deckDetail(deckId) });
       if (selectedDeckId === deckId) {
         setSelectedDeckId(null);
@@ -267,6 +277,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
         invalidateDeckOptionsQuery(),
+        invalidateSearchDeckOptionsQuery(),
         invalidateCollectionQuery(),
       ]);
       if (response?.deck_id) {
@@ -307,6 +318,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
           ? current.map((deck) => (deck.id === variables.deckId ? { ...deck, name: nextName } : deck))
           : current
       ));
+      queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc?.id) });
       queryClient.setQueryData(queryKeys.collection(activeTgc?.id), (current) => (
         renameDeckInCollection(current, variables.deckId, nextName)
       ));
@@ -426,6 +438,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+        invalidateSearchDeckOptionsQuery(),
         invalidateCollectionQuery(),
       ]);
       showToast({ type: 'success', message: 'Carta movida a considering.' });
@@ -458,6 +471,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+        invalidateSearchDeckOptionsQuery(),
         invalidateCollectionQuery(),
       ]);
       showToast({ type: 'success', message: 'Carta devuelta al mazo principal.' });
@@ -483,6 +497,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
         invalidateDeckOptionsQuery(),
+        invalidateSearchDeckOptionsQuery(),
         invalidateCollectionQuery(),
       ]);
       if (response?.deck_id) {

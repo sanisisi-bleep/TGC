@@ -1,7 +1,8 @@
 from typing import Annotated
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError
 from sqlalchemy.orm import Session
 from sqlalchemy import delete
 
@@ -10,6 +11,8 @@ from app.models import Tgc, User, UserCollection, Deck, DeckCard, DeckConsiderin
 from app.rate_limit import RateLimitPolicy, enforce_rate_limit
 from app.services.auth_service import get_current_user, get_password_hash, require_admin_user, verify_password
 from app.services.feedback_service import (
+    FEEDBACK_ATTACHMENT_MAX_BYTES,
+    FeedbackAttachment,
     FeedbackConfigurationError,
     FeedbackDeliveryError,
     FeedbackSubmission,
@@ -60,7 +63,7 @@ class FeedbackRequest(BaseModel):
 
     category: Annotated[str, StringConstraints(min_length=2, max_length=20)]
     subject: Annotated[str, StringConstraints(max_length=120)] = ""
-    message: Annotated[str, StringConstraints(min_length=1, max_length=1200)]
+    message: Annotated[str, StringConstraints(max_length=1200)] = ""
     allow_contact: bool = True
 
 
@@ -84,6 +87,48 @@ def _ensure_tgc_exists(db: Session, tgc_id: int | None):
     exists = db.query(Tgc.id).filter(Tgc.id == tgc_id).first()
     if not exists:
         raise HTTPException(status_code=400, detail="TCG not found")
+
+
+def _parse_form_bool(value: str | bool | None, default: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_supported_feedback_media_type(content_type: str | None) -> bool:
+    normalized = (content_type or "").strip().lower()
+    return (
+        normalized.startswith("image/")
+        or normalized.startswith("video/")
+        or normalized.startswith("audio/")
+    )
+
+
+async def _build_feedback_attachment(upload: UploadFile | None) -> FeedbackAttachment | None:
+    if upload is None or not (upload.filename or "").strip():
+        return None
+
+    if not _is_supported_feedback_media_type(upload.content_type):
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se permiten archivos multimedia de imagen, video o audio.",
+        )
+
+    payload = await upload.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="El archivo adjunto esta vacio.")
+
+    if len(payload) > FEEDBACK_ATTACHMENT_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="El adjunto supera el limite de 5 MB.")
+
+    safe_name = Path(upload.filename).name[:255] or "adjunto"
+    return FeedbackAttachment(
+        filename=safe_name,
+        content_type=(upload.content_type or "application/octet-stream").strip().lower(),
+        data=payload,
+    )
 
 @router.get("/me")
 def get_my_settings(current_user=Depends(get_current_user)):
@@ -158,19 +203,37 @@ def update_password(
 
 
 @router.post("/feedback")
-def submit_feedback(
-    payload: FeedbackRequest,
+async def submit_feedback(
     request: Request,
+    category: str = Form(...),
+    subject: str = Form(""),
+    message: str = Form(""),
+    allow_contact: str = Form("true"),
+    attachment: UploadFile | None = File(None),
     current_user=Depends(get_current_user),
 ):
-    category = (payload.category or "").strip().lower()
-    if category not in FEEDBACK_CATEGORY_OPTIONS:
+    try:
+        payload = FeedbackRequest(
+            category=category,
+            subject=subject,
+            message=message,
+            allow_contact=_parse_form_bool(allow_contact),
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+    normalized_category = (payload.category or "").strip().lower()
+    if normalized_category not in FEEDBACK_CATEGORY_OPTIONS:
         raise HTTPException(status_code=400, detail="Invalid feedback category")
 
     enforce_rate_limit(request, FEEDBACK_RATE_LIMIT_POLICY, key_fragment=current_user.username)
+    feedback_attachment = await _build_feedback_attachment(attachment)
+
+    if not (payload.message or "").strip() and feedback_attachment is None:
+        raise HTTPException(status_code=400, detail="Escribe un mensaje o adjunta un archivo multimedia.")
 
     submission = FeedbackSubmission(
-        category=category,
+        category=normalized_category,
         subject=(payload.subject or "").strip(),
         message=(payload.message or "").strip(),
         allow_contact=bool(payload.allow_contact),
@@ -179,6 +242,7 @@ def submit_feedback(
         display_name=current_user.display_name or current_user.username,
         role=current_user.role or "player",
         user_id=current_user.id,
+        attachment=feedback_attachment,
     )
 
     try:
@@ -190,7 +254,8 @@ def submit_feedback(
                 "feedback_delivery_unconfigured",
                 username=current_user.username,
                 user_id=current_user.id,
-                feedback_category=category,
+                feedback_category=normalized_category,
+                has_attachment=bool(feedback_attachment),
                 error=str(exc),
             ),
         )
@@ -202,7 +267,8 @@ def submit_feedback(
                 "feedback_delivery_upstream_failed",
                 username=current_user.username,
                 user_id=current_user.id,
-                feedback_category=category,
+                feedback_category=normalized_category,
+                has_attachment=bool(feedback_attachment),
                 error=str(exc),
             ),
         )
@@ -214,8 +280,10 @@ def submit_feedback(
             "feedback_submitted",
             username=current_user.username,
             user_id=current_user.id,
-            feedback_category=category,
+            feedback_category=normalized_category,
             allow_contact=bool(payload.allow_contact),
+            has_attachment=bool(feedback_attachment),
+            attachment_filename=feedback_attachment.filename if feedback_attachment else None,
         ),
     )
     return {"message": "Feedback sent"}
