@@ -96,6 +96,7 @@ class OnePieceCard(Base):
     counter = Column(String(20))
     trigger = Column(Text)
     notes = Column(Text)
+    qa = Column(Text)
 
     card = relationship("Card", back_populates="one_piece_data")
 

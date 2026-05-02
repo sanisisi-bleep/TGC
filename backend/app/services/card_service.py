@@ -82,6 +82,21 @@ class CardService:
                 }
             )
 
+        if card.one_piece_data:
+            payload.update(
+                {
+                    "attribute_name": self._normalize_card_value(card.one_piece_data.attribute_name),
+                    "attribute_image": self._normalize_card_value(card.one_piece_data.attribute_image),
+                    "power": card.one_piece_data.power,
+                    "family": card.one_piece_data.family,
+                    "ability": card.one_piece_data.ability,
+                    "counter": self._normalize_card_value(card.one_piece_data.counter),
+                    "trigger": card.one_piece_data.trigger,
+                    "notes": card.one_piece_data.notes,
+                    "qa": card.one_piece_data.qa,
+                }
+            )
+
         if card.gundam_data:
             payload.update(
                 {

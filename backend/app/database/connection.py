@@ -103,6 +103,7 @@ def ensure_game_detail_columns():
         "ALTER TABLE gundam_cards ADD COLUMN IF NOT EXISTS qa TEXT",
         "ALTER TABLE one_piece_cards ADD COLUMN IF NOT EXISTS power INTEGER",
         "ALTER TABLE one_piece_cards ADD COLUMN IF NOT EXISTS ability TEXT",
+        "ALTER TABLE one_piece_cards ADD COLUMN IF NOT EXISTS qa TEXT",
         "ALTER TABLE digimon_cards ADD COLUMN IF NOT EXISTS dp INTEGER",
         "ALTER TABLE digimon_cards ADD COLUMN IF NOT EXISTS form VARCHAR(100)",
         "ALTER TABLE digimon_cards ADD COLUMN IF NOT EXISTS attribute VARCHAR(100)",

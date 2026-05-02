@@ -62,6 +62,14 @@ function CardDetailModal({
     primaryFacts.push({ label: 'Atributo', value: card.attribute });
   }
 
+  if (activeTcgSlug === 'one-piece' && hasCardValue(card.attribute_name)) {
+    primaryFacts.push({ label: 'Atributo', value: card.attribute_name });
+  }
+
+  if (activeTcgSlug === 'one-piece' && hasCardValue(card.counter)) {
+    primaryFacts.push({ label: 'Counter', value: card.counter });
+  }
+
   if (hasCardValue(card.type_line)) {
     primaryFacts.push({ label: 'Linea de tipo', value: card.type_line });
   }
@@ -86,6 +94,10 @@ function CardDetailModal({
     {
       label: activeTcgSlug === 'one-piece' ? 'Texto' : 'Habilidades',
       value: card.abilities,
+    },
+    {
+      label: 'Trigger',
+      value: activeTcgSlug === 'one-piece' ? card.trigger : null,
     },
     {
       label: 'Titulo de origen',
