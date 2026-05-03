@@ -326,31 +326,55 @@ class CardService:
             set_name=set_name,
         )
 
-        total = query.count()
-        total_pages = math.ceil(total / limit) if total else 0
-        current_page = min(page, total_pages) if total_pages else 1
+        card_summary_load = load_only(
+            Card.id,
+            Card.tgc_id,
+            Card.source_card_id,
+            Card.deck_key,
+            Card.name,
+            Card.card_type,
+            Card.lv,
+            Card.cost,
+            Card.ap,
+            Card.hp,
+            Card.color,
+            Card.rarity,
+            Card.set_name,
+            Card.version,
+            Card.block,
+            Card.image_url,
+        )
+        sorted_query = self._apply_sort(query, sort).options(card_summary_load)
+        current_page = max(page, 1)
         offset = (current_page - 1) * limit
 
-        items = self._apply_sort(query, sort).options(
-            load_only(
-                Card.id,
-                Card.tgc_id,
-                Card.source_card_id,
-                Card.deck_key,
-                Card.name,
-                Card.card_type,
-                Card.lv,
-                Card.cost,
-                Card.ap,
-                Card.hp,
-                Card.color,
-                Card.rarity,
-                Card.set_name,
-                Card.version,
-                Card.block,
-                Card.image_url,
-            )
-        ).offset(offset).limit(limit).all()
+        paged_rows = (
+            sorted_query
+            .add_columns(func.count().over().label("total_count"))
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        total = int(paged_rows[0][1]) if paged_rows else 0
+        total_pages = math.ceil(total / limit) if total else 0
+
+        if not paged_rows and current_page > 1 and total_pages == 0:
+            total = query.order_by(None).count()
+            total_pages = math.ceil(total / limit) if total else 0
+            current_page = min(current_page, total_pages) if total_pages else 1
+            offset = (current_page - 1) * limit
+
+            if total_pages:
+                paged_rows = (
+                    sorted_query
+                    .add_columns(func.count().over().label("total_count"))
+                    .offset(offset)
+                    .limit(limit)
+                    .all()
+                )
+
+        items = [card for card, _total_count in paged_rows] if paged_rows else []
 
         return {
             "items": [self.serialize_card_summary(card) for card in items],
@@ -363,7 +387,16 @@ class CardService:
         }
 
     def get_card_by_id(self, card_id: int):
-        card = self.db.query(Card).filter(Card.id == card_id).first()
+        card = (
+            self.db.query(Card)
+            .options(
+                joinedload(Card.digimon_data),
+                joinedload(Card.one_piece_data),
+                joinedload(Card.gundam_data),
+            )
+            .filter(Card.id == card_id)
+            .first()
+        )
         if not card:
             raise ValueError("Card not found")
         return self.serialize_card(card)
@@ -489,16 +522,8 @@ class CardService:
                         Card.set_name,
                         Card.version,
                         Card.block,
-                        Card.traits,
-                        Card.link,
-                        Card.zones,
-                        Card.artist,
-                        Card.abilities,
-                        Card.description,
                         Card.image_url,
                     ),
-                    joinedload(Card.gundam_data),
-                    joinedload(Card.digimon_data),
                 ),
             )
         )
@@ -569,7 +594,7 @@ class CardService:
                 for deck_row in deck_rows
             )
             result.append({
-                "card": self.serialize_card(col.card),
+                "card": self.serialize_card_summary(col.card),
                 "total_quantity": col.quantity,
                 "available_quantity": max(col.quantity - used_in_decks, 0),
                 "decks": [

@@ -49,6 +49,17 @@ class DeckServiceQueryMixin:
             return None
         return self.db.query(Tgc).filter(Tgc.id == tgc_id).first()
 
+    def _get_tgcs_by_ids(self, tgc_ids: List[int]) -> dict[int, Tgc]:
+        if not tgc_ids:
+            return {}
+
+        tgcs = (
+            self.db.query(Tgc)
+            .filter(Tgc.id.in_(tgc_ids))
+            .all()
+        )
+        return {tgc.id: tgc for tgc in tgcs}
+
     def _get_default_tgc(self):
         tgc = self.db.query(Tgc).filter(Tgc.name == GUNDAM_TGC_NAME).first()
         if tgc:
@@ -288,6 +299,48 @@ class DeckServiceQueryMixin:
 
     def _get_playable_entries(self, deck_id: int):
         return [*self._get_deck_entries(deck_id), *self._get_egg_entries(deck_id)]
+
+    def _get_bulk_playable_entries_by_deck(self, deck_ids: List[int]) -> dict[int, list[dict]]:
+        grouped_entries = {deck_id: [] for deck_id in deck_ids}
+
+        if not deck_ids:
+            return grouped_entries
+
+        deck_rows = (
+            self.db.query(DeckCard, Card)
+            .join(Card, Card.id == DeckCard.card_id)
+            .filter(DeckCard.deck_id.in_(deck_ids))
+            .order_by(DeckCard.deck_id.asc(), DeckCard.id.asc(), Card.id.asc())
+            .all()
+        )
+        for deck_card, card in deck_rows:
+            grouped_entries.setdefault(deck_card.deck_id, []).append(
+                {
+                    "deck_item": deck_card,
+                    "card": card,
+                    "quantity": deck_card.quantity,
+                    "storage_section": "main",
+                }
+            )
+
+        egg_rows = (
+            self.db.query(DeckEggCard, Card)
+            .join(Card, Card.id == DeckEggCard.card_id)
+            .filter(DeckEggCard.deck_id.in_(deck_ids))
+            .order_by(DeckEggCard.deck_id.asc(), DeckEggCard.id.asc(), Card.id.asc())
+            .all()
+        )
+        for deck_egg_card, card in egg_rows:
+            grouped_entries.setdefault(deck_egg_card.deck_id, []).append(
+                {
+                    "deck_item": deck_egg_card,
+                    "card": card,
+                    "quantity": deck_egg_card.quantity,
+                    "storage_section": "egg",
+                }
+            )
+
+        return grouped_entries
 
     def _get_storage_total_quantity(self, deck_id: int, storage_section: str) -> int:
         if storage_section == "egg":

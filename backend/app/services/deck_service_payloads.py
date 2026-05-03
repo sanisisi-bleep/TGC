@@ -3,7 +3,7 @@ from typing import Optional
 from sqlalchemy import or_
 
 from app.models import Card, Deck, DeckConsideringCard
-from app.services.game_rules import GUNDAM_TGC_NAME
+from app.services.game_rules import GUNDAM_TGC_NAME, get_tcg_rules
 from app.services.image_service import resolve_card_image_url
 
 
@@ -112,6 +112,14 @@ class DeckServicePayloadMixin:
             "considering_total_cards": 0,
             "considering_unique_cards": 0,
         }
+
+    def _serialize_deck_summary_payload(self, deck: Deck, deck_tgc, rules: dict, playable_entries: list[dict]):
+        composition = self._build_deck_composition(deck_tgc, rules, playable_entries)
+        total_cards = sum(entry["quantity"] for entry in playable_entries)
+        return self._build_deck_response_base(deck, deck_tgc, rules, composition, total_cards)
+
+    def _get_rules_for_serialization(self, deck_tgc):
+        return get_tcg_rules(deck_tgc.name if deck_tgc else None)
 
     def _serialize_deck_payload(self, deck: Deck, deck_tgc, rules: dict, user_id: Optional[int] = None, include_share_token: bool = False):
         deck_entries = self._get_deck_entries(deck.id)
@@ -270,10 +278,22 @@ class DeckServicePayloadMixin:
                 query = query.filter(Deck.tgc_id == tgc_id)
 
         decks = query.order_by(Deck.created_at.desc(), Deck.id.desc()).all()
+        deck_ids = [deck.id for deck in decks]
+        playable_entries_by_deck = self._get_bulk_playable_entries_by_deck(deck_ids)
+        tgc_map = self._get_tgcs_by_ids([deck.tgc_id for deck in decks if deck.tgc_id is not None])
+        default_tgc = self._get_default_tgc() if any(deck.tgc_id is None for deck in decks) else None
         summaries = []
         for deck in decks:
-            deck_tgc, rules = self._get_rules_for_deck(deck)
-            summaries.append(self._serialize_deck_payload(deck, deck_tgc, rules))
+            deck_tgc = tgc_map.get(deck.tgc_id) if deck.tgc_id is not None else default_tgc
+            rules = self._get_rules_for_serialization(deck_tgc)
+            summaries.append(
+                self._serialize_deck_summary_payload(
+                    deck,
+                    deck_tgc,
+                    rules,
+                    playable_entries_by_deck.get(deck.id, []),
+                )
+            )
         return summaries
 
     def get_user_deck_options(self, user_id: int, tgc_id: Optional[int] = None):
@@ -307,22 +327,31 @@ class DeckServicePayloadMixin:
                 query = query.filter(Deck.tgc_id == tgc_id)
 
         decks = query.order_by(Deck.created_at.desc(), Deck.id.desc()).all()
+        deck_ids = [deck.id for deck in decks]
+        playable_entries_by_deck = self._get_bulk_playable_entries_by_deck(deck_ids)
+        tgc_map = self._get_tgcs_by_ids([deck.tgc_id for deck in decks if deck.tgc_id is not None])
+        default_tgc = self._get_default_tgc() if any(deck.tgc_id is None for deck in decks) else None
         options = []
 
         for deck in decks:
-            deck_tgc, rules = self._get_rules_for_deck(deck)
-            playable_entries = self._get_playable_entries(deck.id)
-            composition = self._build_deck_composition(deck_tgc, rules, playable_entries)
-            total_cards = sum(entry["quantity"] for entry in playable_entries)
+            deck_tgc = tgc_map.get(deck.tgc_id) if deck.tgc_id is not None else default_tgc
+            rules = self._get_rules_for_serialization(deck_tgc)
+            summary = self._serialize_deck_summary_payload(
+                deck,
+                deck_tgc,
+                rules,
+                playable_entries_by_deck.get(deck.id, []),
+            )
+            composition = summary["composition"]
             options.append(
                 {
-                    "id": deck.id,
-                    "name": deck.name,
-                    "tgc_id": deck.tgc_id,
-                    "tgc_name": deck_tgc.name if deck_tgc else GUNDAM_TGC_NAME,
+                    "id": summary["id"],
+                    "name": summary["name"],
+                    "tgc_id": summary["tgc_id"],
+                    "tgc_name": summary["tgc_name"],
                     "format_mode": composition["format_mode"],
-                    "total_cards": total_cards,
-                    "max_cards": rules["deck_max_cards"],
+                    "total_cards": summary["total_cards"],
+                    "max_cards": summary["max_cards"],
                     "leader_cards": composition["leader_cards"],
                     "required_leader_cards": composition["required_leader_cards"],
                     "main_deck_cards": composition["main_deck_cards"],
@@ -334,7 +363,7 @@ class DeckServicePayloadMixin:
                     "leader_color_labels": composition["leader_color_labels"],
                     "deck_color_labels": composition.get("deck_color_labels", []),
                     "max_deck_colors": composition.get("max_deck_colors", 0),
-                    "is_complete": composition["is_valid"],
+                    "is_complete": summary["is_complete"],
                 }
             )
 
@@ -348,7 +377,7 @@ class DeckServicePayloadMixin:
     def get_deck_summary(self, deck_id: int, user_id: int):
         deck = self._get_user_deck_or_error(deck_id, user_id)
         deck_tgc, rules = self._get_rules_for_deck(deck)
-        return self._serialize_deck_payload(deck, deck_tgc, rules)
+        return self._serialize_deck_summary_payload(deck, deck_tgc, rules, self._get_playable_entries(deck.id))
 
     def get_shared_deck(self, share_token: str):
         deck = self.db.query(Deck).filter(Deck.share_token == share_token).first()

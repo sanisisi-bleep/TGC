@@ -41,6 +41,13 @@ def _run_schema_statements(statements):
         for statement in statements:
             connection.execute(text(statement))
 
+
+def _run_optional_schema_statements(statements):
+    try:
+        _run_schema_statements(statements)
+    except Exception as error:
+        print(f"[db] Optional schema statements skipped: {error}")
+
 def ensure_card_columns():
     # Lightweight schema sync for new card metadata columns on existing PostgreSQL databases.
     statements = [
@@ -85,6 +92,29 @@ def ensure_card_columns():
     ]
 
     _run_schema_statements(statements)
+
+    if engine.dialect.name == "postgresql":
+        _run_optional_schema_statements(
+            [
+                "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+                (
+                    "CREATE INDEX IF NOT EXISTS idx_cards_name_trgm "
+                    "ON cards USING gin (name gin_trgm_ops) WHERE name IS NOT NULL"
+                ),
+                (
+                    "CREATE INDEX IF NOT EXISTS idx_cards_source_card_id_trgm "
+                    "ON cards USING gin (source_card_id gin_trgm_ops) WHERE source_card_id IS NOT NULL"
+                ),
+                (
+                    "CREATE INDEX IF NOT EXISTS idx_cards_set_name_trgm "
+                    "ON cards USING gin (set_name gin_trgm_ops) WHERE set_name IS NOT NULL"
+                ),
+                (
+                    "CREATE INDEX IF NOT EXISTS idx_cards_version_trgm "
+                    "ON cards USING gin (version gin_trgm_ops) WHERE version IS NOT NULL"
+                ),
+            ]
+        )
 
 
 def ensure_game_detail_columns():

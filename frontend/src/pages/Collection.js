@@ -20,7 +20,13 @@ import {
 } from '../utils/setFilters';
 import { applyCollectionDeckUsageUpdate } from '../utils/collectionCache';
 import { normalizeCollectionCardType } from '../utils/collectionView';
-import { addCardToDeck, adjustCollectionCard, getCollection, getDeckOptions } from '../services/api';
+import {
+  addCardToDeck,
+  adjustCollectionCard,
+  getCardDetail,
+  getCollection,
+  getDeckOptions,
+} from '../services/api';
 
 const EMPTY_COLLECTION = [];
 const EMPTY_DECKS = [];
@@ -100,6 +106,12 @@ function Collection({ activeTcgSlug, activeTgc }) {
     enabled: Boolean(activeTgc?.id),
     staleTime: QUERY_STALE_TIMES.deckOptions,
   });
+  const selectedCardDetailQuery = useQuery({
+    queryKey: queryKeys.cardDetail(selectedCard?.id || 0),
+    queryFn: ({ signal }) => getCardDetail(selectedCard.id, signal),
+    enabled: Boolean(selectedCard?.id),
+    staleTime: QUERY_STALE_TIMES.cardDetail,
+  });
 
   const collection = useMemo(
     () => collectionQuery.data || EMPTY_COLLECTION,
@@ -135,8 +147,8 @@ function Collection({ activeTcgSlug, activeTgc }) {
   }, [collection]);
 
   const collectionQueryErrors = useMemo(
-    () => [collectionQuery.error, decksQuery.error],
-    [collectionQuery.error, decksQuery.error]
+    () => [collectionQuery.error, decksQuery.error, selectedCardDetailQuery.error],
+    [collectionQuery.error, decksQuery.error, selectedCardDetailQuery.error]
   );
 
   useQueryErrorToast(collectionQueryErrors, showToast, 'No se pudo cargar la coleccion.');
@@ -285,6 +297,21 @@ function Collection({ activeTcgSlug, activeTgc }) {
   const openCollectionCard = (card) => {
     setSelectedCard(card);
   };
+
+  const resolvedSelectedCard = useMemo(() => {
+    if (!selectedCard) {
+      return null;
+    }
+
+    if (!selectedCardDetailQuery.data) {
+      return selectedCard;
+    }
+
+    return {
+      ...selectedCard,
+      ...selectedCardDetailQuery.data,
+    };
+  }, [selectedCard, selectedCardDetailQuery.data]);
 
   const safeCollection = useMemo(
     () => collection.filter((item) => item?.card),
@@ -523,7 +550,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
       </div>
 
       <CardDetailModal
-        card={selectedCard}
+        card={resolvedSelectedCard}
         activeTcgSlug={activeTcgSlug}
         onClose={() => setSelectedCard(null)}
       />
