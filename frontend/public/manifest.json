@@ -1,0 +1,15 @@
+{
+  "short_name": "MTM",
+  "name": "Multiverse TCG Manager",
+  "icons": [
+    {
+      "src": "mtm-tab-logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#14060a",
+  "background_color": "#14060a"
+}

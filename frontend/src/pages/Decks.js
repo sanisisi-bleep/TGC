@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import CardDetailModal from '../components/cards/CardDetailModal';
 import DeckDetailModal from '../components/decks/DeckDetailModal';
+import DeckImportPanel from '../components/decks/DeckImportPanel';
 import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
 import DeckSummaryCard from '../components/decks/DeckSummaryCard';
 import { isUnauthorizedError, useSession } from '../context/SessionContext';
@@ -61,6 +62,9 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const [sharingDeckId, setSharingDeckId] = useState(null);
   const [renamingDeckId, setRenamingDeckId] = useState(null);
   const [importingDeck, setImportingDeck] = useState(false);
+  const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
+  const [importDeckName, setImportDeckName] = useState('');
+  const [importDeckText, setImportDeckText] = useState('');
   const [updatingDeckCardId, setUpdatingDeckCardId] = useState(null);
   const [updatingAssignmentCardId, setUpdatingAssignmentCardId] = useState(null);
   const [updatingConsideringCardId, setUpdatingConsideringCardId] = useState(null);
@@ -503,6 +507,9 @@ function Decks({ activeTcgSlug, activeTgc }) {
       if (response?.deck_id) {
         setSelectedDeckId(response.deck_id);
       }
+      setIsImportPanelOpen(false);
+      setImportDeckName('');
+      setImportDeckText('');
       showToast({ type: 'success', message: 'Mazo importado.' });
     },
     onError: (error) => {
@@ -564,6 +571,24 @@ function Decks({ activeTcgSlug, activeTgc }) {
     importDeckInputRef.current?.click();
   };
 
+  const buildImportDeckPayload = useCallback((rawContent, fallbackTgcId, nameOverride = '') => {
+    let payload;
+
+    try {
+      const parsedContent = JSON.parse(rawContent);
+      payload = parseImportedDeckFile(parsedContent, fallbackTgcId);
+    } catch (_jsonError) {
+      payload = parseDeckListText(rawContent, fallbackTgcId);
+    }
+
+    const trimmedName = nameOverride.trim();
+    if (trimmedName) {
+      payload.name = trimmedName;
+    }
+
+    return payload;
+  }, []);
+
   const handleDeckImport = async (event) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -574,14 +599,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
     try {
       const rawContent = await file.text();
-      let payload;
-
-      try {
-        const parsedContent = JSON.parse(rawContent);
-        payload = parseImportedDeckFile(parsedContent, activeTgc?.id);
-      } catch (_jsonError) {
-        payload = parseDeckListText(rawContent, activeTgc?.id);
-      }
+      const payload = buildImportDeckPayload(rawContent, activeTgc?.id, importDeckName);
 
       if (!payload.cards.length && !(payload.egg_cards || []).length) {
         throw new Error('El archivo no contiene cartas importables.');
@@ -604,6 +622,41 @@ function Decks({ activeTcgSlug, activeTgc }) {
       if (event.target) {
         event.target.value = '';
       }
+    }
+  };
+
+  const submitDeckListImport = async () => {
+    const trimmedContent = importDeckText.trim();
+    if (!trimmedContent) {
+      showToast({
+        type: 'error',
+        message: 'Pega una lista de cartas antes de importar el mazo.',
+      });
+      return;
+    }
+
+    setImportingDeck(true);
+
+    try {
+      const payload = buildImportDeckPayload(trimmedContent, activeTgc?.id, importDeckName);
+
+      if (!payload.cards.length && !(payload.egg_cards || []).length) {
+        throw new Error('La lista no contiene cartas importables.');
+      }
+
+      try {
+        await importDeckMutation.mutateAsync(payload);
+      } catch (_error) {
+        // The mutation already reports backend errors through the shared toast flow.
+      }
+    } catch (error) {
+      if (!isUnauthorizedError(error)) {
+        showToast({
+          type: 'error',
+          message: getApiErrorMessage(error, 'No se pudo importar la lista del mazo.'),
+        });
+      }
+      setImportingDeck(false);
     }
   };
 
@@ -785,27 +838,25 @@ function Decks({ activeTcgSlug, activeTgc }) {
             {createDeckMutation.isPending ? 'Creando...' : 'Crear Mazo'}
           </button>
         </form>
-        <div className="create-deck-secondary-actions">
-          <button
-            type="button"
-            className="ghost-button"
-            onClick={triggerDeckImport}
-            disabled={importingDeck}
-          >
-            {importingDeck ? 'Importando...' : 'Importar mazo'}
-          </button>
-          <input
-            ref={importDeckInputRef}
-            type="file"
-            accept=".json,.txt,text/plain,application/json"
-            className="deck-import-input"
-            onChange={handleDeckImport}
-          />
-          <span className="deck-import-copy">
-            Importa un mazo desde JSON o desde una lista tipo 4xST01-005.
-            {activeTcgSlug === 'digimon' ? ' Si quieres, separa los huevos con una seccion # Digi-Egg Deck.' : ''}
-          </span>
-        </div>
+        <DeckImportPanel
+          isOpen={isImportPanelOpen}
+          importingDeck={importingDeck}
+          importDeckName={importDeckName}
+          importDeckText={importDeckText}
+          activeTcgSlug={activeTcgSlug}
+          onToggle={() => setIsImportPanelOpen((current) => !current)}
+          onImportDeckNameChange={setImportDeckName}
+          onImportDeckTextChange={setImportDeckText}
+          onSubmitListImport={submitDeckListImport}
+          onTriggerFileImport={triggerDeckImport}
+        />
+        <input
+          ref={importDeckInputRef}
+          type="file"
+          accept=".json,.txt,text/plain,application/json"
+          className="deck-import-input"
+          onChange={handleDeckImport}
+        />
       </section>
 
       <section className="decks-list">

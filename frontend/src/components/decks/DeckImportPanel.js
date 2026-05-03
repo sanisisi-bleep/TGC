@@ -1,0 +1,84 @@
+import React from 'react';
+
+function DeckImportPanel({
+  isOpen,
+  importingDeck,
+  importDeckName,
+  importDeckText,
+  activeTcgSlug,
+  onToggle,
+  onImportDeckNameChange,
+  onImportDeckTextChange,
+  onSubmitListImport,
+  onTriggerFileImport,
+}) {
+  return (
+    <div className="create-deck-secondary-actions create-deck-secondary-actions-import">
+      <button
+        type="button"
+        className="ghost-button"
+        onClick={onToggle}
+        disabled={importingDeck}
+      >
+        {isOpen ? 'Ocultar importador' : 'Importar mazo'}
+      </button>
+
+      <span className="deck-import-copy">
+        Empieza pegando una lista de cartas. El JSON o TXT queda como opcion secundaria.
+      </span>
+
+      {isOpen && (
+        <div className="deck-import-panel panel">
+          <div className="deck-import-panel-header">
+            <div>
+              <span className="eyebrow">Importacion rapida</span>
+              <h3>Pegar lista de cartas</h3>
+              <p>
+                Usa una linea por carta, por ejemplo <code>4xST01-005</code>.
+                {activeTcgSlug === 'digimon' ? ' Para Digimon puedes separar huevos con # Digi-Egg Deck.' : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="deck-import-form">
+            <input
+              type="text"
+              value={importDeckName}
+              onChange={(event) => onImportDeckNameChange(event.target.value)}
+              placeholder="Nombre opcional del mazo importado"
+              maxLength={100}
+            />
+
+            <textarea
+              value={importDeckText}
+              onChange={(event) => onImportDeckTextChange(event.target.value)}
+              placeholder={'4xOP01-001\n4xOP01-016\n2xST01-005'}
+              rows={10}
+              spellCheck={false}
+            />
+
+            <div className="deck-import-panel-actions">
+              <button
+                type="button"
+                onClick={onSubmitListImport}
+                disabled={importingDeck || !importDeckText.trim()}
+              >
+                {importingDeck ? 'Importando...' : 'Importar desde lista'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={onTriggerFileImport}
+                disabled={importingDeck}
+              >
+                Cargar archivo JSON o TXT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default DeckImportPanel;
