@@ -137,7 +137,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
                     deck_id=cloned_deck.id,
                     card_id=source_card.card_id,
                     quantity=source_card.quantity,
-                    assigned_quantity=source_card.assigned_quantity,
+                    assigned_quantity=None,
                 )
             )
 
@@ -148,7 +148,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
                     deck_id=cloned_deck.id,
                     card_id=source_card.card_id,
                     quantity=source_card.quantity,
-                    assigned_quantity=source_card.assigned_quantity,
+                    assigned_quantity=None,
                 )
             )
 

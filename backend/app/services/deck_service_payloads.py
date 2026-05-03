@@ -127,10 +127,15 @@ class DeckServicePayloadMixin:
             [entry["card"].id for entry in playable_entries]
             + [entry["card"].id for entry in considering_entries]
         )
-        owned_quantities = self._get_owned_quantities_map(
-            user_id,
-            tracked_card_ids,
-        ) if user_id is not None else {}
+        if user_id is not None:
+            owned_coverage_allocations, owned_quantities = self._get_owned_coverage_allocations(
+                user_id,
+                tracked_card_ids,
+                advanced_mode,
+            )
+        else:
+            owned_coverage_allocations = {}
+            owned_quantities = {}
 
         serialized_cards = []
         serialized_egg_cards = []
@@ -151,7 +156,10 @@ class DeckServicePayloadMixin:
 
             if user_id is not None:
                 owned_quantity = owned_quantities.get(card.id, 0)
-                fulfilled_quantity = self._resolve_covered_quantity(deck_item, owned_quantity, advanced_mode)
+                fulfilled_quantity = owned_coverage_allocations.get(
+                    self._build_owned_coverage_key(deck.id, card.id, entry["storage_section"]),
+                    self._resolve_covered_quantity(deck_item, owned_quantity, advanced_mode),
+                )
                 missing_quantity = max(deck_item.quantity - fulfilled_quantity, 0)
                 missing_copies += missing_quantity
                 base_payload.update(
@@ -180,7 +188,10 @@ class DeckServicePayloadMixin:
 
             if user_id is not None:
                 owned_quantity = owned_quantities.get(card.id, 0)
-                fulfilled_quantity = self._resolve_covered_quantity(deck_item, owned_quantity, advanced_mode)
+                fulfilled_quantity = owned_coverage_allocations.get(
+                    self._build_owned_coverage_key(deck.id, card.id, entry["storage_section"]),
+                    self._resolve_covered_quantity(deck_item, owned_quantity, advanced_mode),
+                )
                 missing_quantity = max(deck_item.quantity - fulfilled_quantity, 0)
                 missing_copies += missing_quantity
                 base_payload.update(

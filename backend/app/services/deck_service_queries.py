@@ -1,7 +1,7 @@
 import secrets
 from typing import List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, literal
 
 from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, Tgc, User, UserCollection
 from app.services.game_rules import GUNDAM_TGC_NAME, get_tcg_rules
@@ -93,6 +93,96 @@ class DeckServiceQueryMixin:
             .all()
         )
         return {card_id: quantity for card_id, quantity in rows}
+
+    def _build_owned_coverage_key(self, deck_id: int, card_id: int, storage_section: str) -> tuple[int, int, str]:
+        return deck_id, card_id, storage_section
+
+    def _get_owned_coverage_allocations(
+        self,
+        user_id: int,
+        card_ids: List[int],
+        advanced_mode: bool,
+    ) -> tuple[dict[tuple[int, int, str], int], dict[int, int]]:
+        if not card_ids:
+            return {}, {}
+
+        owned_quantities = self._get_owned_quantities_map(user_id, card_ids)
+        coverage_rows = []
+
+        deck_card_rows = (
+            self.db.query(
+                Deck.id.label("deck_id"),
+                Deck.created_at.label("created_at"),
+                DeckCard.id.label("deck_item_id"),
+                DeckCard.card_id.label("card_id"),
+                DeckCard.quantity.label("quantity"),
+                DeckCard.assigned_quantity.label("assigned_quantity"),
+                literal("main").label("storage_section"),
+            )
+            .join(DeckCard, Deck.id == DeckCard.deck_id)
+            .filter(Deck.user_id == user_id, DeckCard.card_id.in_(card_ids))
+            .all()
+        )
+        coverage_rows.extend(deck_card_rows)
+
+        egg_card_rows = (
+            self.db.query(
+                Deck.id.label("deck_id"),
+                Deck.created_at.label("created_at"),
+                DeckEggCard.id.label("deck_item_id"),
+                DeckEggCard.card_id.label("card_id"),
+                DeckEggCard.quantity.label("quantity"),
+                DeckEggCard.assigned_quantity.label("assigned_quantity"),
+                literal("egg").label("storage_section"),
+            )
+            .join(DeckEggCard, Deck.id == DeckEggCard.deck_id)
+            .filter(Deck.user_id == user_id, DeckEggCard.card_id.in_(card_ids))
+            .all()
+        )
+        coverage_rows.extend(egg_card_rows)
+
+        rows_by_card_id: dict[int, list] = {}
+        for row in coverage_rows:
+            rows_by_card_id.setdefault(row.card_id, []).append(row)
+
+        allocations: dict[tuple[int, int, str], int] = {}
+
+        for card_id, rows in rows_by_card_id.items():
+            remaining_owned = max(int(owned_quantities.get(card_id, 0) or 0), 0)
+            ordered_rows = sorted(
+                rows,
+                key=lambda row: (
+                    row.created_at,
+                    row.deck_id,
+                    0 if row.storage_section == "main" else 1,
+                    row.deck_item_id,
+                ),
+            )
+
+            if advanced_mode:
+                prioritized_rows = [
+                    row for row in ordered_rows
+                    if row.assigned_quantity is not None
+                ] + [
+                    row for row in ordered_rows
+                    if row.assigned_quantity is None
+                ]
+            else:
+                prioritized_rows = ordered_rows
+
+            for row in prioritized_rows:
+                requested_quantity = max(int(row.quantity or 0), 0)
+                if advanced_mode and row.assigned_quantity is not None:
+                    requested_quantity = max(
+                        min(int(row.assigned_quantity or 0), requested_quantity),
+                        0,
+                    )
+
+                covered_quantity = min(requested_quantity, remaining_owned)
+                allocations[self._build_owned_coverage_key(row.deck_id, row.card_id, row.storage_section)] = covered_quantity
+                remaining_owned = max(remaining_owned - covered_quantity, 0)
+
+        return allocations, owned_quantities
 
     def _get_deck_total_quantity(self, deck_id: int) -> int:
         return (
