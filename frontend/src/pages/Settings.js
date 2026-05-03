@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { isUnauthorizedError, useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
+import useBrowserStorageState from '../hooks/useBrowserStorageState';
+import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import queryKeys from '../queryKeys';
 import {
@@ -146,7 +148,17 @@ function Settings() {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
-  const [feedbackDraft, setFeedbackDraft] = useState(readFeedbackDraft);
+  const [feedbackDraft, setFeedbackDraft] = useBrowserStorageState(
+    FEEDBACK_STORAGE_KEY,
+    readFeedbackDraft,
+    {
+      validate: (value) => ({
+        ...DEFAULT_FEEDBACK_DRAFT,
+        ...(value || {}),
+        allowContact: Boolean(value?.allowContact),
+      }),
+    }
+  );
   const [feedbackAttachment, setFeedbackAttachment] = useState(null);
   const feedbackFileInputRef = useRef(null);
 
@@ -198,25 +210,12 @@ function Settings() {
     }
   }, [authReady, navigate, sessionProfile]);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(FEEDBACK_STORAGE_KEY, JSON.stringify(feedbackDraft));
-    } catch (_error) {
-      // Ignore storage failures and keep the draft in memory.
-    }
-  }, [feedbackDraft]);
+  const settingsQueryErrors = useMemo(
+    () => [tgcCatalogQuery.error, adminUsersQuery.error],
+    [adminUsersQuery.error, tgcCatalogQuery.error]
+  );
 
-  useEffect(() => {
-    const error = tgcCatalogQuery.error || adminUsersQuery.error;
-    if (!error || isUnauthorizedError(error)) {
-      return;
-    }
-
-    showToast({
-      type: 'error',
-      message: getApiErrorMessage(error, 'No se pudo cargar la configuracion.'),
-    });
-  }, [adminUsersQuery.error, showToast, tgcCatalogQuery.error]);
+  useQueryErrorToast(settingsQueryErrors, showToast, 'No se pudo cargar la configuracion.');
 
   const saveProfileMutation = useMutation({
     mutationFn: updateProfile,

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import CardDetailModal from '../components/cards/CardDetailModal';
@@ -8,7 +8,9 @@ import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
 import DeckSummaryCard from '../components/decks/DeckSummaryCard';
 import { isUnauthorizedError, useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
+import useBrowserStorageState from '../hooks/useBrowserStorageState';
 import usePositiveIntegerDraftMap from '../hooks/usePositiveIntegerDraftMap';
+import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
 import { getGameConfig } from '../tcgConfig';
@@ -52,8 +54,12 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const [newDeckName, setNewDeckName] = useState('');
   const [selectedDeckId, setSelectedDeckId] = useState(null);
   const [draftDeckName, setDraftDeckName] = useState('');
-  const [deckCardView, setDeckCardView] = useState(
-    () => localStorage.getItem('deckCardViewMode') || 'detail'
+  const [deckCardView, setDeckCardView] = useBrowserStorageState(
+    'deckCardViewMode',
+    'detail',
+    {
+      validate: (value, fallback) => ['detail', 'compact', 'inventory'].includes(value) ? value : fallback,
+    }
   );
   const [selectedCard, setSelectedCard] = useState(null);
   const [editingAssignmentCardId, setEditingAssignmentCardId] = useState(null);
@@ -70,7 +76,6 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const [updatingConsideringCardId, setUpdatingConsideringCardId] = useState(null);
   const [movingConsideringCardId, setMovingConsideringCardId] = useState(null);
   const [deckListPreview, setDeckListPreview] = useState(null);
-  const importDeckInputRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -117,10 +122,6 @@ function Decks({ activeTcgSlug, activeTgc }) {
   });
 
   useEffect(() => {
-    localStorage.setItem('deckCardViewMode', deckCardView);
-  }, [deckCardView]);
-
-  useEffect(() => {
     if (selectedDeck?.name) {
       setDraftDeckName(selectedDeck.name);
     }
@@ -142,17 +143,12 @@ function Decks({ activeTcgSlug, activeTgc }) {
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.pathname, location.state, navigate]);
 
-  useEffect(() => {
-    const error = deckListQuery.error || selectedDeckQuery.error;
-    if (!error || isUnauthorizedError(error)) {
-      return;
-    }
+  const deckQueryErrors = useMemo(
+    () => [deckListQuery.error, selectedDeckQuery.error],
+    [deckListQuery.error, selectedDeckQuery.error]
+  );
 
-    showToast({
-      type: 'error',
-      message: getApiErrorMessage(error, 'No se pudieron cargar los datos de mazos.'),
-    });
-  }, [deckListQuery.error, selectedDeckQuery.error, showToast]);
+  useQueryErrorToast(deckQueryErrors, showToast, 'No se pudieron cargar los datos de mazos.');
 
   const invalidateCollectionQuery = useCallback(() => {
     if (!activeTgc?.id) {
@@ -522,9 +518,6 @@ function Decks({ activeTcgSlug, activeTgc }) {
         message: getApiErrorMessage(error, 'No se pudo importar el mazo.'),
       });
     },
-    onSettled: () => {
-      setImportingDeck(false);
-    },
   });
 
   const shareDeckMutation = useMutation({
@@ -567,10 +560,6 @@ function Decks({ activeTcgSlug, activeTgc }) {
     await copyDeckList(deck.name, listText);
   };
 
-  const triggerDeckImport = () => {
-    importDeckInputRef.current?.click();
-  };
-
   const buildImportDeckPayload = useCallback((rawContent, fallbackTgcId, nameOverride = '') => {
     let payload;
 
@@ -589,41 +578,53 @@ function Decks({ activeTcgSlug, activeTgc }) {
     return payload;
   }, []);
 
-  const handleDeckImport = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
+  const runDeckImport = useCallback(async ({
+    rawContent,
+    emptyContentMessage,
+    genericErrorMessage,
+    nameOverride = importDeckName,
+  }) => {
     setImportingDeck(true);
 
     try {
-      const rawContent = await file.text();
-      const payload = buildImportDeckPayload(rawContent, activeTgc?.id, importDeckName);
+      const payload = buildImportDeckPayload(rawContent, activeTgc?.id, nameOverride);
 
       if (!payload.cards.length && !(payload.egg_cards || []).length) {
-        throw new Error('El archivo no contiene cartas importables.');
+        throw new Error(emptyContentMessage);
       }
 
       try {
         await importDeckMutation.mutateAsync(payload);
       } catch (_error) {
-        // The mutation already reports backend errors through the shared toast flow.
+        // Backend errors are already handled by the shared mutation error flow.
       }
     } catch (error) {
       if (!isUnauthorizedError(error)) {
         showToast({
           type: 'error',
-          message: getApiErrorMessage(error, 'No se pudo importar el mazo.'),
+          message: getApiErrorMessage(error, genericErrorMessage),
         });
       }
-      setImportingDeck(false);
     } finally {
-      if (event.target) {
-        event.target.value = '';
-      }
+      setImportingDeck(false);
     }
-  };
+  }, [
+    activeTgc?.id,
+    buildImportDeckPayload,
+    importDeckMutation,
+    importDeckName,
+    showToast,
+  ]);
+
+  const handleDeckImportFile = useCallback(async (file) => {
+    const rawContent = await file.text();
+
+    await runDeckImport({
+      rawContent,
+      emptyContentMessage: 'El archivo no contiene cartas importables.',
+      genericErrorMessage: 'No se pudo importar el mazo.',
+    });
+  }, [runDeckImport]);
 
   const submitDeckListImport = async () => {
     const trimmedContent = importDeckText.trim();
@@ -635,29 +636,11 @@ function Decks({ activeTcgSlug, activeTgc }) {
       return;
     }
 
-    setImportingDeck(true);
-
-    try {
-      const payload = buildImportDeckPayload(trimmedContent, activeTgc?.id, importDeckName);
-
-      if (!payload.cards.length && !(payload.egg_cards || []).length) {
-        throw new Error('La lista no contiene cartas importables.');
-      }
-
-      try {
-        await importDeckMutation.mutateAsync(payload);
-      } catch (_error) {
-        // The mutation already reports backend errors through the shared toast flow.
-      }
-    } catch (error) {
-      if (!isUnauthorizedError(error)) {
-        showToast({
-          type: 'error',
-          message: getApiErrorMessage(error, 'No se pudo importar la lista del mazo.'),
-        });
-      }
-      setImportingDeck(false);
-    }
+    await runDeckImport({
+      rawContent: trimmedContent,
+      emptyContentMessage: 'La lista no contiene cartas importables.',
+      genericErrorMessage: 'No se pudo importar la lista del mazo.',
+    });
   };
 
   const createDeckHandler = (e) => {
@@ -848,14 +831,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
           onImportDeckNameChange={setImportDeckName}
           onImportDeckTextChange={setImportDeckText}
           onSubmitListImport={submitDeckListImport}
-          onTriggerFileImport={triggerDeckImport}
-        />
-        <input
-          ref={importDeckInputRef}
-          type="file"
-          accept=".json,.txt,text/plain,application/json"
-          className="deck-import-input"
-          onChange={handleDeckImport}
+          onImportFile={handleDeckImportFile}
         />
       </section>
 

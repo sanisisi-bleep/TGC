@@ -1,15 +1,17 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import FilterAutocomplete from '../components/filters/FilterAutocomplete';
+import CollectionCardItem from '../components/collection/CollectionCardItem';
+import CollectionControlsPanel from '../components/collection/CollectionControlsPanel';
 import CardDetailModal from '../components/cards/CardDetailModal';
 import { useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
+import useBrowserStorageState from '../hooks/useBrowserStorageState';
+import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
 import { getGameConfig } from '../tcgConfig';
 import { getApiErrorMessage } from '../utils/apiMessages';
-import { isInteractiveElementTarget } from '../utils/clickTargets';
 import {
   buildSetFilterOptions,
   compareCollectionCodes,
@@ -17,6 +19,7 @@ import {
   normalizeText,
 } from '../utils/setFilters';
 import { applyCollectionDeckUsageUpdate } from '../utils/collectionCache';
+import { normalizeCollectionCardType } from '../utils/collectionView';
 import { addCardToDeck, adjustCollectionCard, getCollection, getDeckOptions } from '../services/api';
 
 const EMPTY_COLLECTION = [];
@@ -30,39 +33,6 @@ const buildOrderedOptions = (values, preferredOrder = []) => {
     .sort((a, b) => a.localeCompare(b));
 
   return [...preferred, ...extra];
-};
-
-const normalizeCollectionCardType = (cardType, tcgSlug) => {
-  const normalizedType = (cardType || '').toString().trim();
-  if (!normalizedType) {
-    return '';
-  }
-
-  if (tcgSlug === 'one-piece' && normalizedType.toUpperCase().includes('DON')) {
-    return 'DON!!';
-  }
-
-  return normalizedType;
-};
-
-const buildCollectionMeta = (card, tcgSlug) => (
-  [
-    normalizeCollectionCardType(card?.card_type, tcgSlug) || 'Sin tipo',
-    card?.color || 'Sin color',
-    card?.rarity || 'Sin rareza',
-  ].join(' | ')
-);
-
-const getCollectionDeckSectionLabel = (section) => {
-  if (section === 'egg') {
-    return 'Egg';
-  }
-
-  if (section === 'don') {
-    return 'DON';
-  }
-
-  return 'Main';
 };
 
 const compareCollectionCards = (leftCard, rightCard, direction = 'asc') => {
@@ -107,8 +77,12 @@ function Collection({ activeTcgSlug, activeTgc }) {
     set: '',
   });
   const [collectionSort, setCollectionSort] = useState('name-asc');
-  const [collectionView, setCollectionView] = useState(
-    () => localStorage.getItem('collectionViewMode') || 'detail'
+  const [collectionView, setCollectionView] = useBrowserStorageState(
+    'collectionViewMode',
+    'detail',
+    {
+      validate: (value, fallback) => ['detail', 'grid', 'inventory'].includes(value) ? value : fallback,
+    }
   );
   const [selectedCard, setSelectedCard] = useState(null);
   const deferredCollectionSearchTerm = useDeferredValue(collectionSearchTerm);
@@ -137,10 +111,6 @@ function Collection({ activeTcgSlug, activeTgc }) {
   );
 
   useEffect(() => {
-    localStorage.setItem('collectionViewMode', collectionView);
-  }, [collectionView]);
-
-  useEffect(() => {
     setCollectionSearchTerm('');
     setCollectionFilters({
       type: '',
@@ -164,17 +134,12 @@ function Collection({ activeTcgSlug, activeTgc }) {
     });
   }, [collection]);
 
-  useEffect(() => {
-    const error = collectionQuery.error || decksQuery.error;
-    if (!error || isUnauthorizedError(error)) {
-      return;
-    }
+  const collectionQueryErrors = useMemo(
+    () => [collectionQuery.error, decksQuery.error],
+    [collectionQuery.error, decksQuery.error]
+  );
 
-    showToast({
-      type: 'error',
-      message: getApiErrorMessage(error, 'No se pudo cargar la coleccion.'),
-    });
-  }, [collectionQuery.error, decksQuery.error, showToast]);
+  useQueryErrorToast(collectionQueryErrors, showToast, 'No se pudo cargar la coleccion.');
 
   const updateCollectionQuery = useCallback((updater) => {
     if (!activeTgc?.id) {
@@ -317,11 +282,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
     navigate('/decks', { state: { openDeckId: deckId } });
   };
 
-  const openCollectionCard = (event, card) => {
-    if (isInteractiveElementTarget(event.target)) {
-      return;
-    }
-
+  const openCollectionCard = (card) => {
     setSelectedCard(card);
   };
 
@@ -506,233 +467,45 @@ function Collection({ activeTcgSlug, activeTgc }) {
         </div>
       </section>
 
-      <section className="panel collection-controls-panel">
-        <div className="collection-controls-copy">
-          <strong>Filtra tu coleccion</strong>
-          <span>
-            Mostrando {visibleCollection.length} de {safeCollection.length} cartas registradas.
-          </span>
-        </div>
-
-        <div className="collection-controls">
-          <input
-            type="text"
-            placeholder="Buscar por nombre, codigo, version o set..."
-            value={collectionSearchTerm}
-            onChange={(e) => setCollectionSearchTerm(e.target.value)}
-          />
-
-          <select
-            value={collectionFilters.type}
-            onChange={(e) => setCollectionFilters((current) => ({ ...current, type: e.target.value }))}
-          >
-            <option value="">Todos los tipos</option>
-            {availableTypeOptions.map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
-
-          <select
-            value={collectionFilters.color}
-            onChange={(e) => setCollectionFilters((current) => ({ ...current, color: e.target.value }))}
-          >
-            <option value="">Todos los colores</option>
-            {availableColorOptions.map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
-
-          <select
-            value={collectionFilters.rarity}
-            onChange={(e) => setCollectionFilters((current) => ({ ...current, rarity: e.target.value }))}
-          >
-            <option value="">Todas las rarezas</option>
-            {availableRarityOptions.map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
-
-          <FilterAutocomplete
-            value={collectionFilters.set}
-            options={availableSetOptions}
-            allLabel="Todos los sets"
-            placeholder="Escribe un set o codigo..."
-            onChange={(value) => setCollectionFilters((current) => ({ ...current, set: value }))}
-          />
-
-          <select
-            value={collectionSort}
-            onChange={(e) => setCollectionSort(e.target.value)}
-          >
-            <option value="name-asc">Orden: Nombre</option>
-            <option value="collection-asc">Orden: Codigo ascendente</option>
-            <option value="collection-desc">Orden: Codigo descendente</option>
-            <option value="rarity-asc">Orden: Rareza</option>
-            <option value="quantity-desc">Orden: Total copias</option>
-            <option value="available-desc">Orden: Disponibles</option>
-          </select>
-
-          <button
-            type="button"
-            className="ghost-button collection-clear-button"
-            onClick={clearCollectionFilters}
-            disabled={!hasCollectionFilters}
-          >
-            Limpiar
-          </button>
-        </div>
-      </section>
+      <CollectionControlsPanel
+        totalCards={safeCollection.length}
+        visibleCards={visibleCollection.length}
+        searchTerm={collectionSearchTerm}
+        filters={collectionFilters}
+        sortValue={collectionSort}
+        typeOptions={availableTypeOptions}
+        colorOptions={availableColorOptions}
+        rarityOptions={availableRarityOptions}
+        setOptions={availableSetOptions}
+        hasFilters={hasCollectionFilters}
+        onSearchTermChange={setCollectionSearchTerm}
+        onFilterChange={(filterName, value) => setCollectionFilters((current) => ({ ...current, [filterName]: value }))}
+        onSortChange={setCollectionSort}
+        onClear={clearCollectionFilters}
+      />
 
       <div className={`collection-list ${collectionView !== 'detail' ? 'is-grid' : ''}`}>
-        {visibleCollection.map((item) => {
-          const isUpdating = updatingCardId === item.card.id;
-          const isInventoryView = collectionView === 'inventory';
-          const collectionSet = item.card.set_name || 'Sin set';
-          const requestedDeckQuantity = getCollectionActionQuantity(item.card.id) || 1;
-
-          return (
-            <article
-              key={item.card.id}
-              className={`collection-item ${collectionView !== 'detail' ? 'is-grid' : ''} ${isInventoryView ? 'is-inventory' : ''} is-openable`}
-              onClick={(event) => openCollectionCard(event, item.card)}
-            >
-              <div className="collection-visual">
-                <img
-                  src={item.card.image_url}
-                  alt={item.card.name}
-                  loading="lazy"
-                  decoding="async"
-                />
-                {isInventoryView ? (
-                  <div className="collection-count-panel">
-                    <span className="collection-panel-label">Copias</span>
-                    <strong>x{item.total_quantity}</strong>
-                    <span>Disponibles x{item.available_quantity}</span>
-                  </div>
-                ) : (
-                  <div className="collection-stepper-panel">
-                    <span className="collection-panel-label">Copias</span>
-                    <div className="quantity-stepper-controls">
-                      <button
-                        type="button"
-                        onClick={() => adjustCollectionQuantity(item.card.id, -1)}
-                        disabled={isUpdating}
-                      >
-                        -
-                      </button>
-                      <span>x{item.total_quantity}</span>
-                      <button
-                        type="button"
-                        onClick={() => adjustCollectionQuantity(item.card.id, 1)}
-                        disabled={isUpdating}
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <div className="collection-batch-editor">
-                      <div className="collection-batch-controls">
-                        <button
-                          type="button"
-                          className="secondary-inline-button secondary-inline-button-icon"
-                          onClick={() => applyManualCollectionChange(item.card.id, 'subtract')}
-                          disabled={isUpdating}
-                          aria-label="Restar varias copias"
-                        >
-                          -
-                        </button>
-                        <input
-                          id={`collection-quantity-${item.card.id}`}
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={quantityInputs[item.card.id] || '1'}
-                          onChange={(e) =>
-                            setQuantityInputs((current) => ({
-                              ...current,
-                              [item.card.id]: e.target.value,
-                            }))
-                          }
-                          disabled={isUpdating}
-                        />
-                        <button
-                          type="button"
-                          className="secondary-inline-button secondary-inline-button-icon"
-                          onClick={() => applyManualCollectionChange(item.card.id, 'add')}
-                          disabled={isUpdating}
-                          aria-label="Sumar varias copias"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="collection-main">
-                <div className="collection-copy">
-                  <div className="collection-heading">
-                    <h3>{item.card.name}</h3>
-                    <div className="collection-counter-row">
-                      <span className="card-chip">Total: x{item.total_quantity}</span>
-                      <span className="card-chip card-chip-secondary">
-                        Disponible: x{item.available_quantity}
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="collection-meta">
-                    {buildCollectionMeta(item.card, activeTcgSlug)}
-                  </p>
-
-                  <p className="collection-meta">Set: {collectionSet}</p>
-
-                  <div className="collection-decks">
-                    <strong>En mazos</strong>
-                    {(item.decks || []).length > 0 ? (
-                      <div className="deck-link-list">
-                        {item.decks.map((deck) => (
-                          <button
-                            key={`${deck.id}-${deck.section || 'main'}`}
-                            type="button"
-                            className="deck-link-button"
-                            onClick={() => openDeck(deck.id)}
-                          >
-                            {deck.name} {getCollectionDeckSectionLabel(deck.section)} x{deck.quantity}
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="collection-empty-text">Todavia no esta en ningun mazo.</span>
-                    )}
-                  </div>
-                </div>
-
-                {!isInventoryView && (
-                  <div className="collection-actions">
-                    <span className="collection-panel-label">
-                      Agregar al mazo x{requestedDeckQuantity}
-                    </span>
-                    <div className="deck-buttons">
-                      {decks.map((deck) => (
-                        <button
-                          key={deck.id}
-                          type="button"
-                          onClick={() => addCardToDeckFromCollection(deck.id, item.card.id)}
-                        >
-                          {requestedDeckQuantity === 1
-                            ? `Agregar a ${deck.name}`
-                            : `Agregar x${requestedDeckQuantity} a ${deck.name}`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </article>
-          );
-        })}
+        {visibleCollection.map((item) => (
+          <CollectionCardItem
+            key={item.card.id}
+            item={item}
+            collectionView={collectionView}
+            activeTcgSlug={activeTcgSlug}
+            decks={decks}
+            isUpdating={updatingCardId === item.card.id}
+            requestedDeckQuantity={getCollectionActionQuantity(item.card.id) || 1}
+            quantityInputValue={quantityInputs[item.card.id] || '1'}
+            onOpenCard={openCollectionCard}
+            onAdjustQuantity={adjustCollectionQuantity}
+            onApplyManualChange={applyManualCollectionChange}
+            onQuantityInputChange={(cardId, value) => setQuantityInputs((current) => ({
+              ...current,
+              [cardId]: value,
+            }))}
+            onOpenDeck={openDeck}
+            onAddToDeck={addCardToDeckFromCollection}
+          />
+        ))}
 
         {safeCollection.length === 0 && (
           <div className="empty-state panel">

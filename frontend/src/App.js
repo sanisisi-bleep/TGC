@@ -1,10 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import './App.css';
 import AppErrorBoundary from './components/AppErrorBoundary';
+import { SessionBootstrapPanel, TgcBootstrapPanel } from './components/layout/BootstrapPanels';
+import SiteNavigation from './components/layout/SiteNavigation';
 import Home from './pages/Home';
 import Search from './pages/Search';
 import Collection from './pages/Collection';
@@ -12,26 +14,20 @@ import Decks from './pages/Decks';
 import Settings from './pages/Settings';
 import SharedDeck from './pages/SharedDeck';
 import { SessionProvider, useSession } from './context/SessionContext';
-import { ToastProvider } from './context/ToastContext';
+import { ToastProvider, useToast } from './context/ToastContext';
+import useBrowserStorageState from './hooks/useBrowserStorageState';
 import { buildTcgMap, DEFAULT_TCG_SLUG, GAME_CONFIGS, getGameConfig } from './tcgConfig';
 import queryKeys from './queryKeys';
 import { QUERY_STALE_TIMES } from './queryConfig';
 import { getTgcCatalog } from './services/api';
+import useInstallPrompt from './hooks/useInstallPrompt';
 
 const THEME_MODE_STORAGE_KEY = 'tgc-theme-mode-v1';
+const ACTIVE_TCG_STORAGE_KEY = 'activeTcgSlug';
 
 const getPreferredThemeMode = () => {
   if (typeof window === 'undefined') {
     return 'light';
-  }
-
-  try {
-    const storedValue = window.localStorage.getItem(THEME_MODE_STORAGE_KEY);
-    if (storedValue === 'light' || storedValue === 'dark') {
-      return storedValue;
-    }
-  } catch (_error) {
-    // Ignore storage access issues and fall back to system preference.
   }
 
   if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -73,178 +69,6 @@ const buildAvailableGames = (tgcBySlug) => (
     .filter((game) => game.available)
 );
 
-function BootstrapPanel({
-  paletteClass = '',
-  eyebrow,
-  title,
-  description,
-  action = null,
-}) {
-  return (
-    <div className={`page-shell ${paletteClass}`.trim()}>
-      <section className="page-hero">
-        <div>
-          <span className="eyebrow">{eyebrow}</span>
-          <h1>{title}</h1>
-          <p>{description}</p>
-        </div>
-        {action}
-      </section>
-    </div>
-  );
-}
-
-function SessionBootstrapPanel() {
-  return (
-    <BootstrapPanel
-      eyebrow="Sesion"
-      title="Preparando la aplicacion"
-      description="Comprobando tu sesion y cargando el estado inicial antes de mostrar el contenido."
-    />
-  );
-}
-
-function TgcBootstrapPanel({ activeGame, error, onRetry }) {
-  const action = error ? (
-    <button type="button" className="logout-button" onClick={onRetry}>
-      Reintentar carga
-    </button>
-  ) : null;
-
-  return (
-    <BootstrapPanel
-      paletteClass={activeGame.palette}
-      eyebrow={activeGame.eyebrow}
-      title={error ? 'No se pudo preparar el catalogo' : `Preparando ${activeGame.shortName}`}
-      description={
-        error
-          ? `No pudimos cargar la configuracion de ${activeGame.shortName}. Reintenta sin tener que refrescar toda la pagina.`
-          : `Preparando ${activeGame.shortName} para que el buscador entre ya con el juego activo correcto.`
-      }
-      action={action}
-    />
-  );
-}
-
-function SiteNavigation({
-  isAuthenticated,
-  navGames,
-  activeTcgSlug,
-  themeMode,
-  onSelectGame,
-  onToggleTheme,
-  onLogout,
-}) {
-  const location = useLocation();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-  useEffect(() => {
-    setIsMobileMenuOpen(false);
-  }, [activeTcgSlug, isAuthenticated, location.pathname]);
-
-  const handleSelectGame = (slug) => {
-    onSelectGame(slug);
-    setIsMobileMenuOpen(false);
-  };
-
-  const handleLogout = () => {
-    setIsMobileMenuOpen(false);
-    onLogout();
-  };
-
-  const closeMobileMenu = () => {
-    setIsMobileMenuOpen(false);
-  };
-
-  const themeToggleLabel = themeMode === 'dark'
-    ? 'Cambiar a modo claro'
-    : 'Cambiar a modo oscuro';
-  const themeToggleIcon = themeMode === 'dark' ? '\u2600' : '\u263e';
-
-  return (
-    <nav className="navbar">
-      <div className="nav-header">
-        <div className="nav-brand">
-          <Link to="/" onClick={closeMobileMenu}>Multiverse TCG Manager</Link>
-        </div>
-        <button
-          type="button"
-          className={`nav-menu-toggle ${isMobileMenuOpen ? 'is-open' : ''}`}
-          aria-expanded={isMobileMenuOpen}
-          aria-controls="site-navigation-panel"
-          aria-label={isMobileMenuOpen ? 'Cerrar menu' : 'Abrir menu'}
-          onClick={() => setIsMobileMenuOpen((current) => !current)}
-        >
-          <span />
-          <span />
-          <span />
-        </button>
-      </div>
-
-      <div
-        id="site-navigation-panel"
-        className={`nav-menu-panel ${isMobileMenuOpen ? 'is-open' : ''}`}
-      >
-        {isAuthenticated ? (
-          <div className="nav-session">
-            <div className="nav-game-switcher" aria-label="Juego activo">
-              {navGames.map((game) => (
-                <button
-                  key={game.slug}
-                  type="button"
-                  className={`nav-game-pill ${activeTcgSlug === game.slug ? 'is-active' : ''}`}
-                  onClick={() => handleSelectGame(game.slug)}
-                >
-                  {game.shortName}
-                </button>
-              ))}
-            </div>
-            <ul className="nav-links">
-              <li><Link to="/search" onClick={closeMobileMenu}>Buscar Cartas</Link></li>
-              <li><Link to="/collection" onClick={closeMobileMenu}>Mi Coleccion</Link></li>
-              <li><Link to="/decks" onClick={closeMobileMenu}>Mis Mazos</Link></li>
-              <li><Link to="/settings" onClick={closeMobileMenu}>Configuracion</Link></li>
-              <li>
-                <button
-                  type="button"
-                  className="nav-theme-toggle"
-                  aria-pressed={themeMode === 'dark'}
-                  aria-label={themeToggleLabel}
-                  title={themeToggleLabel}
-                  onClick={onToggleTheme}
-                >
-                  <span aria-hidden="true" className="nav-theme-toggle-icon">{themeToggleIcon}</span>
-                  <span className="sr-only">{themeToggleLabel}</span>
-                </button>
-              </li>
-              <li><button className="logout-button" onClick={handleLogout}>Cerrar Sesion</button></li>
-            </ul>
-          </div>
-        ) : (
-          <div className="nav-session nav-session-public">
-            <ul className="nav-links">
-              <li><Link to="/" onClick={closeMobileMenu}>Inicio</Link></li>
-              <li>
-                <button
-                  type="button"
-                  className="nav-theme-toggle"
-                  aria-pressed={themeMode === 'dark'}
-                  aria-label={themeToggleLabel}
-                  title={themeToggleLabel}
-                  onClick={onToggleTheme}
-                >
-                  <span aria-hidden="true" className="nav-theme-toggle-icon">{themeToggleIcon}</span>
-                  <span className="sr-only">{themeToggleLabel}</span>
-                </button>
-              </li>
-            </ul>
-          </div>
-        )}
-      </div>
-    </nav>
-  );
-}
-
 function ProtectedGameRoute({
   isAuthenticated,
   isBlocked,
@@ -279,10 +103,42 @@ function AppShell({
     logout,
     refreshSession,
   } = useSession();
+  const { showToast } = useToast();
+  const installPrompt = useInstallPrompt();
+  const canPromptInstall = installPrompt.canPrompt;
+  const showIosHint = installPrompt.showIosHint;
+  const showInstallAction = canPromptInstall || showIosHint;
+  const installButtonLabel = showIosHint ? 'Anadir app' : 'Instalar app';
+  const promptInstall = installPrompt.promptInstall;
 
   const handleLoginSuccess = useCallback(async () => {
     await refreshSession();
   }, [refreshSession]);
+
+  const handleInstallApp = useCallback(async () => {
+    if (canPromptInstall) {
+      const choice = await promptInstall();
+
+      if (choice?.outcome === 'accepted') {
+        showToast({
+          type: 'success',
+          title: 'Instalacion iniciada',
+          message: 'Si tu navegador la confirma, tendras Multiverse TCG Manager como app en el movil.',
+        });
+      }
+
+      return;
+    }
+
+    if (showIosHint) {
+      showToast({
+        type: 'info',
+        title: 'Anadir a pantalla de inicio',
+        message: 'En Safari toca Compartir y luego "Anadir a pantalla de inicio" para instalarla como app.',
+        duration: 5200,
+      });
+    }
+  }, [canPromptInstall, promptInstall, showIosHint, showToast]);
 
   const tgcCatalogQuery = useQuery({
     queryKey: queryKeys.tgcCatalog(),
@@ -340,6 +196,9 @@ function AppShell({
             navGames={navGames}
             activeTcgSlug={activeTcgSlug}
             themeMode={themeMode}
+            showInstallAction={showInstallAction}
+            installButtonLabel={installButtonLabel}
+            onInstallApp={handleInstallApp}
             onSelectGame={updateActiveTcgSlug}
             onToggleTheme={toggleThemeMode}
             onLogout={logout}
@@ -423,28 +282,31 @@ function AppShell({
 }
 
 function App() {
-  const [themeMode, setThemeMode] = useState(getPreferredThemeMode);
-  const [activeTcgSlug, setActiveTcgSlug] = useState(
-    () => localStorage.getItem('activeTcgSlug') || DEFAULT_TCG_SLUG
+  const [themeMode, setThemeMode] = useBrowserStorageState(
+    THEME_MODE_STORAGE_KEY,
+    getPreferredThemeMode,
+    {
+      validate: (value, fallback) => (value === 'light' || value === 'dark' ? value : fallback),
+    }
+  );
+  const [activeTcgSlug, setActiveTcgSlug] = useBrowserStorageState(
+    ACTIVE_TCG_STORAGE_KEY,
+    DEFAULT_TCG_SLUG,
+    {
+      validate: (value, fallback) => (typeof value === 'string' && value.trim() ? value.trim() : fallback),
+    }
   );
 
   const updateActiveTcgSlug = useCallback((nextSlug) => {
     const normalizedSlug = (nextSlug || DEFAULT_TCG_SLUG).trim() || DEFAULT_TCG_SLUG;
-    localStorage.setItem('activeTcgSlug', normalizedSlug);
     setActiveTcgSlug(normalizedSlug);
-  }, []);
+  }, [setActiveTcgSlug]);
 
   const toggleThemeMode = useCallback(() => {
     setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
-  }, []);
+  }, [setThemeMode]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
-    } catch (_error) {
-      // Ignore storage issues and keep the theme only in memory.
-    }
-
     document.body.classList.toggle('theme-dark', themeMode === 'dark');
     document.body.classList.toggle('theme-light', themeMode !== 'dark');
     document.documentElement.style.colorScheme = themeMode;

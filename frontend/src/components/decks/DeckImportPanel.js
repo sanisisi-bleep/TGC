@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 
 function DeckImportPanel({
   isOpen,
@@ -10,8 +10,23 @@ function DeckImportPanel({
   onImportDeckNameChange,
   onImportDeckTextChange,
   onSubmitListImport,
-  onTriggerFileImport,
+  onImportFile,
 }) {
+  const fileInputRef = useRef(null);
+
+  const handleFileSelection = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      await onImportFile(file);
+    } finally {
+      event.target.value = '';
+    }
+  };
+
   return (
     <div className="create-deck-secondary-actions create-deck-secondary-actions-import">
       <button
@@ -68,7 +83,7 @@ function DeckImportPanel({
               <button
                 type="button"
                 className="ghost-button"
-                onClick={onTriggerFileImport}
+                onClick={() => fileInputRef.current?.click()}
                 disabled={importingDeck}
               >
                 Cargar archivo JSON o TXT
@@ -77,6 +92,14 @@ function DeckImportPanel({
           </div>
         </div>
       )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,.txt,text/plain,application/json"
+        className="deck-import-input"
+        onChange={handleFileSelection}
+      />
     </div>
   );
 }

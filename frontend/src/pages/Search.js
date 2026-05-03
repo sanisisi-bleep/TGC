@@ -9,17 +9,17 @@ import SearchResultsToolbar from '../components/search/SearchResultsToolbar';
 import { getGameConfig } from '../tcgConfig';
 import { useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
+import useBrowserStorageState from '../hooks/useBrowserStorageState';
+import useDebouncedValue from '../hooks/useDebouncedValue';
+import useMediaQuery from '../hooks/useMediaQuery';
 import usePositiveIntegerDraftMap from '../hooks/usePositiveIntegerDraftMap';
+import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { getNewDeckCreationPlan } from '../utils/deckTools';
 import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
 import { applyCollectionDeckUsageUpdate } from '../utils/collectionCache';
 import { buildSetFilterOptions } from '../utils/setFilters';
-import {
-  readStoredEnumValue,
-  writeStoredValue,
-} from '../utils/searchCache';
 import {
   addCardToCollection,
   addCardToConsidering,
@@ -147,20 +147,6 @@ const normalizeDeckList = (payload) => (Array.isArray(payload) ? payload : EMPTY
 const normalizeCardList = (payload) => (Array.isArray(payload) ? payload : EMPTY_CARDS);
 const isUnauthorizedError = (error) => error?.response?.status === 401;
 
-const useDebouncedValue = (value, delay) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [delay, value]);
-
-  return debouncedValue;
-};
-
 function Search({ activeTcgSlug, activeTgc }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const { profile } = useSession();
@@ -180,17 +166,26 @@ function Search({ activeTcgSlug, activeTgc }) {
   const [newDeckName, setNewDeckName] = useState('');
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState('name-asc');
-  const [pageSize, setPageSize] = useState(() => readStoredEnumValue(
+  const [pageSize, setPageSize] = useBrowserStorageState(
     SEARCH_CACHE_STORAGE_KEYS.pageSize,
-    SEARCH_PAGE_SIZE_OPTIONS,
-    getRecommendedPageSize()
-  ));
-  const [isMobileLayout, setIsMobileLayout] = useState(getIsMobileLayout);
-  const [cardViewMode, setCardViewMode] = useState(() => readStoredEnumValue(
+    getRecommendedPageSize,
+    {
+      storage: 'session',
+      validate: (value, fallback) => {
+        const normalizedValue = Number(value);
+        return SEARCH_PAGE_SIZE_OPTIONS.includes(normalizedValue) ? normalizedValue : fallback;
+      },
+    }
+  );
+  const isMobileLayout = useMediaQuery(MOBILE_BREAKPOINT_QUERY);
+  const [cardViewMode, setCardViewMode] = useBrowserStorageState(
     SEARCH_CACHE_STORAGE_KEYS.cardViewMode,
-    SEARCH_CARD_VIEW_MODES,
-    'detail'
-  ));
+    'detail',
+    {
+      storage: 'session',
+      validate: (value, fallback) => (SEARCH_CARD_VIEW_MODES.includes(value) ? value : fallback),
+    }
+  );
   const advancedMode = Boolean(profile?.advanced_mode);
   const {
     setDraft: setActionQuantityDraft,
@@ -216,35 +211,6 @@ function Search({ activeTcgSlug, activeTgc }) {
     }),
     [activeTgc?.id, debouncedSearchTerm, filters, page, pageSize, sortBy]
   );
-
-  useEffect(() => {
-    writeStoredValue(SEARCH_CACHE_STORAGE_KEYS.pageSize, pageSize);
-  }, [pageSize]);
-
-  useEffect(() => {
-    writeStoredValue(SEARCH_CACHE_STORAGE_KEYS.cardViewMode, cardViewMode);
-  }, [cardViewMode]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-      return undefined;
-    }
-
-    const mediaQuery = window.matchMedia(MOBILE_BREAKPOINT_QUERY);
-    const handleChange = (event) => {
-      setIsMobileLayout(event.matches);
-    };
-
-    setIsMobileLayout(mediaQuery.matches);
-
-    if (typeof mediaQuery.addEventListener === 'function') {
-      mediaQuery.addEventListener('change', handleChange);
-      return () => mediaQuery.removeEventListener('change', handleChange);
-    }
-
-    mediaQuery.addListener(handleChange);
-    return () => mediaQuery.removeListener(handleChange);
-  }, []);
 
   useEffect(() => {
     setSearchTerm('');
@@ -288,17 +254,12 @@ function Search({ activeTcgSlug, activeTgc }) {
     staleTime: QUERY_STALE_TIMES.searchDeckOptions,
   });
 
-  useEffect(() => {
-    const error = cardsQuery.error || selectedCardDetailQuery.error || facetsQuery.error || decksQuery.error;
-    if (!error || isUnauthorizedError(error)) {
-      return;
-    }
+  const searchQueryErrors = useMemo(
+    () => [cardsQuery.error, selectedCardDetailQuery.error, facetsQuery.error, decksQuery.error],
+    [cardsQuery.error, decksQuery.error, facetsQuery.error, selectedCardDetailQuery.error]
+  );
 
-    showToast({
-      type: 'error',
-      message: getApiErrorMessage(error, 'No se pudieron cargar los datos del buscador.'),
-    });
-  }, [cardsQuery.error, decksQuery.error, facetsQuery.error, selectedCardDetailQuery.error, showToast]);
+  useQueryErrorToast(searchQueryErrors, showToast, 'No se pudieron cargar los datos del buscador.');
 
   const addToCollectionMutation = useMutation({
     mutationFn: addCardToCollection,

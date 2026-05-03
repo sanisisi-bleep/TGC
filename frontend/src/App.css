@@ -583,6 +583,17 @@ textarea::placeholder {
   border-color: color-mix(in srgb, var(--nav-chip-border) 76%, rgba(255, 255, 255, 0.24));
 }
 
+.nav-install-button {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 88%, #ffffff), color-mix(in srgb, var(--accent) 62%, var(--primary))) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+.nav-install-button:hover {
+  box-shadow: 0 16px 30px color-mix(in srgb, var(--primary) 36%, transparent);
+}
+
 .nav-theme-toggle[aria-pressed='true'] {
   background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 74%, #ffffff), var(--primary));
   color: #f7fbff;
@@ -2533,6 +2544,67 @@ textarea::placeholder {
   font-size: 0.95rem;
 }
 
+.deck-import-panel {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 1.15rem;
+}
+
+.deck-import-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.deck-import-panel-header h3 {
+  margin: 0.3rem 0 0.35rem;
+}
+
+.deck-import-panel-header p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.deck-import-form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.deck-import-form input,
+.deck-import-form textarea {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--input-border);
+  border-radius: 16px;
+  background: var(--input-bg-strong);
+  color: var(--text);
+  box-shadow: var(--input-shadow);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.deck-import-form textarea {
+  min-height: 220px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.deck-import-form input:focus,
+.deck-import-form textarea:focus {
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  box-shadow: 0 0 0 4px var(--focus-ring);
+  transform: translateY(-1px);
+}
+
+.deck-import-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .deck-item-header,
 .deck-detail-header {
   display: flex;
@@ -4477,6 +4549,14 @@ textarea::placeholder {
   .settings-actions button {
     width: 100%;
     min-width: 0;
+  }
+
+  .deck-import-panel-actions {
+    flex-direction: column;
+  }
+
+  .deck-import-panel-actions button {
+    width: 100%;
   }
 
   .home-landing-grid {
