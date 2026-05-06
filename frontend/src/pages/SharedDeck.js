@@ -5,6 +5,7 @@ import CardDetailModal from '../components/cards/CardDetailModal';
 import queryKeys from '../queryKeys';
 import { getSharedDeck } from '../services/api';
 import { resolveTcgSlug } from '../tcgConfig';
+import { getDeckEggCardCount } from '../utils/deckTools';
 
 function SharedDeck() {
   const { shareToken } = useParams();
@@ -52,13 +53,14 @@ function SharedDeck() {
 
   const isOnePieceDeck = deck?.composition?.format_mode === 'one-piece';
   const isDigimonDeck = deck?.composition?.format_mode === 'digimon';
+  const deckEggCount = isDigimonDeck ? getDeckEggCardCount(deck) : 0;
   const distinctCardCount = isDigimonDeck
     ? (deck?.cards?.length || 0) + (deck?.egg_cards?.length || 0)
     : (deck?.cards?.length || 0);
   const sharedDeckSummary = isOnePieceDeck
     ? `Leader ${deck.leader_cards || 0}/${deck.required_leader_cards || 1} | Main ${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} | DON ${deck.don_cards || 0}/${deck.recommended_don_cards || 10}`
     : isDigimonDeck
-      ? `Main ${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} | Eggs ${deck.egg_cards || 0}/${deck.max_egg_cards || 5}`
+      ? `Main ${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} | Eggs ${deckEggCount}/${deck.max_egg_cards || 5}`
     : `${deck.total_cards || 0} cartas en total`;
 
   return (
@@ -101,7 +103,7 @@ function SharedDeck() {
           )}
           {isDigimonDeck && (
             <span className="deck-status-chip deck-progress-chip">
-              Eggs {deck.egg_cards || 0}/{deck.max_egg_cards || 5}
+              Eggs {deckEggCount}/{deck.max_egg_cards || 5}
             </span>
           )}
         </div>

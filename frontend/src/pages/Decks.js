@@ -25,6 +25,7 @@ import {
   copyTextToClipboard,
   downloadJson,
   downloadText,
+  getDeckEggCardCount,
   mergeDeckOverviewInList,
   parseDeckListText,
   parseImportedDeckFile,
@@ -101,6 +102,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
   const selectedDeckIsOnePiece = selectedDeck?.composition?.format_mode === 'one-piece';
   const selectedDeckIsDigimon = selectedDeck?.composition?.format_mode === 'digimon';
+  const selectedDeckEggCount = selectedDeckIsDigimon ? getDeckEggCardCount(selectedDeck) : 0;
   const selectedDeckConsideringTotal = Number(selectedDeck?.considering_total_cards) || 0;
   const selectedDeckDistinctCards = selectedDeckIsDigimon
     ? (selectedDeck?.cards?.length || 0) + (selectedDeck?.egg_cards?.length || 0)
@@ -108,7 +110,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const selectedDeckSummary = selectedDeckIsOnePiece
     ? `Leader ${selectedDeck?.leader_cards || 0}/${selectedDeck?.required_leader_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | DON ${selectedDeck?.don_cards || 0}/${selectedDeck?.recommended_don_cards || 10}`
     : selectedDeckIsDigimon
-      ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | Eggs ${selectedDeck?.egg_cards || 0}/${selectedDeck?.max_egg_cards || 5}`
+      ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | Eggs ${selectedDeckEggCount}/${selectedDeck?.max_egg_cards || 5}`
     : `${selectedDeck?.total_cards || 0} cartas en total`;
   const {
     setDraft: setDeckActionQuantityDraft,
@@ -865,6 +867,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
         selectedDeckDistinctCards={selectedDeckDistinctCards}
         selectedDeckSummary={selectedDeckSummary}
         selectedDeckConsideringTotal={selectedDeckConsideringTotal}
+        selectedDeckEggCount={selectedDeckEggCount}
         selectedDeckIsOnePiece={selectedDeckIsOnePiece}
         selectedDeckIsDigimon={selectedDeckIsDigimon}
         deckCardView={deckCardView}

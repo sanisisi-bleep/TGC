@@ -12,6 +12,7 @@ function DeckDetailModal({
   selectedDeckDistinctCards,
   selectedDeckSummary,
   selectedDeckConsideringTotal,
+  selectedDeckEggCount,
   selectedDeckIsOnePiece,
   selectedDeckIsDigimon,
   deckCardView,
@@ -107,7 +108,7 @@ function DeckDetailModal({
                   )}
                   {selectedDeckIsDigimon && (
                     <span className="deck-status-chip deck-progress-chip">
-                      Eggs {selectedDeck?.egg_cards || 0}/{selectedDeck?.max_egg_cards || 5}
+                      Eggs {selectedDeckEggCount || 0}/{selectedDeck?.max_egg_cards || 5}
                     </span>
                   )}
                   {(selectedDeck?.missing_copies || 0) > 0 && (

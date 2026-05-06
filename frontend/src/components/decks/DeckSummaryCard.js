@@ -1,4 +1,5 @@
 import React from 'react';
+import { getDeckEggCardCount } from '../../utils/deckTools';
 
 function DeckSummaryCard({
   deck,
@@ -12,6 +13,7 @@ function DeckSummaryCard({
 }) {
   const isOnePieceDeck = deck?.composition?.format_mode === 'one-piece';
   const isDigimonDeck = deck?.composition?.format_mode === 'digimon';
+  const deckEggCount = isDigimonDeck ? getDeckEggCardCount(deck) : 0;
   const createdAtLabel = new Date(deck.created_at).toLocaleDateString();
   const totalCards = Number(deck.total_cards) || 0;
   const maxCards = Number(deck.max_cards) || 50;
@@ -81,7 +83,7 @@ function DeckSummaryCard({
               Main {deck.main_deck_cards || 0}/{deck.required_main_deck_cards || 50}
             </span>
             <span className="deck-status-chip deck-progress-chip">
-              Eggs {deck.egg_cards || 0}/{deck.max_egg_cards || 5}
+              Eggs {deckEggCount}/{deck.max_egg_cards || 5}
             </span>
           </>
         ) : (

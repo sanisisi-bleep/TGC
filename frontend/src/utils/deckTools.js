@@ -192,6 +192,21 @@ export const getDeckRuleSummary = (activeTcgSlug) => {
   return '';
 };
 
+export const getDeckEggCardCount = (deck) => {
+  if (Array.isArray(deck?.egg_cards)) {
+    const serializedCount = Number(deck?.egg_total_cards);
+    if (Number.isFinite(serializedCount) && serializedCount > 0) {
+      return serializedCount;
+    }
+
+    return deck.egg_cards.reduce((total, card) => (
+      total + Math.max(Number(card?.quantity) || 0, 0)
+    ), 0);
+  }
+
+  return Math.max(Number(deck?.egg_cards) || Number(deck?.egg_total_cards) || 0, 0);
+};
+
 const buildOnePieceSearchDeckSummary = (deck, rules) => {
   const leaderCards = Number(deck?.leader_cards) || 0;
   const mainDeckCards = Number(deck?.main_deck_cards) || 0;
@@ -215,7 +230,7 @@ const buildGundamSearchDeckSummary = (deck, rules) => {
 const buildDigimonSearchDeckSummary = (deck, rules) => {
   const mainDeckCards = Number(deck?.main_deck_cards) || 0;
   const requiredMainDeckCards = Number(deck?.required_main_deck_cards) || rules.requiredMainDeckCards || 50;
-  const eggCards = Number(deck?.egg_cards) || 0;
+  const eggCards = getDeckEggCardCount(deck);
   const maxEggCards = Number(deck?.max_egg_cards) || rules.maxEggCards || 5;
 
   return `Main ${mainDeckCards}/${requiredMainDeckCards} | Eggs ${eggCards}/${maxEggCards}`;
