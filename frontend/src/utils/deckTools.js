@@ -657,24 +657,30 @@ export const buildDeckListText = (deck) => {
         return leftOrder - rightOrder;
       }
       return (left.deck_key || left.source_card_id || '').localeCompare(right.deck_key || right.source_card_id || '');
-    })
-    .map((card) => `${Number(card.quantity)}x${card.deck_key || card.source_card_id || `CARD-${card.id}`}`);
+    });
 
   if (deck?.composition?.format_mode !== 'digimon') {
-    return mainCards.join('\n');
+    return mainCards
+      .map((card) => `${Number(card.quantity)}x${card.deck_key || card.source_card_id || `CARD-${card.id}`}`)
+      .join('\n');
   }
 
   const eggCards = getExportableEggDeckCards(deck)
     .slice()
     .sort((left, right) => (
       (left.deck_key || left.source_card_id || '').localeCompare(right.deck_key || right.source_card_id || '')
-    ))
-    .map((card) => `${Number(card.quantity)}x${card.deck_key || card.source_card_id || `CARD-${card.id}`}`);
+    ));
+
+  const formatDigimonExportLine = (card) => {
+    const cardCode = card.source_card_id || card.deck_key || `CARD-${card.id}`;
+    const cardName = (card.name || '').trim();
+    return `${Number(card.quantity)} ${cardCode}${cardName ? ` ${cardName}` : ''}`;
+  };
 
   return [
     '# Main Deck',
-    ...mainCards,
-    ...(eggCards.length > 0 ? ['', '# Digi-Egg Deck', ...eggCards] : []),
+    ...mainCards.map(formatDigimonExportLine),
+    ...(eggCards.length > 0 ? ['', '# Digi-Egg Deck', ...eggCards.map(formatDigimonExportLine)] : []),
   ].join('\n');
 };
 
