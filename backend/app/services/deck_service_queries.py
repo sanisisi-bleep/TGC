@@ -1,4 +1,5 @@
 import secrets
+import re
 from typing import List, Optional
 
 from sqlalchemy import func, literal
@@ -8,6 +9,38 @@ from app.services.game_rules import GUNDAM_TGC_NAME, get_tcg_rules
 
 
 class DeckServiceQueryMixin:
+    def _build_import_lookup_candidates(self, source_card_id: str) -> list[str]:
+        raw_value = (source_card_id or "").strip()
+        if not raw_value:
+            return []
+
+        compact_value = re.sub(r"\s+", "", raw_value).upper()
+        candidates = []
+
+        def append_candidate(value: str):
+            normalized_value = (value or "").strip().upper()
+            if normalized_value and normalized_value not in candidates:
+                candidates.append(normalized_value)
+
+        append_candidate(compact_value)
+        append_candidate(compact_value.replace("_", "-"))
+        append_candidate(compact_value.replace("-", "_"))
+
+        return candidates
+
+    def _build_import_deck_key_candidates(self, source_card_id: str) -> list[str]:
+        candidates = []
+
+        for candidate in self._build_import_lookup_candidates(source_card_id):
+            if candidate not in candidates:
+                candidates.append(candidate)
+
+            base_candidate = re.sub(r"([_-]P\d+)$", "", candidate, flags=re.IGNORECASE)
+            if base_candidate and base_candidate not in candidates:
+                candidates.append(base_candidate)
+
+        return candidates
+
     def _get_user_deck_or_error(self, deck_id: int, user_id: int) -> Deck:
         deck = self.db.query(Deck).filter(Deck.id == deck_id, Deck.user_id == user_id).first()
         if not deck:
@@ -236,19 +269,29 @@ class DeckServiceQueryMixin:
             raise ValueError("Each imported card must include card_id or source_card_id")
 
         version = (card_data.get("version") or "").strip()
-        source_query = query.filter(Card.source_card_id == source_card_id)
+        normalized_version = version.upper()
+        card = None
 
-        if version:
-            source_query = source_query.filter(func.coalesce(Card.version, "") == version)
-
-        card = source_query.first()
-        if not card:
-            fallback_query = query.filter(func.coalesce(Card.deck_key, "") == source_card_id)
+        for lookup_code in self._build_import_lookup_candidates(source_card_id):
+            source_query = query.filter(func.upper(func.coalesce(Card.source_card_id, "")) == lookup_code)
 
             if version:
-                fallback_query = fallback_query.filter(func.coalesce(Card.version, "") == version)
+                source_query = source_query.filter(func.upper(func.coalesce(Card.version, "")) == normalized_version)
 
-            card = fallback_query.first()
+            card = source_query.first()
+            if card:
+                break
+
+        if not card:
+            for lookup_code in self._build_import_deck_key_candidates(source_card_id):
+                fallback_query = query.filter(func.upper(func.coalesce(Card.deck_key, "")) == lookup_code)
+
+                if version:
+                    fallback_query = fallback_query.filter(func.upper(func.coalesce(Card.version, "")) == normalized_version)
+
+                card = fallback_query.first()
+                if card:
+                    break
         if not card:
             raise ValueError(f"Card not found for import: {source_card_id}")
 

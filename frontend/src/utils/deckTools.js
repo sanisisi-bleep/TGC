@@ -1161,7 +1161,7 @@ export const parseDeckListText = (rawContent, fallbackTgcId) => {
       return;
     }
 
-    const match = line.match(/^(\d+)\s*x\s*([A-Za-z0-9._-]+)$/i);
+    const match = line.match(/^(\d+)\s*(?:x\s*)?([A-Za-z0-9._-]+)(?:\s+.+)?$/i);
 
     if (!match) {
       throw new Error(`Linea ${index + 1} invalida: ${line}`);

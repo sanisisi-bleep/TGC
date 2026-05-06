@@ -49,8 +49,8 @@ function DeckImportPanel({
               <span className="eyebrow">Importacion rapida</span>
               <h3>Pegar lista de cartas</h3>
               <p>
-                Usa una linea por carta, por ejemplo <code>4xST01-005</code>.
-                {activeTcgSlug === 'digimon' ? ' Para Digimon puedes separar huevos con # Digi-Egg Deck.' : ''}
+                Usa una linea por carta, por ejemplo <code>4xST01-005</code> o <code>4 ST01-005 Nombre de carta</code>.
+                {activeTcgSlug === 'digimon' ? ' En Digimon tambien acepta listas tipo 4 BT12-002_P0 DemiVeemon y los Digi-Egg se detectan solos.' : ''}
               </p>
             </div>
           </div>
@@ -67,7 +67,9 @@ function DeckImportPanel({
             <textarea
               value={importDeckText}
               onChange={(event) => onImportDeckTextChange(event.target.value)}
-              placeholder={'4xOP01-001\n4xOP01-016\n2xST01-005'}
+              placeholder={activeTcgSlug === 'digimon'
+                ? '4 BT12-002_P0 DemiVeemon\n4 BT12-021 Veemon\n4 AD1-011 Paildramon'
+                : '4xOP01-001\n4xOP01-016\n2xST01-005'}
               rows={10}
               spellCheck={false}
             />
