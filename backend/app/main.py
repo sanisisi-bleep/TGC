@@ -42,7 +42,12 @@ def get_allowed_origins():
         "ALLOWED_ORIGINS",
         "http://localhost:3000,http://127.0.0.1:3000",
     )
-    return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    allowed_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    if "*" in allowed_origins:
+        raise RuntimeError(
+            "ALLOWED_ORIGINS cannot contain '*' while credentialed cookies are enabled."
+        )
+    return allowed_origins
 
 
 def _request_id_for(request: Request):

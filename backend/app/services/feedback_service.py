@@ -19,6 +19,10 @@ class FeedbackConfigurationError(FeedbackDeliveryError):
     pass
 
 
+class FeedbackAttachmentValidationError(ValueError):
+    pass
+
+
 @dataclass(frozen=True)
 class FeedbackAttachment:
     filename: str
@@ -38,6 +42,118 @@ class FeedbackSubmission:
     role: str
     user_id: int
     attachment: FeedbackAttachment | None = None
+
+
+def _is_jpeg(data: bytes) -> bool:
+    return data.startswith(b"\xFF\xD8\xFF")
+
+
+def _is_png(data: bytes) -> bool:
+    return data.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def _is_gif(data: bytes) -> bool:
+    return data.startswith((b"GIF87a", b"GIF89a"))
+
+
+def _is_webp(data: bytes) -> bool:
+    return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+
+
+def _is_bmp(data: bytes) -> bool:
+    return data.startswith(b"BM")
+
+
+def _is_wav(data: bytes) -> bool:
+    return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WAVE"
+
+
+def _is_ogg(data: bytes) -> bool:
+    return data.startswith(b"OggS")
+
+
+def _is_flac(data: bytes) -> bool:
+    return data.startswith(b"fLaC")
+
+
+def _is_mp3(data: bytes) -> bool:
+    if data.startswith(b"ID3"):
+        return True
+    return len(data) >= 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0
+
+
+def _is_ebml_webm(data: bytes) -> bool:
+    return data.startswith(b"\x1A\x45\xDF\xA3") and b"webm" in data[:256].lower()
+
+
+def _detect_iso_base_media_type(data: bytes, claimed_content_type: str) -> str | None:
+    if len(data) < 12 or data[4:8] != b"ftyp":
+        return None
+
+    brand = data[8:12]
+    if brand in {b"M4A ", b"M4B ", b"M4P "}:
+        return "audio/mp4"
+    if brand == b"qt  ":
+        return "video/quicktime"
+    if claimed_content_type == "audio/mp4":
+        return "audio/mp4"
+    return "video/mp4"
+
+
+def _detect_supported_feedback_media_type(data: bytes, claimed_content_type: str | None) -> str | None:
+    normalized_claim = (claimed_content_type or "").strip().lower()
+
+    if _is_png(data):
+        return "image/png"
+    if _is_jpeg(data):
+        return "image/jpeg"
+    if _is_gif(data):
+        return "image/gif"
+    if _is_webp(data):
+        return "image/webp"
+    if _is_bmp(data):
+        return "image/bmp"
+    if _is_wav(data):
+        return "audio/wav"
+    if _is_flac(data):
+        return "audio/flac"
+    if _is_mp3(data):
+        return "audio/mpeg"
+    if _is_ogg(data):
+        if normalized_claim.startswith("video/"):
+            return "video/ogg"
+        return "audio/ogg"
+    if _is_ebml_webm(data):
+        if normalized_claim == "audio/webm":
+            return "audio/webm"
+        return "video/webm"
+
+    return _detect_iso_base_media_type(data, normalized_claim)
+
+
+def validate_feedback_attachment(
+    filename: str | None,
+    claimed_content_type: str | None,
+    payload: bytes,
+) -> FeedbackAttachment:
+    if not payload:
+        raise FeedbackAttachmentValidationError("El archivo adjunto esta vacio.")
+
+    if len(payload) > FEEDBACK_ATTACHMENT_MAX_BYTES:
+        raise FeedbackAttachmentValidationError("El adjunto supera el limite de 5 MB.")
+
+    detected_content_type = _detect_supported_feedback_media_type(payload, claimed_content_type)
+    if detected_content_type is None:
+        raise FeedbackAttachmentValidationError(
+            "Solo se permiten archivos multimedia reales de imagen, video o audio compatibles."
+        )
+
+    safe_name = Path(filename or "adjunto").name[:255] or "adjunto"
+    return FeedbackAttachment(
+        filename=safe_name,
+        content_type=detected_content_type,
+        data=payload,
+    )
 
 
 def _env_flag(name: str, default: bool) -> bool:

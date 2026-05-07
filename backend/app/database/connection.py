@@ -211,6 +211,28 @@ def ensure_collection_indexes():
 
     _run_schema_statements(statements)
 
+
+def ensure_rate_limit_tables():
+    statements = [
+        (
+            "CREATE TABLE IF NOT EXISTS rate_limit_counters ("
+            "id SERIAL PRIMARY KEY, "
+            "bucket VARCHAR(100) NOT NULL, "
+            "rate_key VARCHAR(255) NOT NULL, "
+            "window_seconds INTEGER NOT NULL, "
+            "window_started_at INTEGER NOT NULL, "
+            "hits INTEGER NOT NULL DEFAULT 0, "
+            "created_at TIMESTAMP DEFAULT NOW() NOT NULL)"
+        ),
+        (
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_limit_counter_window "
+            "ON rate_limit_counters(bucket, rate_key, window_seconds, window_started_at)"
+        ),
+        "CREATE INDEX IF NOT EXISTS idx_rate_limit_bucket_created_at ON rate_limit_counters(bucket, created_at)",
+    ]
+
+    _run_schema_statements(statements)
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     ensure_card_columns()
@@ -218,6 +240,7 @@ def init_db():
     ensure_deck_columns()
     ensure_user_columns()
     ensure_collection_indexes()
+    ensure_rate_limit_tables()
 
 def get_db():
     db = SessionLocal()

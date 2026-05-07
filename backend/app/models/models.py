@@ -9,6 +9,7 @@ from app.database.models import (
     GundamCard,
     MagicCard,
     OnePieceCard,
+    RateLimitCounter,
     Tgc,
     User,
     UserCollection,
@@ -28,4 +29,5 @@ __all__ = [
     "DeckCard",
     "DeckConsideringCard",
     "DeckEggCard",
+    "RateLimitCounter",
 ]

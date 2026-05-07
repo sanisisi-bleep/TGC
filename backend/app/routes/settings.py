@@ -1,5 +1,4 @@
 from typing import Annotated
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError
@@ -9,14 +8,23 @@ from sqlalchemy import delete
 from app.database.connection import get_db
 from app.models import Tgc, User, UserCollection, Deck, DeckCard, DeckConsideringCard, DeckEggCard
 from app.rate_limit import RateLimitPolicy, enforce_rate_limit
-from app.services.auth_service import get_current_user, get_password_hash, require_admin_user, verify_password
+from app.services.auth_service import (
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    get_current_user,
+    get_password_hash,
+    require_admin_user,
+    validate_password_value,
+    verify_password,
+)
 from app.services.feedback_service import (
-    FEEDBACK_ATTACHMENT_MAX_BYTES,
     FeedbackAttachment,
     FeedbackConfigurationError,
     FeedbackDeliveryError,
     FeedbackSubmission,
+    FeedbackAttachmentValidationError,
     deliver_feedback_email,
+    validate_feedback_attachment,
 )
 from app.logger import build_log_extra, logger
 
@@ -46,8 +54,11 @@ class SettingsUpdate(BaseModel):
 
 
 class PasswordUpdate(BaseModel):
-    old_password: str
-    new_password: str
+    old_password: Annotated[str, StringConstraints(min_length=1, max_length=PASSWORD_MAX_LENGTH)]
+    new_password: Annotated[
+        str,
+        StringConstraints(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH),
+    ]
 
 
 class AdminRoleUpdate(BaseModel):
@@ -55,7 +66,7 @@ class AdminRoleUpdate(BaseModel):
 
 
 class DeleteAccountRequest(BaseModel):
-    password: str
+    password: Annotated[str, StringConstraints(min_length=1, max_length=PASSWORD_MAX_LENGTH)]
 
 
 class FeedbackRequest(BaseModel):
@@ -97,38 +108,15 @@ def _parse_form_bool(value: str | bool | None, default: bool = True) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _is_supported_feedback_media_type(content_type: str | None) -> bool:
-    normalized = (content_type or "").strip().lower()
-    return (
-        normalized.startswith("image/")
-        or normalized.startswith("video/")
-        or normalized.startswith("audio/")
-    )
-
-
 async def _build_feedback_attachment(upload: UploadFile | None) -> FeedbackAttachment | None:
     if upload is None or not (upload.filename or "").strip():
         return None
 
-    if not _is_supported_feedback_media_type(upload.content_type):
-        raise HTTPException(
-            status_code=400,
-            detail="Solo se permiten archivos multimedia de imagen, video o audio.",
-        )
-
     payload = await upload.read()
-    if not payload:
-        raise HTTPException(status_code=400, detail="El archivo adjunto esta vacio.")
-
-    if len(payload) > FEEDBACK_ATTACHMENT_MAX_BYTES:
-        raise HTTPException(status_code=400, detail="El adjunto supera el limite de 5 MB.")
-
-    safe_name = Path(upload.filename).name[:255] or "adjunto"
-    return FeedbackAttachment(
-        filename=safe_name,
-        content_type=(upload.content_type or "application/octet-stream").strip().lower(),
-        data=payload,
-    )
+    try:
+        return validate_feedback_attachment(upload.filename, upload.content_type, payload)
+    except FeedbackAttachmentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @router.get("/me")
 def get_my_settings(current_user=Depends(get_current_user)):
@@ -185,8 +173,10 @@ def update_password(
         )
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
-    if len(payload.new_password or "") < 8:
-        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    try:
+        validate_password_value(payload.new_password, field_name="New password")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     current_user.password_hash = get_password_hash(payload.new_password)
     db.add(current_user)

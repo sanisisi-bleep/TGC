@@ -3,11 +3,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 from app.database.connection import get_db
 from app.rate_limit import RateLimitPolicy, enforce_rate_limit
 from app.models import User
 from app.services.auth_service import (
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
     authenticate_user,
     clear_auth_cookie,
     create_access_token,
@@ -26,6 +29,9 @@ LOGIN_IP_POLICY = RateLimitPolicy(bucket="auth-login-ip", limit=12, window_secon
 LOGIN_IDENTIFIER_POLICY = RateLimitPolicy(bucket="auth-login-identifier", limit=6, window_seconds=10 * 60)
 REGISTER_IP_POLICY = RateLimitPolicy(bucket="auth-register-ip", limit=5, window_seconds=30 * 60)
 REGISTER_IDENTIFIER_POLICY = RateLimitPolicy(bucket="auth-register-identifier", limit=3, window_seconds=60 * 60)
+REGISTRATION_ACCEPTED_MESSAGE = (
+    "Si los datos proporcionados estaban disponibles, la cuenta ya esta lista para iniciar sesion."
+)
 
 
 def _apply_no_store(response: Response):
@@ -47,15 +53,19 @@ def _serialize_session_user(user: User):
 
 
 class UserCreate(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict()
 
     username: Annotated[str, StringConstraints(min_length=3, max_length=50)]
     email: Annotated[str, StringConstraints(min_length=5, max_length=100)]
-    password: Annotated[str, StringConstraints(min_length=8, max_length=72)]
+    password: Annotated[
+        str,
+        StringConstraints(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH),
+    ]
 
     @field_validator("username")
     @classmethod
     def validate_username(cls, value: str) -> str:
+        value = value.strip()
         if not USERNAME_PATTERN.fullmatch(value):
             raise ValueError("Username may only contain letters, numbers, dots, hyphens, and underscores")
         return value
@@ -63,21 +73,22 @@ class UserCreate(BaseModel):
     @field_validator("email")
     @classmethod
     def validate_email(cls, value: str) -> str:
-        normalized_email = value.lower()
+        normalized_email = value.strip().lower()
         if not EMAIL_PATTERN.fullmatch(normalized_email):
             raise ValueError("Invalid email format")
         return normalized_email
 
 
 class UserLogin(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict()
 
     username: Annotated[str, StringConstraints(min_length=3, max_length=100)]  # Can be username or email
-    password: Annotated[str, StringConstraints(min_length=1, max_length=72)]
+    password: Annotated[str, StringConstraints(min_length=1, max_length=PASSWORD_MAX_LENGTH)]
 
     @field_validator("username")
     @classmethod
     def validate_identifier(cls, value: str) -> str:
+        value = value.strip()
         if "@" in value:
             normalized_email = value.lower()
             if not EMAIL_PATTERN.fullmatch(normalized_email):
@@ -101,7 +112,8 @@ def get_session(response: Response, current_user: User | None = Depends(get_curr
 @router.post("/register")
 def register(user: UserCreate, request: Request, response: Response, db: Session = Depends(get_db)):
     enforce_rate_limit(request, REGISTER_IP_POLICY)
-    enforce_rate_limit(request, REGISTER_IDENTIFIER_POLICY, key_fragment=user.email)
+    enforce_rate_limit(request, REGISTER_IDENTIFIER_POLICY, key_fragment=f"email:{user.email}")
+    enforce_rate_limit(request, REGISTER_IDENTIFIER_POLICY, key_fragment=f"username:{user.username}")
     _apply_no_store(response)
     logger.info(
         "Registering user",
@@ -121,7 +133,7 @@ def register(user: UserCreate, request: Request, response: Response, db: Session
                 email=mask_identifier(user.email),
             ),
         )
-        raise HTTPException(status_code=400, detail="Username or email already registered")
+        return {"message": REGISTRATION_ACCEPTED_MESSAGE}
     hashed_password = get_password_hash(user.password)
     new_user = User(
         username=user.username,
@@ -140,7 +152,18 @@ def register(user: UserCreate, request: Request, response: Response, db: Session
                 username=new_user.username,
             ),
         )
-        return {"message": "User created"}
+        return {"message": REGISTRATION_ACCEPTED_MESSAGE}
+    except IntegrityError:
+        db.rollback()
+        logger.warning(
+            "Registration completed with duplicate data during commit race",
+            extra=build_log_extra(
+                "auth_register_duplicate_race",
+                username=user.username,
+                email=mask_identifier(user.email),
+            ),
+        )
+        return {"message": REGISTRATION_ACCEPTED_MESSAGE}
     except Exception:
         logger.exception(
             "Error creating user",

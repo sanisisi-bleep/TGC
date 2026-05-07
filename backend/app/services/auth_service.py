@@ -33,10 +33,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "tgc_session").strip() or "tgc_session"
 AUTH_COOKIE_SAMESITE = (os.getenv("AUTH_COOKIE_SAMESITE", "lax").strip().lower() or "lax")
 AUTH_COOKIE_MAX_AGE_SECONDS = max(ACCESS_TOKEN_EXPIRE_MINUTES, 1) * 60
+PASSWORD_MIN_LENGTH = 8
+PASSWORD_MAX_LENGTH = 256
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 
 def _is_cookie_secure():
@@ -82,13 +84,31 @@ def _classify_identifier(identifier: str) -> str:
     return "email" if "@" in (identifier or "") else "username"
 
 
+def validate_password_value(password: str, *, field_name: str = "Password") -> str:
+    if not isinstance(password, str):
+        raise ValueError(f"{field_name} is required")
+
+    if len(password) < PASSWORD_MIN_LENGTH:
+        raise ValueError(
+            f"{field_name} must be at least {PASSWORD_MIN_LENGTH} characters long"
+        )
+
+    if len(password) > PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            f"{field_name} must not exceed {PASSWORD_MAX_LENGTH} characters"
+        )
+
+    return password
+
+
 def verify_password(plain_password, hashed_password):
-    plain_password = plain_password[:72]  # Truncate to match hash
+    if not plain_password or not hashed_password:
+        return False
     return pwd_context.verify(plain_password, hashed_password)
 
+
 def get_password_hash(password):
-    # Truncate password to 72 bytes to comply with bcrypt limit
-    password = password[:72]
+    password = validate_password_value(password)
     return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
@@ -150,6 +170,32 @@ def authenticate_user(db: Session, identifier: str, password: str):
             username=user.username,
         ),
     )
+
+    if pwd_context.needs_update(user.password_hash):
+        try:
+            user.password_hash = get_password_hash(password)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            logger.info(
+                "Authentication password hash upgraded",
+                extra=build_log_extra(
+                    "auth_password_hash_upgraded",
+                    user_id=user.id,
+                    username=user.username,
+                ),
+            )
+        except Exception:
+            db.rollback()
+            logger.warning(
+                "Authentication password hash upgrade failed",
+                extra=build_log_extra(
+                    "auth_password_hash_upgrade_failed",
+                    user_id=user.id,
+                    username=user.username,
+                ),
+            )
+
     return user
 
 def _resolve_request_token(request: Request, bearer_token: str | None):

@@ -1,4 +1,14 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text, TIMESTAMP, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    TIMESTAMP,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -205,6 +215,27 @@ class DeckEggCard(Base):
     card = relationship("Card")
 
 
+class RateLimitCounter(Base):
+    __tablename__ = "rate_limit_counters"
+    __table_args__ = (
+        UniqueConstraint(
+            "bucket",
+            "rate_key",
+            "window_seconds",
+            "window_started_at",
+            name="uq_rate_limit_counter_window",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    bucket = Column(String(100), nullable=False, index=True)
+    rate_key = Column(String(255), nullable=False)
+    window_seconds = Column(Integer, nullable=False)
+    window_started_at = Column(Integer, nullable=False)
+    hits = Column(Integer, nullable=False, default=0)
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+
 __all__ = [
     "Base",
     "Tgc",
@@ -219,4 +250,5 @@ __all__ = [
     "DeckCard",
     "DeckConsideringCard",
     "DeckEggCard",
+    "RateLimitCounter",
 ]

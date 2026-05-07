@@ -1,9 +1,12 @@
 import time
-from collections import defaultdict, deque
 from dataclasses import dataclass
 from threading import Lock
 
 from fastapi import HTTPException, Request
+from sqlalchemy.exc import IntegrityError
+
+from app.database.connection import SessionLocal
+from app.models import RateLimitCounter
 
 
 @dataclass(frozen=True)
@@ -13,40 +16,88 @@ class RateLimitPolicy:
     window_seconds: int
 
 
-class InMemoryRateLimiter:
-    def __init__(self):
-        self._events = defaultdict(deque)
-        self._lock = Lock()
+class DatabaseRateLimiter:
+    def __init__(self, session_factory):
+        self._session_factory = session_factory
+        self._cleanup_lock = Lock()
+        self._last_cleanup_at = 0.0
 
     def hit(self, bucket: str, key: str, limit: int, window_seconds: int) -> int | None:
-        now = time.time()
-        window_start = now - window_seconds
-        bucket_key = (bucket, key)
+        now = int(time.time())
+        window_started_at = now - (now % window_seconds)
 
-        with self._lock:
-            events = self._events[bucket_key]
+        with self._session_factory() as db:
+            self._maybe_prune_stale_rows(db, now)
 
-            while events and events[0] <= window_start:
-                events.popleft()
+            while True:
+                counter = (
+                    db.query(RateLimitCounter)
+                    .filter(
+                        RateLimitCounter.bucket == bucket,
+                        RateLimitCounter.rate_key == key,
+                        RateLimitCounter.window_seconds == window_seconds,
+                        RateLimitCounter.window_started_at == window_started_at,
+                    )
+                    .with_for_update()
+                    .first()
+                )
 
-            if len(events) >= limit:
-                retry_after = max(1, int(events[0] + window_seconds - now))
-                return retry_after
+                if counter is None:
+                    counter = RateLimitCounter(
+                        bucket=bucket,
+                        rate_key=key,
+                        window_seconds=window_seconds,
+                        window_started_at=window_started_at,
+                        hits=1,
+                    )
+                    db.add(counter)
+                    try:
+                        db.commit()
+                        return None
+                    except IntegrityError:
+                        db.rollback()
+                        continue
 
-            events.append(now)
-            return None
+                if counter.hits >= limit:
+                    retry_after = max(1, (counter.window_started_at + window_seconds) - now)
+                    db.rollback()
+                    return retry_after
+
+                counter.hits += 1
+                db.add(counter)
+                db.commit()
+                return None
+
+    def _maybe_prune_stale_rows(self, db, now: int):
+        if now - self._last_cleanup_at < 300:
+            return
+
+        with self._cleanup_lock:
+            if now - self._last_cleanup_at < 300:
+                return
+
+            prune_before = now - (2 * 24 * 60 * 60)
+            (
+                db.query(RateLimitCounter)
+                .filter(RateLimitCounter.window_started_at < prune_before)
+                .delete(synchronize_session=False)
+            )
+            db.commit()
+            self._last_cleanup_at = now
 
 
-limiter = InMemoryRateLimiter()
+limiter = DatabaseRateLimiter(SessionLocal)
 
 
 def get_client_ip(request: Request) -> str:
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
+        first_hop = forwarded_for.split(",")[0].strip()
+        if first_hop:
+            return first_hop[:120]
 
     if request.client and request.client.host:
-        return request.client.host
+        return request.client.host[:120]
 
     return "unknown"
 
