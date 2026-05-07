@@ -6,8 +6,10 @@ import DeckDetailModal from '../components/decks/DeckDetailModal';
 import DeckImportPanel from '../components/decks/DeckImportPanel';
 import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
 import DeckSummaryCard from '../components/decks/DeckSummaryCard';
+import GuestDemoBanner from '../components/guest/GuestDemoBanner';
 import { isUnauthorizedError, useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
+import { getGuestDemoDecks } from '../demo/guestDemoData';
 import useBrowserStorageState from '../hooks/useBrowserStorageState';
 import usePositiveIntegerDraftMap from '../hooks/usePositiveIntegerDraftMap';
 import useQueryErrorToast from '../hooks/useQueryErrorToast';
@@ -47,7 +49,7 @@ import {
   shareDeck,
 } from '../services/api';
 
-function Decks({ activeTcgSlug, activeTgc }) {
+function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const { showToast } = useToast();
   const { profile } = useSession();
@@ -83,20 +85,26 @@ function Decks({ activeTcgSlug, activeTgc }) {
   const deckListQuery = useQuery({
     queryKey: queryKeys.decks(activeTgc?.id),
     queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
-    enabled: Boolean(activeTgc?.id),
+    enabled: Boolean(activeTgc?.id && !isGuestDemo),
     staleTime: QUERY_STALE_TIMES.decks,
   });
   const selectedDeckQuery = useQuery({
     queryKey: queryKeys.deckDetail(selectedDeckId),
     queryFn: ({ signal }) => getDeckDetail(selectedDeckId, signal),
-    enabled: Boolean(selectedDeckId),
+    enabled: Boolean(selectedDeckId && !isGuestDemo),
     staleTime: QUERY_STALE_TIMES.deckDetail,
   });
 
-  const decks = deckListQuery.data || [];
-  const selectedDeck = selectedDeckQuery.data || null;
+  const demoDecks = useMemo(
+    () => getGuestDemoDecks(activeTcgSlug),
+    [activeTcgSlug]
+  );
+  const decks = isGuestDemo ? demoDecks : (deckListQuery.data || []);
+  const selectedDeck = isGuestDemo
+    ? decks.find((deck) => deck.id === selectedDeckId) || null
+    : (selectedDeckQuery.data || null);
   const advancedMode = Boolean(profile?.advanced_mode);
-  const advancedDeckControlsEnabled = Boolean(
+  const advancedDeckControlsEnabled = !isGuestDemo && Boolean(
     selectedDeck?.advanced_mode !== undefined ? selectedDeck.advanced_mode : advancedMode
   );
   const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
@@ -778,7 +786,7 @@ function Decks({ activeTcgSlug, activeTgc }) {
     setSelectedDeckId(null);
   };
 
-  if (deckListQuery.isPending && decks.length === 0) {
+  if (!isGuestDemo && deckListQuery.isPending && decks.length === 0) {
     return (
       <div className="decks page-shell">
         <section className="page-hero decks-hero">
@@ -799,8 +807,9 @@ function Decks({ activeTcgSlug, activeTgc }) {
           <span className="eyebrow">{activeGame.eyebrow}</span>
           <h1>{activeGame.decksTitle}</h1>
           <p>
-            Organiza tus listas de {activeGame.shortName}, revisa cantidades reales y
-            ajusta cada carta del mazo sin salir del panel de detalle.
+            {isGuestDemo
+              ? `Aqui ves mazos de ejemplo de ${activeGame.shortName} con curva, mano inicial y secciones reales para que entiendas la herramienta antes de registrarte.`
+              : `Organiza tus listas de ${activeGame.shortName}, revisa cantidades reales y ajusta cada carta del mazo sin salir del panel de detalle.`}
           </p>
         </div>
 
@@ -810,38 +819,48 @@ function Decks({ activeTcgSlug, activeTgc }) {
         </div>
       </section>
 
-      <section className="panel create-deck-panel">
-        <form onSubmit={createDeckHandler} className="create-deck-form">
-          <input
-            type="text"
-            placeholder={`Nombre del mazo de ${activeGame.shortName}`}
-            value={newDeckName}
-            onChange={(e) => setNewDeckName(e.target.value)}
-            required
-          />
-          <button type="submit" disabled={createDeckMutation.isPending}>
-            {createDeckMutation.isPending ? 'Creando...' : 'Crear Mazo'}
-          </button>
-        </form>
-        <DeckImportPanel
-          isOpen={isImportPanelOpen}
-          importingDeck={importingDeck}
-          importDeckName={importDeckName}
-          importDeckText={importDeckText}
-          activeTcgSlug={activeTcgSlug}
-          onToggle={() => setIsImportPanelOpen((current) => !current)}
-          onImportDeckNameChange={setImportDeckName}
-          onImportDeckTextChange={setImportDeckText}
-          onSubmitListImport={submitDeckListImport}
-          onImportFile={handleDeckImportFile}
+      {isGuestDemo && (
+        <GuestDemoBanner
+          title={`Mazos demo de ${activeGame.shortName}`}
+          description="Puedes abrir mazos de ejemplo, ver su estructura, revisar la curva y entender como se reparten las copias. Para crear, importar o editar necesitas una cuenta."
         />
-      </section>
+      )}
+
+      {!isGuestDemo && (
+        <section className="panel create-deck-panel">
+          <form onSubmit={createDeckHandler} className="create-deck-form">
+            <input
+              type="text"
+              placeholder={`Nombre del mazo de ${activeGame.shortName}`}
+              value={newDeckName}
+              onChange={(e) => setNewDeckName(e.target.value)}
+              required
+            />
+            <button type="submit" disabled={createDeckMutation.isPending}>
+              {createDeckMutation.isPending ? 'Creando...' : 'Crear Mazo'}
+            </button>
+          </form>
+          <DeckImportPanel
+            isOpen={isImportPanelOpen}
+            importingDeck={importingDeck}
+            importDeckName={importDeckName}
+            importDeckText={importDeckText}
+            activeTcgSlug={activeTcgSlug}
+            onToggle={() => setIsImportPanelOpen((current) => !current)}
+            onImportDeckNameChange={setImportDeckName}
+            onImportDeckTextChange={setImportDeckText}
+            onSubmitListImport={submitDeckListImport}
+            onImportFile={handleDeckImportFile}
+          />
+        </section>
+      )}
 
       <section className="decks-list">
         {decks.map((deck) => (
           <DeckSummaryCard
             key={deck.id}
             deck={deck}
+            isGuestDemo={isGuestDemo}
             onOpen={() => viewDeckDetails(deck.id)}
             onClone={() => cloneDeckHandler(deck.id)}
             onShare={() => shareDeckHandler(deck)}
@@ -854,15 +873,24 @@ function Decks({ activeTcgSlug, activeTgc }) {
 
         {decks.length === 0 && (
           <div className="empty-state panel">
-            <h3>Aun no tienes mazos de {activeGame.shortName}</h3>
-            <p>Crea el primero para empezar a organizar tu coleccion.</p>
+            <h3>
+              {isGuestDemo
+                ? `No hay mazos demo cargados para ${activeGame.shortName}`
+                : `Aun no tienes mazos de ${activeGame.shortName}`}
+            </h3>
+            <p>
+              {isGuestDemo
+                ? 'Prueba otra seccion demo o cambia de juego para seguir explorando.'
+                : 'Crea el primero para empezar a organizar tu coleccion.'}
+            </p>
           </div>
         )}
       </section>
 
       <DeckDetailModal
         isOpen={Boolean(selectedDeckId)}
-        isLoading={selectedDeckQuery.isPending}
+        isLoading={!isGuestDemo && selectedDeckQuery.isPending}
+        isGuestDemo={isGuestDemo}
         selectedDeck={selectedDeck}
         selectedDeckDistinctCards={selectedDeckDistinctCards}
         selectedDeckSummary={selectedDeckSummary}

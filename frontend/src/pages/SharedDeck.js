@@ -115,7 +115,14 @@ function SharedDeck() {
               className="deck-card-row is-openable"
               onClick={() => setSelectedCard(card)}
             >
-              <img src={card.image_url} alt={card.name} />
+              <img
+                src={card.image_url}
+                alt={card.name}
+                width="132"
+                height="176"
+                loading="lazy"
+                decoding="async"
+              />
               <div className="deck-card-copy">
                 <h4>{card.name}</h4>
                 <div className="deck-owned-panel">
@@ -160,7 +167,14 @@ function SharedDeck() {
                   className="deck-card-row is-openable"
                   onClick={() => setSelectedCard(card)}
                 >
-                  <img src={card.image_url} alt={card.name} />
+                  <img
+                    src={card.image_url}
+                    alt={card.name}
+                    width="132"
+                    height="176"
+                    loading="lazy"
+                    decoding="async"
+                  />
                   <div className="deck-card-copy">
                     <h4>{card.name}</h4>
                     <div className="deck-owned-panel">

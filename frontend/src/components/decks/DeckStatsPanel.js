@@ -365,6 +365,8 @@ function OpeningHandCard({ card, index }) {
           <img
             src={card.image_url}
             alt={card.name}
+            width="400"
+            height="560"
             loading="lazy"
             decoding="async"
           />

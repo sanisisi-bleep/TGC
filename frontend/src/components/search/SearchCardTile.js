@@ -3,6 +3,7 @@ import SearchQuantityControl from './SearchQuantityControl';
 
 function SearchCardTile({
   card,
+  isGuestDemo = false,
   cardViewMode,
   actionQuantity,
   onActionQuantityChange,
@@ -29,6 +30,8 @@ function SearchCardTile({
       <img
         src={card.thumbnail_url || card.image_url}
         alt={card.name}
+        width="400"
+        height="560"
         loading="lazy"
         decoding="async"
         fetchPriority="low"
@@ -49,37 +52,45 @@ function SearchCardTile({
         </div>
       </div>
 
-      <SearchQuantityControl
-        value={String(actionQuantity)}
-        onChange={(value) => onActionQuantityChange(card.id, value)}
-        onBlur={() => onActionQuantityBlur(card.id)}
-        onDecrease={() => onDecreaseActionQuantity(card.id)}
-        onIncrease={() => onIncreaseActionQuantity(card.id)}
-        label="Copias"
-        compact
-      />
+      {isGuestDemo ? (
+        <div className="search-card-demo-note">
+          Vista demo en solo lectura
+        </div>
+      ) : (
+        <>
+          <SearchQuantityControl
+            value={String(actionQuantity)}
+            onChange={(value) => onActionQuantityChange(card.id, value)}
+            onBlur={() => onActionQuantityBlur(card.id)}
+            onDecrease={() => onDecreaseActionQuantity(card.id)}
+            onIncrease={() => onIncreaseActionQuantity(card.id)}
+            label="Copias"
+            compact
+          />
 
-      <div className="search-card-actions">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onAddToCollection(card.id);
-          }}
-        >
-          Agregar a Coleccion
-        </button>
-        <button
-          type="button"
-          className="ghost-button card-secondary-action"
-          onClick={(event) => {
-            event.stopPropagation();
-            onAddToDeck(card.id);
-          }}
-        >
-          Agregar al Mazo
-        </button>
-      </div>
+          <div className="search-card-actions">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onAddToCollection(card.id);
+              }}
+            >
+              Agregar a Coleccion
+            </button>
+            <button
+              type="button"
+              className="ghost-button card-secondary-action"
+              onClick={(event) => {
+                event.stopPropagation();
+                onAddToDeck(card.id);
+              }}
+            >
+              Agregar al Mazo
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

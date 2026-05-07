@@ -5,6 +5,7 @@ import SearchQuantityControl from './SearchQuantityControl';
 function SearchCardDetailModal({
   card,
   activeTcgSlug,
+  isGuestDemo = false,
   actionQuantity,
   onActionQuantityChange,
   onActionQuantityBlur,
@@ -16,6 +17,16 @@ function SearchCardDetailModal({
 }) {
   if (!card) {
     return null;
+  }
+
+  if (isGuestDemo) {
+    return (
+      <CardDetailModal
+        card={card}
+        activeTcgSlug={activeTcgSlug}
+        onClose={onClose}
+      />
+    );
   }
 
   const quantityLabel = actionQuantity === 1 ? '1 copia' : `${actionQuantity} copias`;

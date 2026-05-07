@@ -3,6 +3,7 @@ import { isInteractiveElementTarget } from '../../utils/clickTargets';
 
 function DeckConsideringRow({
   card,
+  isGuestDemo = false,
   actionQuantity,
   movingConsideringCardId,
   updatingConsideringCardId,
@@ -47,6 +48,8 @@ function DeckConsideringRow({
       <img
         src={card.image_url}
         alt={card.name}
+        width="132"
+        height="176"
         loading="lazy"
         decoding="async"
       />
@@ -71,72 +74,81 @@ function DeckConsideringRow({
       </div>
 
       <div className="deck-card-controls deck-considering-controls">
-        <div className="quantity-stepper-controls deck-stepper-controls">
-          <button
-            type="button"
-            onClick={() => onAdjustQuantity(card.id, -1)}
-            disabled={isUpdating}
-          >
-            -
-          </button>
-          <span className="deck-stepper-value">x{card.quantity}</span>
-          <button
-            type="button"
-            onClick={() => onAdjustQuantity(card.id, 1)}
-            disabled={isUpdating || card.quantity >= (card.max_quantity_allowed || 4)}
-          >
-            +
-          </button>
-        </div>
-        <div className="deck-batch-editor">
-          <div className="deck-batch-controls">
+        {isGuestDemo ? (
+          <>
+            <span className="deck-card-qty">x{card.quantity}</span>
+            <span className="deck-card-limit-note">Demo sin edicion</span>
+          </>
+        ) : (
+          <>
+            <div className="quantity-stepper-controls deck-stepper-controls">
+              <button
+                type="button"
+                onClick={() => onAdjustQuantity(card.id, -1)}
+                disabled={isUpdating}
+              >
+                -
+              </button>
+              <span className="deck-stepper-value">x{card.quantity}</span>
+              <button
+                type="button"
+                onClick={() => onAdjustQuantity(card.id, 1)}
+                disabled={isUpdating || card.quantity >= (card.max_quantity_allowed || 4)}
+              >
+                +
+              </button>
+            </div>
+            <div className="deck-batch-editor">
+              <div className="deck-batch-controls">
+                <button
+                  type="button"
+                  className="secondary-inline-button secondary-inline-button-icon"
+                  onClick={() => onApplyBatchQuantity(card.id, -1)}
+                  disabled={isUpdating}
+                  aria-label="Quitar varias copias de considering"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={String(actionQuantity || '1')}
+                  onChange={(event) => onActionQuantityChange(card.id, event.target.value)}
+                  disabled={isUpdating}
+                />
+                <button
+                  type="button"
+                  className="secondary-inline-button secondary-inline-button-icon"
+                  onClick={() => onApplyBatchQuantity(card.id, 1)}
+                  disabled={isUpdating}
+                  aria-label="Anadir varias copias a considering"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
             <button
               type="button"
-              className="secondary-inline-button secondary-inline-button-icon"
-              onClick={() => onApplyBatchQuantity(card.id, -1)}
-              disabled={isUpdating}
-              aria-label="Quitar varias copias de considering"
+              className="deck-action-button is-soft"
+              onClick={() => onMoveToMainDeck(card.id)}
+              disabled={isMoving}
             >
-              -
+              {isMoving
+                ? 'Moviendo...'
+                : card.deck_role === 'egg'
+                  ? transferQuantity === 1
+                    ? 'Pasar 1 al Digi-Egg'
+                    : `Pasar x${transferQuantity} al Digi-Egg`
+                  : transferQuantity === 1
+                    ? 'Pasar 1 al mazo'
+                    : `Pasar x${transferQuantity} al mazo`}
             </button>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={String(actionQuantity || '1')}
-              onChange={(event) => onActionQuantityChange(card.id, event.target.value)}
-              disabled={isUpdating}
-            />
-            <button
-              type="button"
-              className="secondary-inline-button secondary-inline-button-icon"
-              onClick={() => onApplyBatchQuantity(card.id, 1)}
-              disabled={isUpdating}
-              aria-label="Anadir varias copias a considering"
-            >
-              +
-            </button>
-          </div>
-        </div>
 
-        <button
-          type="button"
-          className="deck-action-button is-soft"
-          onClick={() => onMoveToMainDeck(card.id)}
-          disabled={isMoving}
-        >
-          {isMoving
-            ? 'Moviendo...'
-            : card.deck_role === 'egg'
-              ? transferQuantity === 1
-                ? 'Pasar 1 al Digi-Egg'
-                : `Pasar x${transferQuantity} al Digi-Egg`
-              : transferQuantity === 1
-                ? 'Pasar 1 al mazo'
-                : `Pasar x${transferQuantity} al mazo`}
-        </button>
-
-        <span className="deck-card-limit-note">Max {card.max_quantity_allowed || 4}</span>
+            <span className="deck-card-limit-note">Max {card.max_quantity_allowed || 4}</span>
+          </>
+        )}
       </div>
     </article>
   );

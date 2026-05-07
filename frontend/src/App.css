@@ -1721,6 +1721,8 @@ textarea::placeholder {
 .card-item img {
   width: 100%;
   height: 280px;
+  display: block;
+  aspect-ratio: 5 / 7;
   object-fit: cover;
   border-radius: 18px;
   box-shadow: 0 16px 30px rgba(15, 39, 71, 0.12);
@@ -2157,6 +2159,8 @@ textarea::placeholder {
 .collection-item img {
   width: 152px;
   height: 212px;
+  display: block;
+  aspect-ratio: 19 / 26.5;
   object-fit: cover;
   border-radius: 18px;
   box-shadow: 0 18px 32px rgba(15, 39, 71, 0.16);
@@ -3675,6 +3679,8 @@ textarea::placeholder {
 .deck-card-row img {
   width: 78px;
   height: 104px;
+  display: block;
+  aspect-ratio: 3 / 4;
   object-fit: cover;
   border-radius: 14px;
 }
@@ -3687,6 +3693,15 @@ textarea::placeholder {
   border-radius: 16px;
   box-shadow: 0 16px 28px rgba(17, 40, 84, 0.14);
   transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) ease;
+}
+
+.cards-grid > .card-item,
+.collection-list > .collection-item,
+.decks-list > .deck-item,
+.deck-detail-grid > .deck-card-row,
+.deck-considering-list > .deck-considering-row {
+  content-visibility: auto;
+  contain-intrinsic-size: 320px 420px;
 }
 
 .deck-card-row.is-inventory.is-openable:hover {
@@ -4470,6 +4485,126 @@ textarea::placeholder {
   box-shadow: var(--input-shadow);
 }
 
+.guest-demo-banner {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--line));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-strong) 94%, var(--accent-soft)),
+      color-mix(in srgb, var(--surface) 92%, transparent)
+    );
+}
+
+.guest-demo-copy {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.guest-demo-copy h2,
+.deck-title-static h2 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.guest-demo-copy p,
+.deck-title-static p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.guest-demo-actions,
+.guest-demo-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.guest-demo-primary-link,
+.guest-demo-secondary-link,
+.guest-demo-links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.75rem 1rem;
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.guest-demo-primary-link {
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 72%, #6ea8ff));
+  color: #ffffff;
+  box-shadow: 0 14px 24px rgba(28, 99, 213, 0.18);
+}
+
+.guest-demo-secondary-link,
+.guest-demo-links a {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--text);
+}
+
+.search-card-demo-note,
+.deck-demo-summary-note,
+.deck-demo-inline-hint,
+.collection-demo-actions {
+  color: var(--text-soft);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.search-card-demo-note,
+.deck-demo-summary-note {
+  padding: 0.75rem 0.9rem;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px dashed var(--line);
+  text-align: center;
+}
+
+.collection-demo-panel {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 136px;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  border: 1px dashed var(--line);
+  text-align: center;
+}
+
+.collection-demo-panel strong {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.1rem;
+}
+
+.collection-demo-actions {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+}
+
+.collection-demo-actions p {
+  margin: 0;
+}
+
+.deck-title-static {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.deck-demo-inline-hint {
+  margin-top: 0.45rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  border: 1px dashed var(--line);
+}
+
 @media (max-width: 900px) {
   .navbar {
     flex-direction: column;
@@ -4786,6 +4921,12 @@ textarea::placeholder {
     text-align: center;
   }
 
+  .guest-demo-actions,
+  .guest-demo-links {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
   .collection-visual {
     justify-items: center;
   }
@@ -4813,6 +4954,10 @@ textarea::placeholder {
 
   .collection-copy,
   .collection-actions {
+    justify-items: center;
+  }
+
+  .collection-demo-actions {
     justify-items: center;
   }
 

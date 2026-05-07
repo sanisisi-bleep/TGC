@@ -8,6 +8,7 @@ import { MAX_COPIES_PER_CARD } from '../../utils/deckTools';
 function DeckDetailModal({
   isOpen,
   isLoading,
+  isGuestDemo = false,
   selectedDeck,
   selectedDeckDistinctCards,
   selectedDeckSummary,
@@ -66,22 +67,31 @@ function DeckDetailModal({
             <div className="deck-detail-header">
               <div>
                 <span className="eyebrow">Detalle del mazo</span>
-                <div className="deck-title-edit">
-                  <input
-                    type="text"
-                    value={draftDeckName}
-                    onChange={(event) => onDraftDeckNameChange(event.target.value)}
-                    maxLength={100}
-                  />
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={onRenameDeck}
-                    disabled={renamingDeckId === selectedDeck?.id}
-                  >
-                    {renamingDeckId === selectedDeck?.id ? 'Guardando...' : 'Renombrar'}
-                  </button>
-                </div>
+                {isGuestDemo ? (
+                  <div className="deck-title-static">
+                    <h2>{selectedDeck.name}</h2>
+                    <p className="deck-demo-inline-hint">
+                      Estas viendo un mazo de ejemplo en modo solo lectura.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="deck-title-edit">
+                    <input
+                      type="text"
+                      value={draftDeckName}
+                      onChange={(event) => onDraftDeckNameChange(event.target.value)}
+                      maxLength={100}
+                    />
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={onRenameDeck}
+                      disabled={renamingDeckId === selectedDeck?.id}
+                    >
+                      {renamingDeckId === selectedDeck?.id ? 'Guardando...' : 'Renombrar'}
+                    </button>
+                  </div>
+                )}
                 <p>
                   {`${selectedDeckDistinctCards} cartas distintas | ${selectedDeckSummary}${selectedDeckConsideringTotal > 0 ? ` | Considering ${selectedDeckConsideringTotal}` : ''}`}
                 </p>
@@ -147,6 +157,7 @@ function DeckDetailModal({
                 </div>
               </div>
               <DeckDetailActions
+                isGuestDemo={isGuestDemo}
                 onOpenList={() => onOpenDeckList(selectedDeck)}
                 onExportJson={() => onExportDeck(selectedDeck)}
                 onShare={() => onShareDeck(selectedDeck)}
@@ -168,6 +179,7 @@ function DeckDetailModal({
                 <DeckCardRow
                   key={card.id}
                   card={card}
+                  isGuestDemo={isGuestDemo}
                   actionQuantity={getDeckActionQuantity(`main:${card.id}`)}
                   deckCardView={deckCardView}
                   advancedDeckControlsEnabled={advancedDeckControlsEnabled}
@@ -224,6 +236,7 @@ function DeckDetailModal({
                       <DeckCardRow
                         key={`egg-${card.id}`}
                         card={card}
+                        isGuestDemo={isGuestDemo}
                         actionQuantity={getDeckActionQuantity(`egg:${card.id}`)}
                         deckCardView={deckCardView}
                         advancedDeckControlsEnabled={advancedDeckControlsEnabled}
@@ -279,6 +292,7 @@ function DeckDetailModal({
                     <DeckConsideringRow
                       key={`considering-${card.id}`}
                       card={card}
+                      isGuestDemo={isGuestDemo}
                       actionQuantity={getDeckActionQuantity(`considering:${card.id}`)}
                       movingConsideringCardId={movingConsideringCardId}
                       updatingConsideringCardId={updatingConsideringCardId}

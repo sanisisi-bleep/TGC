@@ -1,6 +1,7 @@
 import React from 'react';
 
 function DeckDetailActions({
+  isGuestDemo = false,
   onOpenList,
   onExportJson,
   onShare,
@@ -11,6 +12,32 @@ function DeckDetailActions({
   isCloning,
   isDeleting,
 }) {
+  if (isGuestDemo) {
+    return (
+      <div className="deck-detail-actions">
+        <div className="deck-action-group">
+          <span className="deck-action-group-label">Vista demo</span>
+          <div className="deck-action-strip">
+            <button
+              type="button"
+              className="deck-action-button is-primary"
+              onClick={onOpenList}
+            >
+              Lista del mazo
+            </button>
+            <button
+              type="button"
+              className="deck-action-button is-neutral"
+              onClick={onClose}
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="deck-detail-actions">
       <div className="deck-action-group">

@@ -3,6 +3,7 @@ import { isInteractiveElementTarget } from '../../utils/clickTargets';
 
 function DeckCardRow({
   card,
+  isGuestDemo = false,
   deckCardView,
   actionQuantity,
   advancedDeckControlsEnabled,
@@ -59,6 +60,8 @@ function DeckCardRow({
         <img
           src={card.image_url}
           alt={card.name}
+          width="132"
+          height="176"
           loading="lazy"
           decoding="async"
         />
@@ -75,6 +78,8 @@ function DeckCardRow({
       <img
         src={card.image_url}
         alt={card.name}
+        width="132"
+        height="176"
         loading="lazy"
         decoding="async"
       />
@@ -96,7 +101,11 @@ function DeckCardRow({
           <span>En coleccion: x{card.owned_quantity || 0}</span>
         </div>
 
-        {!isInventoryView && advancedDeckControlsEnabled && (
+        {isGuestDemo ? (
+          <div className="deck-demo-inline-hint">
+            Vista demo en solo lectura. Las coberturas y cantidades se activan al iniciar sesion.
+          </div>
+        ) : !isInventoryView && advancedDeckControlsEnabled && (
           <div className="deck-advanced-panel">
             <div className="deck-advanced-header">
               <span className="deck-owned-popover-label">Ajustes avanzados del mazo</span>
@@ -138,7 +147,7 @@ function DeckCardRow({
           </div>
         )}
 
-        {!isInventoryView && !advancedDeckControlsEnabled && (
+        {!isGuestDemo && !isInventoryView && !advancedDeckControlsEnabled && (
           <div className="deck-advanced-hint">
             Activa Ajustes avanzados en Configuracion para marcar copias faltantes sin tocar tu coleccion.
           </div>
@@ -164,63 +173,72 @@ function DeckCardRow({
         )}
       </div>
       <div className="deck-card-controls">
-        <div className="quantity-stepper-controls deck-stepper-controls">
-          <button
-            type="button"
-            onClick={() => onAdjustQuantity(card.id, -1)}
-            disabled={isUpdatingQuantity}
-          >
-            -
-          </button>
-          <span className="deck-stepper-value">x{card.quantity}</span>
-          <button
-            type="button"
-            onClick={() => onAdjustQuantity(card.id, 1)}
-            disabled={isUpdatingQuantity || card.quantity >= maxQuantity}
-          >
-            +
-          </button>
-        </div>
-        <div className="deck-batch-editor">
-          <div className="deck-batch-controls">
-            <button
-              type="button"
-              className="secondary-inline-button secondary-inline-button-icon"
-              onClick={() => onApplyBatchQuantity(card.id, -1)}
-              disabled={isUpdatingQuantity}
-              aria-label="Quitar varias copias del mazo"
-            >
-              -
-            </button>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={String(actionQuantity || '1')}
-              onChange={(event) => onActionQuantityChange(card.id, event.target.value)}
-              disabled={isUpdatingQuantity}
-            />
-            <button
-              type="button"
-              className="secondary-inline-button secondary-inline-button-icon"
-              onClick={() => onApplyBatchQuantity(card.id, 1)}
-              disabled={isUpdatingQuantity}
-              aria-label="Anadir varias copias al mazo"
-            >
-              +
-            </button>
-          </div>
-        </div>
-        <span className="deck-card-limit-note">Max {maxQuantity}</span>
-        {onMoveToConsidering && (
-          <button
-            type="button"
-            className="deck-action-button is-soft deck-inline-action"
-            onClick={() => onMoveToConsidering(card.id)}
-            disabled={isUpdatingQuantity || (card.quantity || 0) <= 0}
-          >
-            {transferQuantity === 1 ? 'Considering' : `Considering x${transferQuantity}`}
-          </button>
+        {isGuestDemo ? (
+          <>
+            <span className="deck-card-qty">x{card.quantity}</span>
+            <span className="deck-card-limit-note">Demo sin edicion</span>
+          </>
+        ) : (
+          <>
+            <div className="quantity-stepper-controls deck-stepper-controls">
+              <button
+                type="button"
+                onClick={() => onAdjustQuantity(card.id, -1)}
+                disabled={isUpdatingQuantity}
+              >
+                -
+              </button>
+              <span className="deck-stepper-value">x{card.quantity}</span>
+              <button
+                type="button"
+                onClick={() => onAdjustQuantity(card.id, 1)}
+                disabled={isUpdatingQuantity || card.quantity >= maxQuantity}
+              >
+                +
+              </button>
+            </div>
+            <div className="deck-batch-editor">
+              <div className="deck-batch-controls">
+                <button
+                  type="button"
+                  className="secondary-inline-button secondary-inline-button-icon"
+                  onClick={() => onApplyBatchQuantity(card.id, -1)}
+                  disabled={isUpdatingQuantity}
+                  aria-label="Quitar varias copias del mazo"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={String(actionQuantity || '1')}
+                  onChange={(event) => onActionQuantityChange(card.id, event.target.value)}
+                  disabled={isUpdatingQuantity}
+                />
+                <button
+                  type="button"
+                  className="secondary-inline-button secondary-inline-button-icon"
+                  onClick={() => onApplyBatchQuantity(card.id, 1)}
+                  disabled={isUpdatingQuantity}
+                  aria-label="Anadir varias copias al mazo"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <span className="deck-card-limit-note">Max {maxQuantity}</span>
+            {onMoveToConsidering && (
+              <button
+                type="button"
+                className="deck-action-button is-soft deck-inline-action"
+                onClick={() => onMoveToConsidering(card.id)}
+                disabled={isUpdatingQuantity || (card.quantity || 0) <= 0}
+              >
+                {transferQuantity === 1 ? 'Considering' : `Considering x${transferQuantity}`}
+              </button>
+            )}
+          </>
         )}
       </div>
     </article>

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { flushSync } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { GAME_CONFIGS, getGameConfig } from '../tcgConfig';
 import { loginUser, registerUser } from '../services/api';
 
@@ -88,13 +88,38 @@ const getAuthErrorMessage = (error, isRegister) => {
   return isRegister ? 'No se pudo completar el registro.' : 'No se pudo iniciar sesion.';
 };
 
+const normalizeReturnTo = (value) => {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) {
+    return '/search';
+  }
+
+  return value;
+};
+
 function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availableGames }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [registerData, setRegisterData] = useState({ username: '', email: '', password: '' });
   const [isRegister, setIsRegister] = useState(false);
   const [authMessage, setAuthMessage] = useState(null);
   const activeGame = getGameConfig(activeTcgSlug);
+  const requestedAuthMode = searchParams.get('auth') === 'register' ? 'register' : 'login';
+  const returnTo = useMemo(
+    () => normalizeReturnTo(searchParams.get('returnTo')),
+    [searchParams]
+  );
+
+  useEffect(() => {
+    setIsRegister(requestedAuthMode === 'register');
+  }, [requestedAuthMode]);
+
+  const updateAuthRoute = (mode) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('auth', mode);
+    nextParams.set('returnTo', returnTo);
+    setSearchParams(nextParams, { replace: true });
+  };
   const quickActions = [
     { label: `Buscar en ${activeGame.shortName}`, to: '/search', tone: 'primary' },
     { label: 'Abrir mi coleccion', to: '/collection', tone: 'secondary' },
@@ -116,11 +141,12 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
           text: 'Registro completado. Ya puedes iniciar sesion con tu usuario.',
         });
         setRegisterData({ username: '', email: '', password: '' });
-        setIsRegister(false);
+        updateAuthRoute('login');
         return;
       }
 
       await onLoginSuccess();
+      navigate(returnTo, { replace: true });
     },
     onError: (error) => {
       setAuthMessage({
@@ -146,9 +172,7 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
       setActiveTcgSlug(game.slug);
     });
 
-    if (token) {
-      navigate('/search');
-    }
+    navigate('/search');
   };
 
   if (token) {
@@ -393,8 +417,8 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
             <div className="auth-toggle">
               <button
                 onClick={() => {
-                  setIsRegister(false);
                   setAuthMessage(null);
+                  updateAuthRoute('login');
                 }}
                 className={!isRegister ? 'active' : ''}
                 type="button"
@@ -403,8 +427,8 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
               </button>
               <button
                 onClick={() => {
-                  setIsRegister(true);
                   setAuthMessage(null);
+                  updateAuthRoute('register');
                 }}
                 className={isRegister ? 'active' : ''}
                 type="button"

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { startTransition, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import SearchCardDetailModal from '../components/search/SearchCardDetailModal';
@@ -6,6 +6,7 @@ import SearchCardTile from '../components/search/SearchCardTile';
 import SearchDeckPickerModal from '../components/search/SearchDeckPickerModal';
 import SearchFiltersPanel from '../components/search/SearchFiltersPanel';
 import SearchResultsToolbar from '../components/search/SearchResultsToolbar';
+import GuestDemoBanner from '../components/guest/GuestDemoBanner';
 import { getGameConfig } from '../tcgConfig';
 import { useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
@@ -147,7 +148,7 @@ const normalizeDeckList = (payload) => (Array.isArray(payload) ? payload : EMPTY
 const normalizeCardList = (payload) => (Array.isArray(payload) ? payload : EMPTY_CARDS);
 const isUnauthorizedError = (error) => error?.response?.status === 401;
 
-function Search({ activeTcgSlug, activeTgc }) {
+function Search({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const { profile } = useSession();
   const { showToast } = useToast();
@@ -250,7 +251,7 @@ function Search({ activeTcgSlug, activeTgc }) {
   const decksQuery = useQuery({
     queryKey: queryKeys.searchDeckOptions(activeTgc?.id),
     queryFn: ({ signal }) => getSearchDeckOptions(activeTgc.id, signal),
-    enabled: Boolean(activeTgc?.id && deckPickerCard),
+    enabled: Boolean(activeTgc?.id && deckPickerCard && !isGuestDemo),
     staleTime: QUERY_STALE_TIMES.searchDeckOptions,
   });
 
@@ -373,6 +374,18 @@ function Search({ activeTcgSlug, activeTgc }) {
   );
   const effectiveCardViewMode = isMobileLayout ? cardViewMode : 'detail';
   const cardList = normalizeCardList(pagination.items);
+  const handleActionQuantityChange = useCallback((cardId, value) => {
+    setActionQuantityDraft(cardId, value);
+  }, [setActionQuantityDraft]);
+  const handleActionQuantityBlur = useCallback((cardId) => {
+    commitActionQuantity(cardId);
+  }, [commitActionQuantity]);
+  const handleIncreaseActionQuantity = useCallback((cardId) => {
+    stepActionQuantity(cardId, 1);
+  }, [stepActionQuantity]);
+  const handleDecreaseActionQuantity = useCallback((cardId) => {
+    stepActionQuantity(cardId, -1);
+  }, [stepActionQuantity]);
   const resolvedSelectedCard = useMemo(() => {
     if (!selectedCard) {
       return null;
@@ -417,6 +430,10 @@ function Search({ activeTcgSlug, activeTgc }) {
   }, [page, pagination.page]);
 
   const handleAddToCollection = async (cardId, quantityOverride = null) => {
+    if (isGuestDemo) {
+      return;
+    }
+
     const parsedCardId = Number(cardId);
 
     if (!Number.isInteger(parsedCardId) || parsedCardId <= 0) {
@@ -437,6 +454,10 @@ function Search({ activeTcgSlug, activeTgc }) {
   };
 
   const handleAddToDeck = async (cardId, quantityOverride = null) => {
+    if (isGuestDemo) {
+      return;
+    }
+
     const card = cardList.find((item) => item.id === cardId) || null;
     setDeckPickerCard(card);
     setNewDeckName(card ? `${card.name} Test` : '');
@@ -567,16 +588,20 @@ function Search({ activeTcgSlug, activeTgc }) {
   };
 
   const handleFilterChange = (filterName, value) => {
-    setPage(1);
-    setFilters((prev) => ({
-      ...prev,
-      [filterName]: value,
-    }));
+    startTransition(() => {
+      setPage(1);
+      setFilters((prev) => ({
+        ...prev,
+        [filterName]: value,
+      }));
+    });
   };
 
   const handleSearchChange = (value) => {
-    setPage(1);
-    setSearchTerm(value);
+    startTransition(() => {
+      setPage(1);
+      setSearchTerm(value);
+    });
   };
 
   const handlePageSizeChange = (value) => {
@@ -586,8 +611,10 @@ function Search({ activeTcgSlug, activeTgc }) {
       return;
     }
 
-    setPage(1);
-    setPageSize(nextPageSize);
+    startTransition(() => {
+      setPage(1);
+      setPageSize(nextPageSize);
+    });
   };
 
   const handleSortChange = (value) => {
@@ -595,8 +622,10 @@ function Search({ activeTcgSlug, activeTgc }) {
       return;
     }
 
-    setPage(1);
-    setSortBy(value);
+    startTransition(() => {
+      setPage(1);
+      setSortBy(value);
+    });
   };
 
   const availableExpansionOptions = useMemo(() => (
@@ -665,8 +694,9 @@ function Search({ activeTcgSlug, activeTgc }) {
           <span className="eyebrow">{activeGame.eyebrow}</span>
           <h1>{activeGame.searchTitle}</h1>
           <p>
-            Filtra el catalogo de {activeGame.shortName} por tipo, color, rareza y set
-            para mover cartas directo a tu coleccion.
+            {isGuestDemo
+              ? `Explora el catalogo real de ${activeGame.shortName} en modo lectura. Podras abrir cartas, filtrar y paginar antes de registrarte.`
+              : `Filtra el catalogo de ${activeGame.shortName} por tipo, color, rareza y set para mover cartas directo a tu coleccion.`}
           </p>
         </div>
 
@@ -675,6 +705,13 @@ function Search({ activeTcgSlug, activeTgc }) {
           <strong>{pagination.total}</strong>
         </div>
       </section>
+
+      {isGuestDemo && (
+        <GuestDemoBanner
+          title={`Catalogo real de ${activeGame.shortName}`}
+          description="Puedes buscar cartas, filtrar resultados y abrir el detalle. Para guardarlas en coleccion o moverlas a un mazo necesitas una cuenta."
+        />
+      )}
 
       <SearchFiltersPanel
         searchTerm={searchTerm}
@@ -712,12 +749,13 @@ function Search({ activeTcgSlug, activeTgc }) {
             <SearchCardTile
               key={card.id}
               card={card}
+              isGuestDemo={isGuestDemo}
               cardViewMode={effectiveCardViewMode}
               actionQuantity={getActionQuantity(card.id)}
-              onActionQuantityChange={setActionQuantityDraft}
-              onActionQuantityBlur={commitActionQuantity}
-              onIncreaseActionQuantity={(cardId) => stepActionQuantity(cardId, 1)}
-              onDecreaseActionQuantity={(cardId) => stepActionQuantity(cardId, -1)}
+              onActionQuantityChange={handleActionQuantityChange}
+              onActionQuantityBlur={handleActionQuantityBlur}
+              onIncreaseActionQuantity={handleIncreaseActionQuantity}
+              onDecreaseActionQuantity={handleDecreaseActionQuantity}
               onOpen={setSelectedCard}
               onAddToCollection={handleAddToCollection}
               onAddToDeck={handleAddToDeck}
@@ -734,50 +772,53 @@ function Search({ activeTcgSlug, activeTgc }) {
       <SearchCardDetailModal
         card={resolvedSelectedCard}
         activeTcgSlug={activeTcgSlug}
+        isGuestDemo={isGuestDemo}
         actionQuantity={selectedCard ? getActionQuantity(selectedCard.id) : DEFAULT_ACTION_QUANTITY}
-        onActionQuantityChange={setActionQuantityDraft}
-        onActionQuantityBlur={commitActionQuantity}
-        onIncreaseActionQuantity={(cardId) => stepActionQuantity(cardId, 1)}
-        onDecreaseActionQuantity={(cardId) => stepActionQuantity(cardId, -1)}
+        onActionQuantityChange={handleActionQuantityChange}
+        onActionQuantityBlur={handleActionQuantityBlur}
+        onIncreaseActionQuantity={handleIncreaseActionQuantity}
+        onDecreaseActionQuantity={handleDecreaseActionQuantity}
         onClose={() => setSelectedCard(null)}
         onAddToCollection={handleAddToCollection}
         onAddToDeck={handleAddToDeck}
       />
 
-      <SearchDeckPickerModal
-        deckPickerCard={deckPickerCard}
-        activeGame={activeGame}
-        loadingDecks={decksQuery.isFetching}
-        decks={decks}
-        newDeckName={newDeckName}
-        actionQuantity={deckPickerCard ? getActionQuantity(deckPickerCard.id) : DEFAULT_ACTION_QUANTITY}
-        submittingDeckAction={addToDeckMutation.isPending || addToConsideringMutation.isPending || createDeckMutation.isPending}
-        onClose={() => setDeckPickerCard(null)}
-        onActionQuantityChange={(value) => {
-          if (deckPickerCard) {
-            setActionQuantityDraft(deckPickerCard.id, value);
-          }
-        }}
-        onActionQuantityBlur={() => {
-          if (deckPickerCard) {
-            commitActionQuantity(deckPickerCard.id);
-          }
-        }}
-        onIncreaseActionQuantity={() => {
-          if (deckPickerCard) {
-            stepActionQuantity(deckPickerCard.id, 1);
-          }
-        }}
-        onDecreaseActionQuantity={() => {
-          if (deckPickerCard) {
-            stepActionQuantity(deckPickerCard.id, -1);
-          }
-        }}
-        onNewDeckNameChange={setNewDeckName}
-        onAddCardToExistingDeck={addCardToExistingDeck}
-        onAddCardToConsidering={addCardToDeckConsidering}
-        onCreateDeckAndAddCard={createDeckAndAddCard}
-      />
+      {!isGuestDemo && (
+        <SearchDeckPickerModal
+          deckPickerCard={deckPickerCard}
+          activeGame={activeGame}
+          loadingDecks={decksQuery.isFetching}
+          decks={decks}
+          newDeckName={newDeckName}
+          actionQuantity={deckPickerCard ? getActionQuantity(deckPickerCard.id) : DEFAULT_ACTION_QUANTITY}
+          submittingDeckAction={addToDeckMutation.isPending || addToConsideringMutation.isPending || createDeckMutation.isPending}
+          onClose={() => setDeckPickerCard(null)}
+          onActionQuantityChange={(value) => {
+            if (deckPickerCard) {
+              setActionQuantityDraft(deckPickerCard.id, value);
+            }
+          }}
+          onActionQuantityBlur={() => {
+            if (deckPickerCard) {
+              commitActionQuantity(deckPickerCard.id);
+            }
+          }}
+          onIncreaseActionQuantity={() => {
+            if (deckPickerCard) {
+              stepActionQuantity(deckPickerCard.id, 1);
+            }
+          }}
+          onDecreaseActionQuantity={() => {
+            if (deckPickerCard) {
+              stepActionQuantity(deckPickerCard.id, -1);
+            }
+          }}
+          onNewDeckNameChange={setNewDeckName}
+          onAddCardToExistingDeck={addCardToExistingDeck}
+          onAddCardToConsidering={addCardToDeckConsidering}
+          onCreateDeckAndAddCard={createDeckAndAddCard}
+        />
+      )}
     </div>
   );
 }

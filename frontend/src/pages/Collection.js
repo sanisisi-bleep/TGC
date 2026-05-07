@@ -1,11 +1,13 @@
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import CollectionCardItem from '../components/collection/CollectionCardItem';
 import CollectionControlsPanel from '../components/collection/CollectionControlsPanel';
 import CardDetailModal from '../components/cards/CardDetailModal';
+import GuestDemoBanner from '../components/guest/GuestDemoBanner';
 import { useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
+import { getGuestDemoCollection, getGuestDemoDeckOptions } from '../demo/guestDemoData';
 import useBrowserStorageState from '../hooks/useBrowserStorageState';
 import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import queryKeys from '../queryKeys';
@@ -66,7 +68,7 @@ const compareCollectionCards = (leftCard, rightCard, direction = 'asc') => {
 
 const isUnauthorizedError = (error) => error?.response?.status === 401;
 
-function Collection({ activeTcgSlug, activeTgc }) {
+function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const collectionTitle = activeGame.collectionTitle || 'Mi Coleccion';
   const { profile } = useSession();
@@ -97,29 +99,37 @@ function Collection({ activeTcgSlug, activeTgc }) {
   const collectionQuery = useQuery({
     queryKey: queryKeys.collection(activeTgc?.id),
     queryFn: ({ signal }) => getCollection(activeTgc.id, signal),
-    enabled: Boolean(activeTgc?.id),
+    enabled: Boolean(activeTgc?.id && !isGuestDemo),
     staleTime: QUERY_STALE_TIMES.collection,
   });
   const decksQuery = useQuery({
     queryKey: queryKeys.deckOptions(activeTgc?.id),
     queryFn: ({ signal }) => getDeckOptions(activeTgc.id, signal),
-    enabled: Boolean(activeTgc?.id),
+    enabled: Boolean(activeTgc?.id && !isGuestDemo),
     staleTime: QUERY_STALE_TIMES.deckOptions,
   });
   const selectedCardDetailQuery = useQuery({
     queryKey: queryKeys.cardDetail(selectedCard?.id || 0),
     queryFn: ({ signal }) => getCardDetail(selectedCard.id, signal),
-    enabled: Boolean(selectedCard?.id),
+    enabled: Boolean(selectedCard?.id && !isGuestDemo),
     staleTime: QUERY_STALE_TIMES.cardDetail,
   });
 
+  const guestCollection = useMemo(
+    () => getGuestDemoCollection(activeTcgSlug),
+    [activeTcgSlug]
+  );
+  const guestDeckOptions = useMemo(
+    () => getGuestDemoDeckOptions(activeTcgSlug),
+    [activeTcgSlug]
+  );
   const collection = useMemo(
-    () => collectionQuery.data || EMPTY_COLLECTION,
-    [collectionQuery.data]
+    () => (isGuestDemo ? guestCollection : (collectionQuery.data || EMPTY_COLLECTION)),
+    [collectionQuery.data, guestCollection, isGuestDemo]
   );
   const decks = useMemo(
-    () => decksQuery.data || EMPTY_DECKS,
-    [decksQuery.data]
+    () => (isGuestDemo ? guestDeckOptions : (decksQuery.data || EMPTY_DECKS)),
+    [decksQuery.data, guestDeckOptions, isGuestDemo]
   );
 
   useEffect(() => {
@@ -294,9 +304,40 @@ function Collection({ activeTcgSlug, activeTgc }) {
     navigate('/decks', { state: { openDeckId: deckId } });
   };
 
-  const openCollectionCard = (card) => {
+  const openCollectionCard = useCallback((card) => {
     setSelectedCard(card);
-  };
+  }, []);
+
+  const handleCollectionSearchTermChange = useCallback((value) => {
+    startTransition(() => {
+      setCollectionSearchTerm(value);
+    });
+  }, []);
+
+  const handleCollectionFilterChange = useCallback((filterName, value) => {
+    startTransition(() => {
+      setCollectionFilters((current) => ({ ...current, [filterName]: value }));
+    });
+  }, []);
+
+  const handleCollectionSortChange = useCallback((value) => {
+    startTransition(() => {
+      setCollectionSort(value);
+    });
+  }, []);
+
+  const handleCollectionViewChange = useCallback((value) => {
+    startTransition(() => {
+      setCollectionView(value);
+    });
+  }, [setCollectionView]);
+
+  const handleQuantityInputChange = useCallback((cardId, value) => {
+    setQuantityInputs((current) => ({
+      ...current,
+      [cardId]: value,
+    }));
+  }, []);
 
   const resolvedSelectedCard = useMemo(() => {
     if (!selectedCard) {
@@ -422,17 +463,19 @@ function Collection({ activeTcgSlug, activeTgc }) {
   );
 
   const clearCollectionFilters = () => {
-    setCollectionSearchTerm('');
-    setCollectionFilters({
-      type: '',
-      color: '',
-      rarity: '',
-      set: '',
+    startTransition(() => {
+      setCollectionSearchTerm('');
+      setCollectionFilters({
+        type: '',
+        color: '',
+        rarity: '',
+        set: '',
+      });
+      setCollectionSort('name-asc');
     });
-    setCollectionSort('name-asc');
   };
 
-  if (collectionQuery.isPending && safeCollection.length === 0) {
+  if (!isGuestDemo && collectionQuery.isPending && safeCollection.length === 0) {
     return (
       <div className="collection page-shell">
         <section className="page-hero collection-hero">
@@ -453,8 +496,9 @@ function Collection({ activeTcgSlug, activeTgc }) {
           <span className="eyebrow">{activeGame.eyebrow}</span>
           <h1>{collectionTitle}</h1>
           <p>
-            Controla tus copias de {activeGame.shortName}, revisa cuantas siguen libres
-            para construir mazos y ajusta cantidades sin salir de esta vista.
+            {isGuestDemo
+              ? `Asi se veria tu coleccion de ${activeGame.shortName}: copias, disponibilidad real y relacion con mazos, todo en una misma vista.`
+              : `Controla tus copias de ${activeGame.shortName}, revisa cuantas siguen libres para construir mazos y ajusta cantidades sin salir de esta vista.`}
           </p>
         </div>
 
@@ -463,6 +507,13 @@ function Collection({ activeTcgSlug, activeTgc }) {
           <strong>{safeCollection.length}</strong>
         </div>
       </section>
+
+      {isGuestDemo && (
+        <GuestDemoBanner
+          title={`Coleccion demo de ${activeGame.shortName}`}
+          description="Aqui puedes ver como se muestran las copias, lo que queda disponible y en que mazos se usa cada carta. Para editar cantidades o montar tus listas necesitas registrarte."
+        />
+      )}
 
       <section className="panel view-toggle-panel">
         <div className="view-toggle-copy">
@@ -473,21 +524,21 @@ function Collection({ activeTcgSlug, activeTgc }) {
           <button
             type="button"
             className={collectionView === 'detail' ? 'is-active' : ''}
-            onClick={() => setCollectionView('detail')}
+            onClick={() => handleCollectionViewChange('detail')}
           >
             Ficha
           </button>
           <button
             type="button"
             className={collectionView === 'grid' ? 'is-active' : ''}
-            onClick={() => setCollectionView('grid')}
+            onClick={() => handleCollectionViewChange('grid')}
           >
             Cuadricula
           </button>
           <button
             type="button"
             className={collectionView === 'inventory' ? 'is-active' : ''}
-            onClick={() => setCollectionView('inventory')}
+            onClick={() => handleCollectionViewChange('inventory')}
           >
             Solo copias
           </button>
@@ -505,9 +556,9 @@ function Collection({ activeTcgSlug, activeTgc }) {
         rarityOptions={availableRarityOptions}
         setOptions={availableSetOptions}
         hasFilters={hasCollectionFilters}
-        onSearchTermChange={setCollectionSearchTerm}
-        onFilterChange={(filterName, value) => setCollectionFilters((current) => ({ ...current, [filterName]: value }))}
-        onSortChange={setCollectionSort}
+        onSearchTermChange={handleCollectionSearchTermChange}
+        onFilterChange={handleCollectionFilterChange}
+        onSortChange={handleCollectionSortChange}
         onClear={clearCollectionFilters}
       />
 
@@ -516,6 +567,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
           <CollectionCardItem
             key={item.card.id}
             item={item}
+            isGuestDemo={isGuestDemo}
             collectionView={collectionView}
             activeTcgSlug={activeTcgSlug}
             decks={decks}
@@ -525,10 +577,7 @@ function Collection({ activeTcgSlug, activeTgc }) {
             onOpenCard={openCollectionCard}
             onAdjustQuantity={adjustCollectionQuantity}
             onApplyManualChange={applyManualCollectionChange}
-            onQuantityInputChange={(cardId, value) => setQuantityInputs((current) => ({
-              ...current,
-              [cardId]: value,
-            }))}
+            onQuantityInputChange={handleQuantityInputChange}
             onOpenDeck={openDeck}
             onAddToDeck={addCardToDeckFromCollection}
           />
@@ -536,8 +585,16 @@ function Collection({ activeTcgSlug, activeTgc }) {
 
         {safeCollection.length === 0 && (
           <div className="empty-state panel">
-            <h3>No hay cartas de {activeGame.shortName} en tu coleccion todavia</h3>
-            <p>Anade cartas desde el buscador para empezar a construir mazos.</p>
+            <h3>
+              {isGuestDemo
+                ? `La demo de ${activeGame.shortName} no tiene cartas preparadas ahora mismo`
+                : `No hay cartas de ${activeGame.shortName} en tu coleccion todavia`}
+            </h3>
+            <p>
+              {isGuestDemo
+                ? 'Prueba otro juego desde la barra superior o vuelve al buscador para seguir explorando.'
+                : 'Anade cartas desde el buscador para empezar a construir mazos.'}
+            </p>
           </div>
         )}
 

@@ -149,6 +149,8 @@ function CardDetailModal({
             <img
               src={detailImageSrc}
               alt={card.name}
+              width="400"
+              height="560"
               className="large-image card-detail-modal-image"
               onError={(event) => {
                 if (card.thumbnail_url && event.currentTarget.src !== card.thumbnail_url) {

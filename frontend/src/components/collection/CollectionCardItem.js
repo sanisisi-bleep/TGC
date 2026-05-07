@@ -4,6 +4,7 @@ import { buildCollectionMeta, getCollectionDeckSectionLabel } from '../../utils/
 
 function CollectionCardItem({
   item,
+  isGuestDemo = false,
   collectionView,
   activeTcgSlug,
   decks,
@@ -35,12 +36,20 @@ function CollectionCardItem({
         <img
           src={item.card.image_url}
           alt={item.card.name}
+          width="152"
+          height="212"
           loading="lazy"
           decoding="async"
         />
         {isInventoryView ? (
           <div className="collection-count-panel">
             <span className="collection-panel-label">Copias</span>
+            <strong>x{item.total_quantity}</strong>
+            <span>Disponibles x{item.available_quantity}</span>
+          </div>
+        ) : isGuestDemo ? (
+          <div className="collection-demo-panel">
+            <span className="collection-panel-label">Vista demo</span>
             <strong>x{item.total_quantity}</strong>
             <span>Disponibles x{item.available_quantity}</span>
           </div>
@@ -139,7 +148,7 @@ function CollectionCardItem({
           </div>
         </div>
 
-        {!isInventoryView && (
+        {!isInventoryView && !isGuestDemo && (
           <div className="collection-actions">
             <span className="collection-panel-label">
               Agregar al mazo x{requestedDeckQuantity}
@@ -157,6 +166,13 @@ function CollectionCardItem({
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {!isInventoryView && isGuestDemo && (
+          <div className="collection-demo-actions">
+            <span className="collection-panel-label">Solo lectura</span>
+            <p>En demo puedes revisar copias, disponibilidad y en que mazos iria cada carta.</p>
           </div>
         )}
       </div>

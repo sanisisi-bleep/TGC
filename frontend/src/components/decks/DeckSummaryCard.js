@@ -3,6 +3,7 @@ import { getDeckEggCardCount } from '../../utils/deckTools';
 
 function DeckSummaryCard({
   deck,
+  isGuestDemo = false,
   onOpen,
   onClone,
   onShare,
@@ -99,36 +100,44 @@ function DeckSummaryCard({
           className="deck-action-button is-primary is-wide"
           onClick={onOpen}
         >
-          Abrir mazo
+          {isGuestDemo ? 'Abrir demo' : 'Abrir mazo'}
         </button>
 
-        <div className="deck-card-actions-secondary">
-          <button
-            type="button"
-            className="deck-action-button is-soft"
-            onClick={onClone}
-            disabled={isCloning}
-          >
-            {isCloning ? 'Clonando...' : 'Clonar'}
-          </button>
-          <button
-            type="button"
-            className="deck-action-button is-soft"
-            onClick={onShare}
-            disabled={isSharing}
-          >
-            {isSharing ? 'Compartiendo...' : 'Compartir'}
-          </button>
-        </div>
+        {isGuestDemo ? (
+          <div className="deck-demo-summary-note">
+            Vista demo en solo lectura
+          </div>
+        ) : (
+          <>
+            <div className="deck-card-actions-secondary">
+              <button
+                type="button"
+                className="deck-action-button is-soft"
+                onClick={onClone}
+                disabled={isCloning}
+              >
+                {isCloning ? 'Clonando...' : 'Clonar'}
+              </button>
+              <button
+                type="button"
+                className="deck-action-button is-soft"
+                onClick={onShare}
+                disabled={isSharing}
+              >
+                {isSharing ? 'Compartiendo...' : 'Compartir'}
+              </button>
+            </div>
 
-        <button
-          type="button"
-          className="deck-action-button is-danger is-ghost-danger"
-          onClick={onDelete}
-          disabled={isDeleting}
-        >
-          {isDeleting ? 'Borrando...' : 'Borrar mazo'}
-        </button>
+            <button
+              type="button"
+              className="deck-action-button is-danger is-ghost-danger"
+              onClick={onDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Borrando...' : 'Borrar mazo'}
+            </button>
+          </>
+        )}
       </div>
     </article>
   );

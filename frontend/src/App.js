@@ -70,16 +70,11 @@ const buildAvailableGames = (tgcBySlug) => (
 );
 
 function ProtectedGameRoute({
-  isAuthenticated,
   isBlocked,
   fallback,
   resetKey,
   children,
 }) {
-  if (!isAuthenticated) {
-    return <Navigate to="/" />;
-  }
-
   if (isBlocked) {
     return fallback;
   }
@@ -174,7 +169,7 @@ function AppShell({
   const navGames = availableGames.length > 0 ? availableGames : fallbackGames;
   const loadingTgcs = tgcCatalogQuery.isPending && !tgcCatalogQuery.data;
   const tgcLoadError = tgcCatalogQuery.error || null;
-  const shouldBlockProtectedGameRoutes = isAuthenticated && (loadingTgcs || !activeTgc || Boolean(tgcLoadError));
+  const shouldBlockProtectedGameRoutes = loadingTgcs || !activeTgc || Boolean(tgcLoadError);
   const protectedGameFallback = (
     <TgcBootstrapPanel
       activeGame={activeGame}
@@ -222,7 +217,6 @@ function AppShell({
                 path="/search"
                 element={
                   <ProtectedGameRoute
-                    isAuthenticated={isAuthenticated}
                     isBlocked={shouldBlockProtectedGameRoutes}
                     fallback={protectedGameFallback}
                     resetKey={`search-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
@@ -231,6 +225,7 @@ function AppShell({
                       key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
                       activeTcgSlug={activeTcgSlug}
                       activeTgc={activeTgc}
+                      isGuestDemo={!isAuthenticated}
                     />
                   </ProtectedGameRoute>
                 }
@@ -239,7 +234,6 @@ function AppShell({
                 path="/collection"
                 element={
                   <ProtectedGameRoute
-                    isAuthenticated={isAuthenticated}
                     isBlocked={shouldBlockProtectedGameRoutes}
                     fallback={protectedGameFallback}
                     resetKey={`collection-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
@@ -248,6 +242,7 @@ function AppShell({
                       key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
                       activeTcgSlug={activeTcgSlug}
                       activeTgc={activeTgc}
+                      isGuestDemo={!isAuthenticated}
                     />
                   </ProtectedGameRoute>
                 }
@@ -256,7 +251,6 @@ function AppShell({
                 path="/decks"
                 element={
                   <ProtectedGameRoute
-                    isAuthenticated={isAuthenticated}
                     isBlocked={shouldBlockProtectedGameRoutes}
                     fallback={protectedGameFallback}
                     resetKey={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
@@ -265,6 +259,7 @@ function AppShell({
                       key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
                       activeTcgSlug={activeTcgSlug}
                       activeTgc={activeTgc}
+                      isGuestDemo={!isAuthenticated}
                     />
                   </ProtectedGameRoute>
                 }
