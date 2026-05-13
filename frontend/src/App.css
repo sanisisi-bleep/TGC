@@ -4119,10 +4119,11 @@ textarea::placeholder {
   gap: 1rem;
   margin-top: 1rem;
   min-height: 0;
+  align-items: start;
 }
 
 .deck-editor-workspace.is-deck-pane-collapsed {
-  grid-template-columns: 118px minmax(0, 1fr);
+  grid-template-columns: 132px minmax(0, 1fr);
 }
 
 .deck-editor-sidebar,
@@ -4130,6 +4131,8 @@ textarea::placeholder {
   display: grid;
   gap: 0.95rem;
   min-height: 0;
+  align-content: start;
+  overflow: hidden;
 }
 
 .deck-editor-sidebar {
@@ -4144,10 +4147,38 @@ textarea::placeholder {
   gap: 0.9rem;
 }
 
+.deck-editor-sidebar-header.is-collapsed {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.deck-editor-source-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
 .deck-editor-sidebar-header p,
 .deck-editor-source-header p {
   margin: 0.35rem 0 0;
   color: var(--text-soft);
+}
+
+.deck-editor-collapsed-label {
+  display: block;
+  margin-top: 0.35rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+}
+
+.deck-editor-collapse-button {
+  white-space: nowrap;
+}
+
+.deck-editor-sidebar-header.is-collapsed .deck-editor-collapse-button {
+  width: 100%;
 }
 
 .deck-editor-sidebar-body,
@@ -4155,6 +4186,13 @@ textarea::placeholder {
   display: grid;
   gap: 0.85rem;
   min-height: 0;
+  overflow: auto;
+  padding-right: 0.2rem;
+  scrollbar-gutter: stable;
+}
+
+.deck-editor-sidebar-body {
+  max-height: min(68vh, calc(100vh - 24rem));
 }
 
 .deck-editor-section {
@@ -4212,10 +4250,14 @@ textarea::placeholder {
   gap: 0.75rem;
 }
 
+.deck-editor-source-list {
+  max-height: min(72vh, calc(100vh - 22rem));
+}
+
 .deck-editor-deck-row,
 .deck-editor-source-row {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) minmax(220px, 0.66fr);
+  grid-template-columns: 72px minmax(0, 1fr) minmax(192px, 220px);
   gap: 0.85rem;
   align-items: center;
   padding: 0.85rem;
@@ -4252,6 +4294,7 @@ textarea::placeholder {
   align-items: center;
   justify-content: space-between;
   gap: 0.65rem;
+  flex-wrap: wrap;
 }
 
 .deck-editor-deck-copy p,
@@ -4286,6 +4329,9 @@ textarea::placeholder {
   display: grid;
   gap: 0.55rem;
   justify-items: end;
+  align-self: stretch;
+  width: 100%;
+  max-width: 220px;
 }
 
 .deck-editor-source-actions .search-quantity-panel {
@@ -4297,6 +4343,7 @@ textarea::placeholder {
   justify-content: space-between;
   align-items: center;
   gap: 0.8rem;
+  flex-wrap: wrap;
   color: var(--text-soft);
   font-size: 0.9rem;
   font-weight: 600;
@@ -4311,7 +4358,7 @@ textarea::placeholder {
 
 .deck-editor-filter-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(140px, 1fr));
+  grid-template-columns: minmax(220px, 1.8fr) repeat(4, minmax(0, 1fr));
   gap: 0.65rem;
 }
 
@@ -5127,6 +5174,13 @@ textarea::placeholder {
     grid-template-columns: 1fr;
   }
 
+  .deck-editor-sidebar-body,
+  .deck-editor-source-list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
   .deck-editor-deck-row,
   .deck-editor-source-row {
     grid-template-columns: 72px minmax(0, 1fr);
@@ -5145,6 +5199,16 @@ textarea::placeholder {
   .deck-editor-source-heading {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .deck-editor-source-header-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .deck-editor-source-header-actions .view-toggle,
+  .deck-editor-source-header-actions .deck-editor-collapse-button {
+    width: 100%;
   }
 
   .deck-editor-filter-grid {

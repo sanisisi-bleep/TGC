@@ -409,6 +409,9 @@ function DeckAdvancedEditorPanel({
   );
 
   const searchCards = Array.isArray(normalizedSearchResults.items) ? normalizedSearchResults.items : [];
+  const handleToggleDeckPane = () => {
+    setIsDeckPaneCollapsed((current) => !current);
+  };
 
   const toggleSection = (sectionKey) => {
     setCollapsedSections((current) => ({
@@ -465,10 +468,11 @@ function DeckAdvancedEditorPanel({
 
   return (
     <section className={`deck-editor-workspace ${isDeckPaneCollapsed ? 'is-deck-pane-collapsed' : ''}`.trim()}>
-      <aside className="deck-editor-sidebar panel">
-        <div className="deck-editor-sidebar-header">
+      <aside className={`deck-editor-sidebar panel ${isDeckPaneCollapsed ? 'is-collapsed' : ''}`.trim()}>
+        <div className={`deck-editor-sidebar-header ${isDeckPaneCollapsed ? 'is-collapsed' : ''}`.trim()}>
           <div>
-            <span className="eyebrow">Editor avanzado</span>
+            <span className="eyebrow">{isDeckPaneCollapsed ? 'Mazo' : 'Editor avanzado'}</span>
+            {isDeckPaneCollapsed && <strong className="deck-editor-collapsed-label">Lista actual</strong>}
             {!isDeckPaneCollapsed && <h3>Lista actual del mazo</h3>}
             {!isDeckPaneCollapsed && (
               <p>
@@ -478,8 +482,8 @@ function DeckAdvancedEditorPanel({
           </div>
           <button
             type="button"
-            className="ghost-button"
-            onClick={() => setIsDeckPaneCollapsed((current) => !current)}
+            className="ghost-button deck-editor-collapse-button"
+            onClick={handleToggleDeckPane}
           >
             {isDeckPaneCollapsed ? 'Mostrar mazo' : 'Minimizar'}
           </button>
@@ -558,21 +562,32 @@ function DeckAdvancedEditorPanel({
               Mete cartas legales segun las normas de {activeGame?.shortName}, revisa si te faltan copias y abre cualquier carta para verla en detalle.
             </p>
           </div>
-          <div className="view-toggle deck-view-toggle" role="tablist" aria-label="Fuente del editor">
-            <button
-              type="button"
-              className={sourceMode === 'search' ? 'is-active' : ''}
-              onClick={() => setSourceMode('search')}
-            >
-              Buscar cartas
-            </button>
-            <button
-              type="button"
-              className={sourceMode === 'collection' ? 'is-active' : ''}
-              onClick={() => setSourceMode('collection')}
-            >
-              Mi coleccion
-            </button>
+          <div className="deck-editor-source-header-actions">
+            {isDeckPaneCollapsed && (
+              <button
+                type="button"
+                className="ghost-button deck-editor-collapse-button"
+                onClick={handleToggleDeckPane}
+              >
+                Mostrar mazo
+              </button>
+            )}
+            <div className="view-toggle deck-view-toggle" role="tablist" aria-label="Fuente del editor">
+              <button
+                type="button"
+                className={sourceMode === 'search' ? 'is-active' : ''}
+                onClick={() => setSourceMode('search')}
+              >
+                Buscar cartas
+              </button>
+              <button
+                type="button"
+                className={sourceMode === 'collection' ? 'is-active' : ''}
+                onClick={() => setSourceMode('collection')}
+              >
+                Mi coleccion
+              </button>
+            </div>
           </div>
         </div>
 

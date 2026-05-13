@@ -163,6 +163,7 @@ function AppShell({
   const activeGame = getGameConfig(activeTcgSlug);
   const activeTgc = tgcBySlug[activeTcgSlug] || null;
   const authRouteScope = isAuthenticated ? `auth-${profile?.id || 'session'}` : 'guest';
+  const protectedRouteKey = `game-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`;
   const availableGames = useMemo(() => buildAvailableGames(tgcBySlug), [tgcBySlug]);
   const fallbackGames = useMemo(
     () => Object.values(GAME_CONFIGS).filter((game) => game.available),
@@ -178,6 +179,15 @@ function AppShell({
       error={tgcLoadError}
       onRetry={retryTgcLoad}
     />
+  );
+  const renderProtectedGamePage = (pageName, element) => (
+    <ProtectedGameRoute
+      isBlocked={shouldBlockProtectedGameRoutes}
+      fallback={protectedGameFallback}
+      resetKey={`${pageName}-${protectedRouteKey}`}
+    >
+      {element}
+    </ProtectedGameRoute>
   );
 
   return (
@@ -218,69 +228,53 @@ function AppShell({
               <Route
                 path="/search"
                 element={
-                  <ProtectedGameRoute
-                    isBlocked={shouldBlockProtectedGameRoutes}
-                    fallback={protectedGameFallback}
-                    resetKey={`search-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
-                  >
+                  renderProtectedGamePage('search', (
                     <Search
-                      key={`search-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
+                      key={`search-${protectedRouteKey}`}
                       activeTcgSlug={activeTcgSlug}
                       activeTgc={activeTgc}
                       isGuestDemo={!isAuthenticated}
                     />
-                  </ProtectedGameRoute>
+                  ))
                 }
               />
               <Route
                 path="/collection"
                 element={
-                  <ProtectedGameRoute
-                    isBlocked={shouldBlockProtectedGameRoutes}
-                    fallback={protectedGameFallback}
-                    resetKey={`collection-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
-                  >
+                  renderProtectedGamePage('collection', (
                     <Collection
-                      key={`collection-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
+                      key={`collection-${protectedRouteKey}`}
                       activeTcgSlug={activeTcgSlug}
                       activeTgc={activeTgc}
                       isGuestDemo={!isAuthenticated}
                     />
-                  </ProtectedGameRoute>
+                  ))
                 }
               />
               <Route
                 path="/decks/:deckId/editor"
                 element={
-                  <ProtectedGameRoute
-                    isBlocked={shouldBlockProtectedGameRoutes}
-                    fallback={protectedGameFallback}
-                    resetKey={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
-                  >
+                  renderProtectedGamePage('decks', (
                     <Decks
-                      key={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
+                      key={`decks-${protectedRouteKey}`}
                       activeTcgSlug={activeTcgSlug}
                       activeTgc={activeTgc}
                       isGuestDemo={!isAuthenticated}
                     />
-                  </ProtectedGameRoute>
+                  ))
                 }
               />
               <Route
                 path="/decks"
                 element={
-                  <ProtectedGameRoute
-                    isBlocked={shouldBlockProtectedGameRoutes}
-                    fallback={protectedGameFallback}
-                    resetKey={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
-                  >
+                  renderProtectedGamePage('decks', (
                     <Decks
-                      key={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
+                      key={`decks-${protectedRouteKey}`}
                       activeTcgSlug={activeTcgSlug}
                       activeTgc={activeTgc}
                       isGuestDemo={!isAuthenticated}
                     />
-                  </ProtectedGameRoute>
+                  ))
                 }
               />
               <Route path="/shared-deck/:shareToken" element={<SharedDeck />} />

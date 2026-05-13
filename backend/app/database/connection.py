@@ -7,6 +7,7 @@ from app.database.models import Base
 
 load_environment()
 
+
 def resolve_database_url():
     target = os.getenv("DATABASE_TARGET", "").strip().upper()
     pre_url = os.getenv("DATABASE_URL_PRE")
@@ -47,6 +48,7 @@ def _run_optional_schema_statements(statements):
         _run_schema_statements(statements)
     except Exception as error:
         print(f"[db] Optional schema statements skipped: {error}")
+
 
 def ensure_card_columns():
     # Lightweight schema sync for new card metadata columns on existing PostgreSQL databases.
@@ -233,6 +235,7 @@ def ensure_rate_limit_tables():
 
     _run_schema_statements(statements)
 
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     ensure_card_columns()
@@ -241,6 +244,7 @@ def init_db():
     ensure_user_columns()
     ensure_collection_indexes()
     ensure_rate_limit_tables()
+
 
 def get_db():
     db = SessionLocal()

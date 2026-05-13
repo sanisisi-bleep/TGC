@@ -51,6 +51,18 @@ import {
   shareDeck,
 } from '../services/api';
 
+const OPEN_DECK_ROUTE_STATE_KEY = 'openDeckId';
+const EDITOR_ROUTE_ACCESS_KEY = 'deckEditorAccess';
+
+const buildOpenDeckRouteState = (deckId) => ({
+  [OPEN_DECK_ROUTE_STATE_KEY]: deckId,
+});
+
+const buildDeckEditorRouteState = (deckId) => ({
+  [EDITOR_ROUTE_ACCESS_KEY]: true,
+  deckId,
+});
+
 function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const activeGame = getGameConfig(activeTcgSlug);
   const { showToast } = useToast();
@@ -88,7 +100,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const isEditorRoute = Boolean(editorRouteDeckId);
   const hasEditorRouteAccess = !isGuestDemo
     && isEditorRoute
-    && location.state?.deckEditorAccess === true
+    && location.state?.[EDITOR_ROUTE_ACCESS_KEY] === true
     && String(location.state?.deckId) === String(editorRouteDeckId);
   const detailDeckId = isEditorRoute ? editorRouteDeckId : selectedDeckId;
 
@@ -154,7 +166,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   }, [isEditorRoute, resetDeckActionQuantityDrafts, selectedDeckId]);
 
   useEffect(() => {
-    const deckId = location.state?.openDeckId;
+    const deckId = location.state?.[OPEN_DECK_ROUTE_STATE_KEY];
     if (!deckId) {
       return;
     }
@@ -431,7 +443,10 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
           mergeDeckOverviewInList(Array.isArray(current) ? current : [], payload.deck)
         ));
       }
-      await invalidateCollectionQuery();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
+        invalidateCollectionQuery(),
+      ]);
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -460,7 +475,10 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         assignedQuantity: payload?.assigned_quantity,
         deckSection: payload?.deck_section || 'main',
       });
-      await invalidateCollectionQuery();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
+        invalidateCollectionQuery(),
+      ]);
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -856,10 +874,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     }
 
     navigate(`/decks/${selectedDeck.id}/editor`, {
-      state: {
-        deckEditorAccess: true,
-        deckId: selectedDeck.id,
-      },
+      state: buildDeckEditorRouteState(selectedDeck.id),
     });
   };
 
@@ -870,9 +885,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     }
 
     navigate('/decks', {
-      state: {
-        openDeckId: selectedDeck.id,
-      },
+      state: buildOpenDeckRouteState(selectedDeck.id),
     });
   };
 

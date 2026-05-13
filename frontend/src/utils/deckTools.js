@@ -1033,6 +1033,15 @@ const sumMissingCopies = (cards = []) => (
   cards.reduce((total, card) => total + Math.max(normalizeDeckNumber(card.missing_quantity, 0), 0), 0)
 );
 
+const getDeckCardSectionKey = (deckSection) => (
+  deckSection === 'egg' ? 'egg_cards' : 'cards'
+);
+
+const getDeckCoverageCards = (deck) => ([
+  ...(Array.isArray(deck?.cards) ? deck.cards : []),
+  ...(Array.isArray(deck?.egg_cards) ? deck.egg_cards : []),
+]);
+
 export const mergeDeckOverviewInList = (decks, deckOverview) => {
   if (!deckOverview?.id) {
     return decks;
@@ -1053,8 +1062,9 @@ export const applyDeckQuantityMutation = (deck, cardId, payload) => {
   const nextQuantity = Math.max(normalizeDeckNumber(payload?.quantity, 0), 0);
   const nextAssignedQuantity = payload?.assigned_quantity ?? null;
   const advancedMode = Boolean(deck.advanced_mode);
+  const targetSectionKey = getDeckCardSectionKey(payload?.deck_section);
 
-  const nextCards = (deck.cards || []).flatMap((card) => {
+  const nextSectionCards = (deck[targetSectionKey] || []).flatMap((card) => {
     if (card.id !== cardId) {
       return [card];
     }
@@ -1074,16 +1084,16 @@ export const applyDeckQuantityMutation = (deck, cardId, payload) => {
     }];
   });
 
-  const sortedCards = sortDeckCards(nextCards);
+  const sortedSectionCards = sortDeckCards(nextSectionCards);
   const mergedDeck = {
     ...deck,
     ...(payload?.deck || {}),
-    cards: sortedCards,
+    [targetSectionKey]: sortedSectionCards,
   };
 
   return {
     ...mergedDeck,
-    missing_copies: sumMissingCopies(sortedCards),
+    missing_copies: sumMissingCopies(getDeckCoverageCards(mergedDeck)),
   };
 };
 
@@ -1093,7 +1103,8 @@ export const applyDeckAssignmentMutation = (deck, cardId, payload) => {
   }
 
   const advancedMode = Boolean(deck.advanced_mode);
-  const sortedCards = sortDeckCards((deck.cards || []).map((card) => {
+  const targetSectionKey = getDeckCardSectionKey(payload?.deck_section);
+  const sortedSectionCards = sortDeckCards((deck[targetSectionKey] || []).map((card) => {
     if (card.id !== cardId) {
       return card;
     }
@@ -1112,10 +1123,14 @@ export const applyDeckAssignmentMutation = (deck, cardId, payload) => {
     };
   }));
 
-  return {
+  const mergedDeck = {
     ...deck,
-    cards: sortedCards,
-    missing_copies: sumMissingCopies(sortedCards),
+    [targetSectionKey]: sortedSectionCards,
+  };
+
+  return {
+    ...mergedDeck,
+    missing_copies: sumMissingCopies(getDeckCoverageCards(mergedDeck)),
   };
 };
 
