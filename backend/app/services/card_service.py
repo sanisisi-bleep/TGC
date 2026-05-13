@@ -6,9 +6,9 @@ from typing import List, Optional
 from sqlalchemy import func, literal, or_
 from sqlalchemy.orm import Session, joinedload, load_only
 
-from app.models import Card, Deck, DeckCard, DeckEggCard, Tgc, User, UserCollection
+from app.models import Card, Deck, DeckCard, DeckEggCard, DeckZoneCard, Tgc, User, UserCollection
 from app.database.repositories.card_repository import CardRepository
-from app.services.game_rules import DIGIMON_TCG_NAME, GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME, get_one_piece_card_role
+from app.services.game_rules import DIGIMON_TCG_NAME, GUNDAM_TCG_NAME, ONE_PIECE_TCG_NAME, get_one_piece_card_role
 from app.services.image_service import (
     build_card_thumbnail_url,
     resolve_card_image_url,
@@ -44,6 +44,47 @@ class CardService:
             "thumbnail_url": build_card_thumbnail_url(image_url),
         }
 
+    def _serialize_riftbound_data(self, card: Card):
+        if not card.riftbound_data:
+            return None
+
+        return {
+            "domains": self._normalize_card_value(card.riftbound_data.domains),
+            "energy_cost": card.riftbound_data.energy_cost,
+            "power_cost": card.riftbound_data.power_cost,
+            "might": card.riftbound_data.might,
+            "tags": card.riftbound_data.tags,
+            "keywords": card.riftbound_data.keywords,
+            "champion_tag": self._normalize_card_value(card.riftbound_data.champion_tag),
+            "is_signature": bool(card.riftbound_data.is_signature),
+            "is_rune": bool(card.riftbound_data.is_rune),
+            "is_battlefield": bool(card.riftbound_data.is_battlefield),
+            "is_legend": bool(card.riftbound_data.is_legend),
+            "is_champion": bool(card.riftbound_data.is_champion),
+            "collector_number": card.riftbound_data.collector_number,
+            "variant_code": self._normalize_card_value(card.riftbound_data.variant_code),
+            "set_code": self._normalize_card_value(card.riftbound_data.set_code),
+            "legality_status": self._normalize_card_value(card.riftbound_data.legality_status),
+            "has_errata": bool(card.riftbound_data.has_errata),
+            "errata_source_url": card.riftbound_data.errata_source_url,
+            "updated_text": card.riftbound_data.updated_text,
+        }
+
+    def _attach_riftbound_summary_fields(self, payload: dict, card: Card):
+        riftbound_data = self._serialize_riftbound_data(card)
+        if not riftbound_data:
+            return payload
+
+        payload["riftbound_data"] = riftbound_data
+        payload["riftbound_domains"] = riftbound_data["domains"]
+        payload["riftbound_is_rune"] = riftbound_data["is_rune"]
+        payload["riftbound_is_battlefield"] = riftbound_data["is_battlefield"]
+        payload["riftbound_is_legend"] = riftbound_data["is_legend"]
+        payload["riftbound_is_champion"] = riftbound_data["is_champion"]
+        payload["riftbound_champion_tag"] = riftbound_data["champion_tag"]
+        payload["riftbound_legality_status"] = riftbound_data["legality_status"]
+        return payload
+
     def _serialize_card_base(self, card: Card):
         payload = self._serialize_card_summary_base(card)
         payload.update(
@@ -59,10 +100,10 @@ class CardService:
         return payload
 
     def serialize_card_summary(self, card: Card):
-        return self._serialize_card_summary_base(card)
+        return self._attach_riftbound_summary_fields(self._serialize_card_summary_base(card), card)
 
     def serialize_card(self, card: Card):
-        payload = self._serialize_card_base(card)
+        payload = self._attach_riftbound_summary_fields(self._serialize_card_base(card), card)
 
         if card.digimon_data:
             payload.update(
@@ -345,6 +386,9 @@ class CardService:
             Card.image_url,
         )
         sorted_query = self._apply_sort(query, sort).options(card_summary_load)
+        sorted_query = sorted_query.options(
+            joinedload(Card.riftbound_data)
+        )
         current_page = max(page, 1)
         offset = (current_page - 1) * limit
 
@@ -393,6 +437,7 @@ class CardService:
                 joinedload(Card.digimon_data),
                 joinedload(Card.one_piece_data),
                 joinedload(Card.gundam_data),
+                joinedload(Card.riftbound_data),
             )
             .filter(Card.id == card_id)
             .first()
@@ -524,6 +569,7 @@ class CardService:
                         Card.block,
                         Card.image_url,
                     ),
+                    joinedload(Card.riftbound_data),
                 ),
             )
         )
@@ -580,6 +626,28 @@ class CardService:
                     egg_deck_query = egg_deck_query.filter(Deck.tgc_id == tgc_id)
 
             for deck_row in egg_deck_query.all():
+                deck_rows_by_card_id[deck_row.card_id].append(deck_row)
+
+            zone_deck_query = (
+                self.db.query(
+                    Deck.id.label("deck_id"),
+                    Deck.name.label("deck_name"),
+                    DeckZoneCard.card_id.label("card_id"),
+                    DeckZoneCard.quantity.label("quantity"),
+                    DeckZoneCard.assigned_quantity.label("assigned_quantity"),
+                    DeckZoneCard.zone.label("deck_section"),
+                )
+                .join(DeckZoneCard, Deck.id == DeckZoneCard.deck_id)
+                .filter(Deck.user_id == user_id, DeckZoneCard.card_id.in_(collection_card_ids))
+            )
+
+            if tgc_id is not None:
+                if default_tgc_id and tgc_id == default_tgc_id:
+                    zone_deck_query = zone_deck_query.filter(or_(Deck.tgc_id == tgc_id, Deck.tgc_id.is_(None)))
+                else:
+                    zone_deck_query = zone_deck_query.filter(Deck.tgc_id == tgc_id)
+
+            for deck_row in zone_deck_query.all():
                 deck_rows_by_card_id[deck_row.card_id].append(deck_row)
 
         result = []

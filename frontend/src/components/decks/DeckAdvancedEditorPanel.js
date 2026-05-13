@@ -100,9 +100,13 @@ const buildCardsRequestParams = ({
 
 const getSectionTotal = (cards = []) => cards.reduce((total, card) => total + (Number(card?.quantity) || 0), 0);
 
-const buildDeckSections = (deck, { isOnePiece, isDigimon }) => {
+const buildDeckSections = (deck, { isOnePiece, isDigimon, isRiftbound }) => {
   const mainCards = Array.isArray(deck?.cards) ? deck.cards : [];
   const eggCards = Array.isArray(deck?.egg_cards) ? deck.egg_cards : [];
+  const legendCards = Array.isArray(deck?.legend_cards_data) ? deck.legend_cards_data : [];
+  const runeCards = Array.isArray(deck?.rune_cards_data) ? deck.rune_cards_data : [];
+  const battlefieldCards = Array.isArray(deck?.battlefield_cards_data) ? deck.battlefield_cards_data : [];
+  const sideboardCards = Array.isArray(deck?.sideboard_cards_data) ? deck.sideboard_cards_data : [];
   const consideringCards = Array.isArray(deck?.considering_cards) ? deck.considering_cards : [];
 
   const sections = [];
@@ -130,6 +134,39 @@ const buildDeckSections = (deck, { isOnePiece, isDigimon }) => {
         title: 'DON!!',
         description: 'Soporte opcional de energia del mazo.',
         cards: donCards,
+      },
+    );
+  } else if (isRiftbound) {
+    sections.push(
+      {
+        key: 'legend',
+        title: 'Legend',
+        description: 'La identidad principal del mazo y sus domains legales.',
+        cards: legendCards,
+      },
+      {
+        key: 'main',
+        title: 'Main deck',
+        description: 'Las 40 cartas principales del mazo, incluido el Chosen Champion.',
+        cards: mainCards,
+      },
+      {
+        key: 'rune',
+        title: 'Rune deck',
+        description: 'Runes separadas del main deck.',
+        cards: runeCards,
+      },
+      {
+        key: 'battlefield',
+        title: 'Battlefields',
+        description: 'Tres battlefields con nombre unico.',
+        cards: battlefieldCards,
+      },
+      {
+        key: 'sideboard',
+        title: 'Sideboard',
+        description: 'Zona competitiva opcional con limite propio.',
+        cards: sideboardCards,
       },
     );
   } else {
@@ -404,6 +441,7 @@ function DeckAdvancedEditorPanel({
     () => buildDeckSections(selectedDeck, {
       isOnePiece: selectedDeckIsOnePiece,
       isDigimon: selectedDeckIsDigimon,
+      isRiftbound: selectedDeck?.composition?.format_mode === 'riftbound',
     }),
     [selectedDeck, selectedDeckIsDigimon, selectedDeckIsOnePiece]
   );

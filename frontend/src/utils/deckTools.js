@@ -2,6 +2,7 @@ export const MAX_COPIES_PER_CARD = 4;
 export const GUNDAM_COLORS = ['Blue', 'Green', 'Red', 'Purple', 'White'];
 export const ONE_PIECE_COLORS = ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'];
 export const DIGIMON_COLORS = ['Red', 'Blue', 'Yellow', 'Green', 'White', 'Black', 'Purple'];
+export const RIFTBOUND_DOMAINS = ['Calm', 'Chaos', 'Body', 'Mind', 'Spirit', 'Order', 'Fury'];
 const DEFAULT_DECK_RULES = {
   deckMinCards: 0,
   deckMaxCards: 999,
@@ -15,6 +16,13 @@ const DEFAULT_DECK_RULES = {
   allowOptionalDonDeck: false,
   enforceColorIdentity: false,
   maxDeckColors: 0,
+  requiredLegendCards: 0,
+  requiredRuneCards: 0,
+  maxRuneCards: 0,
+  requiredBattlefieldCards: 0,
+  maxBattlefieldCards: 0,
+  requiredChosenChampionCards: 0,
+  maxSideboardCards: 0,
 };
 export const TCG_DECK_RULES = {
   gundam: {
@@ -67,8 +75,27 @@ export const TCG_DECK_RULES = {
     enforceColorIdentity: false,
     maxDeckColors: 0,
   },
+  riftbound: {
+    deckMinCards: 56,
+    deckMaxCards: 64,
+    maxCopiesPerCard: 3,
+    requiredLeaderCards: 0,
+    requiredMainDeckCards: 40,
+    maxMainDeckCards: 40,
+    requiredLegendCards: 1,
+    requiredRuneCards: 12,
+    maxRuneCards: 12,
+    requiredBattlefieldCards: 3,
+    maxBattlefieldCards: 3,
+    requiredChosenChampionCards: 1,
+    maxSideboardCards: 8,
+    maxDonCards: 0,
+    allowOptionalDonDeck: false,
+    enforceColorIdentity: true,
+    maxDeckColors: 0,
+  },
 };
-const DECK_ROLE_ORDER = { leader: 0, egg: 1, main: 2, don: 3 };
+const DECK_ROLE_ORDER = { leader: 0, legend: 1, egg: 2, main: 3, rune: 4, battlefield: 5, don: 6, sideboard: 7 };
 const DECK_COLOR_TONES = {
   Blue: { solid: '#2d6cdf', border: '#17479c', text: '#ffffff' },
   Green: { solid: '#2f8f5b', border: '#1d6440', text: '#ffffff' },
@@ -146,6 +173,33 @@ export const getDigimonColorLabels = (rawColor) => {
   ));
 };
 
+export const getRiftboundDomainLabels = (rawColor) => {
+  const normalizedColor = (rawColor || '').trim();
+  if (!normalizedColor) {
+    return [];
+  }
+
+  return RIFTBOUND_DOMAINS.filter((domain) => (
+    new RegExp(`\\b${domain}\\b`, 'i').test(normalizedColor)
+  ));
+};
+
+export const getRiftboundDeckRole = (card) => {
+  if (card?.riftbound_data?.is_legend || card?.riftbound_is_legend) {
+    return 'legend';
+  }
+  if (card?.riftbound_data?.is_rune || card?.riftbound_is_rune) {
+    return 'rune';
+  }
+  if (card?.riftbound_data?.is_battlefield || card?.riftbound_is_battlefield) {
+    return 'battlefield';
+  }
+  if (card?.deck_section === 'sideboard') {
+    return 'sideboard';
+  }
+  return 'main';
+};
+
 export const getDeckCardRole = (activeTcgSlug, cardType) => {
   if (activeTcgSlug === 'one-piece') {
     return getOnePieceDeckRole(cardType);
@@ -153,6 +207,10 @@ export const getDeckCardRole = (activeTcgSlug, cardType) => {
 
   if (activeTcgSlug === 'digimon') {
     return getDigimonDeckRole(cardType);
+  }
+
+  if (activeTcgSlug === 'riftbound' && cardType && typeof cardType === 'object') {
+    return getRiftboundDeckRole(cardType);
   }
 
   return 'main';
@@ -173,6 +231,10 @@ export const getDeckCardColorLabels = (activeTcgSlug, rawColor) => {
     ));
   }
 
+  if (activeTcgSlug === 'riftbound') {
+    return getRiftboundDomainLabels(rawColor);
+  }
+
   return getDeckColorLabels(rawColor);
 };
 
@@ -187,6 +249,10 @@ export const getDeckRuleSummary = (activeTcgSlug) => {
 
   if (activeTcgSlug === 'digimon') {
     return 'Regla rapida de Digimon: 50 cartas en el main deck, hasta 5 Digi-Egg y un maximo de 4 copias por numero.';
+  }
+
+  if (activeTcgSlug === 'riftbound') {
+    return 'Regla rapida de Riftbound: 1 Legend, 40 cartas en el main, 12 Runes, 3 Battlefields unicos y 1 Chosen Champion dentro del propio mazo.';
   }
 
   return '';
@@ -234,6 +300,19 @@ const buildDigimonSearchDeckSummary = (deck, rules) => {
   const maxEggCards = Number(deck?.max_egg_cards) || rules.maxEggCards || 5;
 
   return `Main ${mainDeckCards}/${requiredMainDeckCards} | Eggs ${eggCards}/${maxEggCards}`;
+};
+
+const buildRiftboundSearchDeckSummary = (deck, rules) => {
+  const legendCards = Number(deck?.legend_cards) || 0;
+  const requiredLegendCards = Number(deck?.required_legend_cards) || rules.requiredLegendCards || 1;
+  const mainDeckCards = Number(deck?.main_deck_cards) || 0;
+  const requiredMainDeckCards = Number(deck?.required_main_deck_cards) || rules.requiredMainDeckCards || 40;
+  const runeCards = Number(deck?.rune_cards) || 0;
+  const requiredRuneCards = Number(deck?.required_rune_cards) || rules.requiredRuneCards || 12;
+  const battlefieldCards = Number(deck?.battlefield_cards) || 0;
+  const requiredBattlefieldCards = Number(deck?.required_battlefield_cards) || rules.requiredBattlefieldCards || 3;
+
+  return `Legend ${legendCards}/${requiredLegendCards} | Main ${mainDeckCards}/${requiredMainDeckCards} | Runes ${runeCards}/${requiredRuneCards} | Fields ${battlefieldCards}/${requiredBattlefieldCards}`;
 };
 
 const buildGenericSearchDeckSummary = (deck, rules) => {
@@ -352,6 +431,22 @@ export const getNewDeckCreationPlan = (activeTcgSlug, card, quantity) => {
     };
   }
 
+  if (activeTcgSlug === 'riftbound') {
+    const cardRole = getRiftboundDeckRole(card);
+    return {
+      canCreate: true,
+      shouldAddCardAfterCreate: true,
+      buttonLabel: 'Crear y anadir',
+      helper: cardRole === 'legend'
+        ? 'La Legend arrancara el mazo y fijara los domains del deck.'
+        : cardRole === 'rune'
+          ? `Se creara el mazo y ${quantityLabel} ira al Rune Deck.`
+          : cardRole === 'battlefield'
+            ? `Se creara el mazo y ${quantityLabel} ira a Battlefields.`
+            : `Se creara el mazo y ${quantityLabel} ira al Main Deck.`,
+    };
+  }
+
   return {
     canCreate: true,
     shouldAddCardAfterCreate: true,
@@ -364,7 +459,9 @@ export const getSearchDeckOptionState = ({ activeTcgSlug, deck, card, quantity }
   const rules = getDeckRules(activeTcgSlug);
   const normalizedQuantity = normalizeSearchDeckQuantity(quantity);
   const quantityLabel = buildQuantityLabel(normalizedQuantity);
-  const cardRole = getDeckCardRole(activeTcgSlug, card?.card_type);
+  const cardRole = activeTcgSlug === 'riftbound'
+    ? getRiftboundDeckRole(card)
+    : getDeckCardRole(activeTcgSlug, card?.card_type);
   const cardColors = getDeckCardColorLabels(activeTcgSlug, card?.color);
 
   if (activeTcgSlug === 'one-piece') {
@@ -520,6 +617,86 @@ export const getSearchDeckOptionState = ({ activeTcgSlug, deck, card, quantity }
     };
   }
 
+  if (activeTcgSlug === 'riftbound') {
+    const legendCards = Number(deck?.legend_cards) || 0;
+    const requiredLegendCards = Number(deck?.required_legend_cards) || rules.requiredLegendCards || 1;
+    const mainDeckCards = Number(deck?.main_deck_cards) || 0;
+    const requiredMainDeckCards = Number(deck?.required_main_deck_cards) || rules.requiredMainDeckCards || 40;
+    const runeCards = Number(deck?.rune_cards) || 0;
+    const requiredRuneCards = Number(deck?.required_rune_cards) || rules.requiredRuneCards || 12;
+    const battlefieldCards = Number(deck?.battlefield_cards) || 0;
+    const requiredBattlefieldCards = Number(deck?.required_battlefield_cards) || rules.requiredBattlefieldCards || 3;
+    const sideboardCards = Number(deck?.sideboard_cards) || 0;
+    const maxSideboardCards = Number(deck?.max_sideboard_cards) || rules.maxSideboardCards || 8;
+    const deckDomains = Array.isArray(deck?.domain_labels) ? deck.domain_labels : [];
+    const summary = buildRiftboundSearchDeckSummary(deck, rules);
+
+    if (cardRole === 'legend' && legendCards + normalizedQuantity > requiredLegendCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: 'Riftbound solo permite 1 Legend por mazo.',
+      };
+    }
+
+    if (cardRole === 'rune' && runeCards + normalizedQuantity > requiredRuneCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: `Con ${quantityLabel} superarias las ${requiredRuneCards} runes del mazo.`,
+      };
+    }
+
+    if (cardRole === 'battlefield' && battlefieldCards + normalizedQuantity > requiredBattlefieldCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: `Con ${quantityLabel} superarias los ${requiredBattlefieldCards} Battlefields del mazo.`,
+      };
+    }
+
+    if (cardRole === 'sideboard' && sideboardCards + normalizedQuantity > maxSideboardCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: `Con ${quantityLabel} superarias las ${maxSideboardCards} cartas del sideboard.`,
+      };
+    }
+
+    if (cardRole === 'main' && mainDeckCards + normalizedQuantity > requiredMainDeckCards) {
+      return {
+        disabled: true,
+        summary,
+        helper: `Con ${quantityLabel} superarias las ${requiredMainDeckCards} cartas del Main Deck.`,
+      };
+    }
+
+    if (deckDomains.length > 0 && ['main', 'rune', 'sideboard'].includes(cardRole) && cardColors.length > 0) {
+      const isSubset = cardColors.every((domain) => deckDomains.includes(domain));
+      if (!isSubset) {
+        return {
+          disabled: true,
+          summary,
+          helper: `No encaja con los domains de la Legend (${deckDomains.join(' / ')}).`,
+        };
+      }
+    }
+
+    return {
+      disabled: false,
+      summary,
+      helper: cardRole === 'legend'
+        ? 'Fijara la Legend del mazo.'
+        : cardRole === 'rune'
+          ? `Anadir ${quantityLabel} al Rune Deck.`
+          : cardRole === 'battlefield'
+            ? `Anadir ${quantityLabel} a Battlefields.`
+            : cardRole === 'sideboard'
+              ? `Anadir ${quantityLabel} al sideboard.`
+              : `Anadir ${quantityLabel} al Main Deck.`,
+    };
+  }
+
   return {
     disabled: false,
     summary: buildGenericSearchDeckSummary(deck, rules),
@@ -620,6 +797,11 @@ const getExportableEggDeckCards = (deck) => (
     .filter((card) => (Number(card?.quantity) || 0) > 0)
 );
 
+const getExportableZoneCards = (deck, fieldName) => (
+  (deck?.[fieldName] || [])
+    .filter((card) => (Number(card?.quantity) || 0) > 0)
+);
+
 export const buildDeckExportPayload = (deck) => ({
   format: 'tgc-deck-v2',
   exported_at: new Date().toISOString(),
@@ -644,6 +826,48 @@ export const buildDeckExportPayload = (deck) => ({
       set_name: card.set_name,
       quantity: card.quantity,
     })),
+    legend_cards: getExportableZoneCards(deck, 'legend_cards_data').map((card) => ({
+      card_id: card.id,
+      source_card_id: card.deck_key || card.source_card_id,
+      version: card.version,
+      name: card.name,
+      set_name: card.set_name,
+      quantity: card.quantity,
+      zone: 'legend',
+    })),
+    rune_cards: getExportableZoneCards(deck, 'rune_cards_data').map((card) => ({
+      card_id: card.id,
+      source_card_id: card.deck_key || card.source_card_id,
+      version: card.version,
+      name: card.name,
+      set_name: card.set_name,
+      quantity: card.quantity,
+      zone: 'rune',
+    })),
+    battlefield_cards: getExportableZoneCards(deck, 'battlefield_cards_data').map((card) => ({
+      card_id: card.id,
+      source_card_id: card.deck_key || card.source_card_id,
+      version: card.version,
+      name: card.name,
+      set_name: card.set_name,
+      quantity: card.quantity,
+      zone: 'battlefield',
+    })),
+    sideboard_cards: getExportableZoneCards(deck, 'sideboard_cards_data').map((card) => ({
+      card_id: card.id,
+      source_card_id: card.deck_key || card.source_card_id,
+      version: card.version,
+      name: card.name,
+      set_name: card.set_name,
+      quantity: card.quantity,
+      zone: 'sideboard',
+    })),
+    chosen_champion: deck?.chosen_champion_card ? {
+      card_id: deck.chosen_champion_card.id,
+      source_card_id: deck.chosen_champion_card.deck_key || deck.chosen_champion_card.source_card_id,
+      version: deck.chosen_champion_card.version,
+      quantity: 1,
+    } : null,
   },
 });
 
@@ -660,6 +884,33 @@ export const buildDeckListText = (deck) => {
     });
 
   if (deck?.composition?.format_mode !== 'digimon') {
+    if (deck?.composition?.format_mode === 'riftbound') {
+      const legendCard = deck?.legend_card;
+      const runeCards = getExportableZoneCards(deck, 'rune_cards_data');
+      const battlefieldCards = getExportableZoneCards(deck, 'battlefield_cards_data');
+      const sideboardCards = getExportableZoneCards(deck, 'sideboard_cards_data');
+      const chosenChampionCard = deck?.chosen_champion_card;
+      const formatLine = (card) => `${Number(card.quantity)} ${card.source_card_id || card.deck_key || `CARD-${card.id}`}${card.name ? ` ${card.name}` : ''}`;
+
+      return [
+        '# Legend',
+        ...(legendCard ? [formatLine(legendCard)] : []),
+        '',
+        '# Chosen Champion',
+        ...(chosenChampionCard ? [`1 ${chosenChampionCard.source_card_id || chosenChampionCard.deck_key || `CARD-${chosenChampionCard.id}`} ${chosenChampionCard.name}`] : []),
+        '',
+        '# Main Deck',
+        ...mainCards.map(formatLine),
+        '',
+        '# Rune Deck',
+        ...runeCards.map(formatLine),
+        '',
+        '# Battlefields',
+        ...battlefieldCards.map(formatLine),
+        ...(sideboardCards.length > 0 ? ['', '# Sideboard', ...sideboardCards.map(formatLine)] : []),
+      ].join('\n');
+    }
+
     return mainCards
       .map((card) => `${Number(card.quantity)}x${card.deck_key || card.source_card_id || `CARD-${card.id}`}`)
       .join('\n');
@@ -756,6 +1007,12 @@ const OPENING_HAND_RULES_BY_FORMAT = Object.freeze({
     mulliganMode: 'reshuffle',
     mulliganSummary: 'Devuelve la mano al mazo, baraja y roba 5 nuevas.',
   }),
+  riftbound: Object.freeze({
+    handSize: 4,
+    mulliganLimit: 1,
+    mulliganMode: 'bottom-partial-redraw',
+    mulliganSummary: 'Devuelve al fondo hasta 2 cartas y roba la misma cantidad, sin barajar.',
+  }),
 });
 
 export const getDeckOpeningRules = (formatMode) => (
@@ -784,19 +1041,29 @@ const classifyCurveBand = (curveValue) => {
   return 'late';
 };
 
-const buildOpeningHandInsights = (cards = [], formatMode = 'standard') => {
+const buildOpeningHandInsights = (deck, formatMode = 'standard') => {
   const openingRules = getDeckOpeningRules(formatMode);
   const simulatorPool = [];
   let totalMainDeckCards = 0;
+  const cards = Array.isArray(deck?.cards) ? deck.cards : [];
+  const chosenChampionCardId = deck?.chosen_champion_card_id;
 
   cards.forEach((card) => {
-    const quantity = Number(card?.quantity) || 0;
+    let quantity = Number(card?.quantity) || 0;
     if (
       quantity <= 0
       || card?.deck_role === 'leader'
       || card?.deck_role === 'don'
       || card?.deck_role === 'egg'
     ) {
+      return;
+    }
+
+    if (formatMode === 'riftbound' && chosenChampionCardId && Number(card?.id) === Number(chosenChampionCardId)) {
+      quantity = Math.max(quantity - 1, 0);
+    }
+
+    if (quantity <= 0) {
       return;
     }
 
@@ -824,7 +1091,9 @@ const buildOpeningHandInsights = (cards = [], formatMode = 'standard') => {
 
   const simulatorScopeCopy = formatMode === 'digimon'
     ? 'El simulador roba solo del main deck. Digi-Eggs y Considering se quedan fuera.'
-    : 'El simulador roba solo del mazo principal. Leader, DON!! y Considering se quedan fuera.';
+    : formatMode === 'riftbound'
+      ? 'El simulador roba del Main Deck quitando antes el Chosen Champion. Legend, Runes, Battlefields, Sideboard y Considering se quedan fuera.'
+      : 'El simulador roba solo del mazo principal. Leader, DON!! y Considering se quedan fuera.';
 
   return {
     openingRules,
@@ -941,7 +1210,7 @@ export const buildDeckStats = (deck) => {
       };
     });
   const formatMode = composition?.format_mode || 'standard';
-  const openingHandInsights = buildOpeningHandInsights(deck.cards || [], formatMode);
+  const openingHandInsights = buildOpeningHandInsights(deck, formatMode);
 
   return {
     deckSignature,
@@ -962,9 +1231,23 @@ export const buildDeckStats = (deck) => {
     requiredEggCards: Number(composition?.required_egg_cards) || 0,
     maxEggCards: Number(composition?.max_egg_cards) || 0,
     eggUniqueCards: Number(deck.egg_unique_cards) || 0,
+    legendCards: Number(composition?.legend_cards) || 0,
+    requiredLegendCards: Number(composition?.required_legend_cards) || 0,
+    runeCards: Number(composition?.rune_cards) || 0,
+    requiredRuneCards: Number(composition?.required_rune_cards) || 0,
+    battlefieldCards: Number(composition?.battlefield_cards) || 0,
+    requiredBattlefieldCards: Number(composition?.required_battlefield_cards) || 0,
+    sideboardCards: Number(composition?.sideboard_cards) || 0,
+    maxSideboardCards: Number(composition?.max_sideboard_cards) || 0,
+    chosenChampionCards: Number(composition?.chosen_champion_cards) || 0,
+    requiredChosenChampionCards: Number(composition?.required_chosen_champion_cards) || 0,
+    mainDrawPoolCards: Number(composition?.main_draw_pool_cards) || 0,
+    domainLabels: composition?.domain_labels || [],
     leaderColorLabels: composition?.leader_color_labels || [],
     offColorCards: composition?.off_color_cards || [],
     copyLimitExceededCards: composition?.copy_limit_exceeded_cards || [],
+    bannedCards: composition?.banned_cards || [],
+    bannedBattlefields: composition?.banned_battlefields || [],
     consideringCards: Number(deck.considering_total_cards) || 0,
     consideringUniqueCards: Number(deck.considering_unique_cards) || 0,
     typeEntries: toSortedEntries(typeMap),
@@ -1138,6 +1421,13 @@ export const parseImportedDeckFile = (payload, fallbackTgcId) => {
   const deckPayload = payload?.deck || payload;
   const cards = Array.isArray(deckPayload?.cards) ? deckPayload.cards : [];
   const eggCards = Array.isArray(deckPayload?.egg_cards) ? deckPayload.egg_cards : [];
+  const legendCards = Array.isArray(deckPayload?.legend_cards) ? deckPayload.legend_cards : [];
+  const runeCards = Array.isArray(deckPayload?.rune_cards) ? deckPayload.rune_cards : [];
+  const battlefieldCards = Array.isArray(deckPayload?.battlefield_cards) ? deckPayload.battlefield_cards : [];
+  const sideboardCards = Array.isArray(deckPayload?.sideboard_cards) ? deckPayload.sideboard_cards : [];
+  const chosenChampion = deckPayload?.chosen_champion && typeof deckPayload.chosen_champion === 'object'
+    ? deckPayload.chosen_champion
+    : null;
 
   return {
     name: deckPayload?.name || 'Mazo importado',
@@ -1154,6 +1444,40 @@ export const parseImportedDeckFile = (payload, fallbackTgcId) => {
       version: card.version ?? null,
       quantity: Number(card.quantity) || 0,
     })),
+    legend_cards: legendCards.map((card) => ({
+      card_id: card.card_id ?? null,
+      source_card_id: card.source_card_id ?? null,
+      version: card.version ?? null,
+      quantity: Number(card.quantity) || 0,
+      zone: 'legend',
+    })),
+    rune_cards: runeCards.map((card) => ({
+      card_id: card.card_id ?? null,
+      source_card_id: card.source_card_id ?? null,
+      version: card.version ?? null,
+      quantity: Number(card.quantity) || 0,
+      zone: 'rune',
+    })),
+    battlefield_cards: battlefieldCards.map((card) => ({
+      card_id: card.card_id ?? null,
+      source_card_id: card.source_card_id ?? null,
+      version: card.version ?? null,
+      quantity: Number(card.quantity) || 0,
+      zone: 'battlefield',
+    })),
+    sideboard_cards: sideboardCards.map((card) => ({
+      card_id: card.card_id ?? null,
+      source_card_id: card.source_card_id ?? null,
+      version: card.version ?? null,
+      quantity: Number(card.quantity) || 0,
+      zone: 'sideboard',
+    })),
+    chosen_champion: chosenChampion ? {
+      card_id: chosenChampion.card_id ?? null,
+      source_card_id: chosenChampion.source_card_id ?? null,
+      version: chosenChampion.version ?? null,
+      quantity: 1,
+    } : null,
   };
 };
 
@@ -1169,6 +1493,11 @@ export const parseDeckListText = (rawContent, fallbackTgcId) => {
 
   const cards = [];
   const eggCards = [];
+  const legendCards = [];
+  const runeCards = [];
+  const battlefieldCards = [];
+  const sideboardCards = [];
+  let chosenChampion = null;
   let currentSection = 'main';
 
   lines.forEach((line, index) => {
@@ -1182,7 +1511,32 @@ export const parseDeckListText = (rawContent, fallbackTgcId) => {
       return;
     }
 
-    const match = line.match(/^(\d+)\s*(?:x\s*)?([A-Za-z0-9._-]+)(?:\s+.+)?$/i);
+    if (/^#\s*legend$/i.test(line)) {
+      currentSection = 'legend';
+      return;
+    }
+
+    if (/^#\s*chosen champion$/i.test(line)) {
+      currentSection = 'chosen-champion';
+      return;
+    }
+
+    if (/^#\s*rune deck$/i.test(line)) {
+      currentSection = 'rune';
+      return;
+    }
+
+    if (/^#\s*battlefields$/i.test(line)) {
+      currentSection = 'battlefield';
+      return;
+    }
+
+    if (/^#\s*sideboard$/i.test(line)) {
+      currentSection = 'sideboard';
+      return;
+    }
+
+    const match = line.match(/^(\d+)\s*(?:x\s*)?([A-Za-z0-9._/*-]+)(?:\s+.+)?$/i);
 
     if (!match) {
       throw new Error(`Linea ${index + 1} invalida: ${line}`);
@@ -1200,6 +1554,31 @@ export const parseDeckListText = (rawContent, fallbackTgcId) => {
       return;
     }
 
+    if (currentSection === 'legend') {
+      legendCards.push({ ...parsedCard, zone: 'legend' });
+      return;
+    }
+
+    if (currentSection === 'chosen-champion') {
+      chosenChampion = { ...parsedCard, quantity: 1 };
+      return;
+    }
+
+    if (currentSection === 'rune') {
+      runeCards.push({ ...parsedCard, zone: 'rune' });
+      return;
+    }
+
+    if (currentSection === 'battlefield') {
+      battlefieldCards.push({ ...parsedCard, zone: 'battlefield' });
+      return;
+    }
+
+    if (currentSection === 'sideboard') {
+      sideboardCards.push({ ...parsedCard, zone: 'sideboard' });
+      return;
+    }
+
     cards.push(parsedCard);
   });
 
@@ -1208,5 +1587,10 @@ export const parseDeckListText = (rawContent, fallbackTgcId) => {
     tgc_id: fallbackTgcId || null,
     cards,
     egg_cards: eggCards,
+    legend_cards: legendCards,
+    rune_cards: runeCards,
+    battlefield_cards: battlefieldCards,
+    sideboard_cards: sideboardCards,
+    chosen_champion: chosenChampion,
   };
 };

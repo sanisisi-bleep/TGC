@@ -5,11 +5,13 @@ from app.services.game_rules import (
     DIGIMON_TCG_NAME,
     GUNDAM_TGC_NAME,
     ONE_PIECE_TCG_NAME,
+    RIFTBOUND_TCG_NAME,
     get_digimon_card_role,
     get_digimon_colors,
     get_gundam_colors,
     get_one_piece_card_role,
     get_one_piece_colors,
+    get_riftbound_domains,
 )
 
 
@@ -23,15 +25,32 @@ class DeckServiceRulesMixin:
     def _is_digimon_tgc(self, deck_tgc) -> bool:
         return bool(deck_tgc and deck_tgc.name == DIGIMON_TCG_NAME)
 
+    def _is_riftbound_tgc(self, deck_tgc) -> bool:
+        return bool(deck_tgc and deck_tgc.name == RIFTBOUND_TCG_NAME)
+
     def _get_card_role(self, deck_tgc, card: Card) -> str:
         if self._is_one_piece_tgc(deck_tgc):
             return get_one_piece_card_role(card.card_type)
         if self._is_digimon_tgc(deck_tgc):
             return get_digimon_card_role(card.card_type)
+        if self._is_riftbound_tgc(deck_tgc):
+            if card.riftbound_data:
+                if card.riftbound_data.is_legend:
+                    return "legend"
+                if card.riftbound_data.is_rune:
+                    return "rune"
+                if card.riftbound_data.is_battlefield:
+                    return "battlefield"
+            return "main"
         return "main"
 
     def _get_card_storage_section(self, deck_tgc, card: Card) -> str:
-        return "egg" if self._is_digimon_tgc(deck_tgc) and self._get_card_role(deck_tgc, card) == "egg" else "main"
+        role = self._get_card_role(deck_tgc, card)
+        if self._is_digimon_tgc(deck_tgc) and role == "egg":
+            return "egg"
+        if self._is_riftbound_tgc(deck_tgc) and role in {"legend", "rune", "battlefield", "sideboard"}:
+            return role
+        return "main"
 
     def _get_card_colors(self, deck_tgc, card: Card) -> set[str]:
         if self._is_one_piece_tgc(deck_tgc):
@@ -40,9 +59,13 @@ class DeckServiceRulesMixin:
             return set(get_gundam_colors(card.color))
         if self._is_digimon_tgc(deck_tgc):
             return set(get_digimon_colors(card.color))
+        if self._is_riftbound_tgc(deck_tgc):
+            return set(get_riftbound_domains(card.riftbound_data.domains if card.riftbound_data else card.color))
         return set()
 
     def _get_copy_limit_key(self, deck_tgc, card: Card) -> str:
+        if self._is_riftbound_tgc(deck_tgc):
+            return " ".join((card.name or f"CARD-{card.id}").strip().lower().split())
         if self._is_digimon_tgc(deck_tgc) or self._is_gundam_tgc(deck_tgc):
             return (card.deck_key or card.source_card_id or f"CARD-{card.id}").strip()
         return (card.source_card_id or f"CARD-{card.id}").strip()
@@ -85,6 +108,8 @@ class DeckServiceRulesMixin:
             "max_deck_colors": rules.get("max_deck_colors", 0),
             "off_color_cards": [],
             "copy_limit_exceeded_cards": [],
+            "banned_cards": [],
+            "banned_battlefields": [],
             "color_match_ready": False,
             "is_color_valid": True,
             "is_valid": total_cards >= rules["deck_min_cards"] and total_cards <= rules["deck_max_cards"],
@@ -163,6 +188,8 @@ class DeckServiceRulesMixin:
             "max_deck_colors": max_deck_colors,
             "off_color_cards": off_color_cards,
             "copy_limit_exceeded_cards": copy_limit_exceeded_cards,
+            "banned_cards": [],
+            "banned_battlefields": [],
             "color_match_ready": bool(deck_color_labels),
             "is_color_valid": not off_color_cards,
             "is_valid": (
@@ -260,6 +287,8 @@ class DeckServiceRulesMixin:
             "max_deck_colors": 0,
             "off_color_cards": off_color_cards,
             "copy_limit_exceeded_cards": copy_limit_exceeded_cards,
+            "banned_cards": [],
+            "banned_battlefields": [],
             "color_match_ready": leader_cards == 1 and bool(leader_color_labels),
             "is_color_valid": leader_cards == 1 and bool(leader_color_labels) and not off_color_cards,
             "is_valid": (
@@ -325,6 +354,8 @@ class DeckServiceRulesMixin:
             "max_deck_colors": 0,
             "off_color_cards": [],
             "copy_limit_exceeded_cards": copy_limit_exceeded_cards,
+            "banned_cards": [],
+            "banned_battlefields": [],
             "color_match_ready": False,
             "is_color_valid": True,
             "is_valid": (
@@ -334,13 +365,198 @@ class DeckServiceRulesMixin:
             ),
         }
 
-    def _build_deck_composition(self, deck_tgc, rules: dict, deck_entries: List[dict]):
+    def _build_riftbound_deck_composition(self, deck_tgc, deck, rules: dict, deck_entries: List[dict]):
+        legend_cards = 0
+        main_deck_cards = 0
+        rune_cards = 0
+        battlefield_cards = 0
+        sideboard_cards = 0
+        domain_labels = []
+        domain_set = set()
+        off_domain_cards = []
+        copy_counts_by_key = {}
+        card_names_by_key = {}
+        battlefield_name_counts = {}
+        banned_cards = []
+        banned_battlefields = []
+        signature_cards = []
+        legend_champion_tag = None
+        chosen_champion_card = None
+        chosen_champion_cards = 0
+
+        chosen_champion_card_id = getattr(deck, "riftbound_chosen_champion_card_id", None) if deck else None
+
+        for entry in deck_entries:
+            card = entry["card"]
+            quantity = entry["quantity"]
+            storage_section = entry["storage_section"]
+            riftbound_data = getattr(card, "riftbound_data", None)
+            card_domains = self._get_card_colors(deck_tgc, card)
+            if not card_domains and riftbound_data:
+                card_domains = set(get_riftbound_domains(riftbound_data.domains))
+
+            if storage_section == "legend":
+                legend_cards += quantity
+                if riftbound_data and riftbound_data.champion_tag:
+                    legend_champion_tag = riftbound_data.champion_tag.strip().lower()
+                if card_domains:
+                    domain_labels = sorted(card_domains)
+                    domain_set = set(domain_labels)
+                if riftbound_data and (riftbound_data.legality_status or "").strip().lower().startswith("banned"):
+                    banned_cards.append({"id": card.id, "name": card.name, "quantity": quantity})
+                continue
+
+            if storage_section == "rune":
+                rune_cards += quantity
+            elif storage_section == "battlefield":
+                battlefield_cards += quantity
+                battlefield_key = " ".join((card.name or f"CARD-{card.id}").strip().lower().split())
+                battlefield_name_counts[battlefield_key] = battlefield_name_counts.get(battlefield_key, 0) + quantity
+                if riftbound_data and (riftbound_data.legality_status or "").strip().lower().startswith("banned"):
+                    banned_battlefields.append({"id": card.id, "name": card.name, "quantity": quantity})
+            elif storage_section == "sideboard":
+                sideboard_cards += quantity
+            else:
+                main_deck_cards += quantity
+
+            if storage_section in {"main", "sideboard"}:
+                copy_key = self._get_copy_limit_key(deck_tgc, card)
+                copy_counts_by_key[copy_key] = copy_counts_by_key.get(copy_key, 0) + quantity
+                card_names_by_key[copy_key] = card.name
+
+            if chosen_champion_card_id and storage_section == "main" and card.id == chosen_champion_card_id and quantity > 0:
+                chosen_champion_card = card
+                chosen_champion_cards = 1
+
+            if riftbound_data and riftbound_data.is_signature:
+                signature_cards.append({"id": card.id, "name": card.name, "champion_tag": (riftbound_data.champion_tag or "").strip().lower()})
+
+            if storage_section in {"main", "rune"} and domain_set and card_domains and not card_domains.issubset(domain_set):
+                off_domain_cards.append(
+                    {
+                        "id": card.id,
+                        "name": card.name,
+                        "quantity": quantity,
+                        "color": card.color or "",
+                    }
+                )
+
+            if storage_section in {"main", "rune", "sideboard"} and riftbound_data and (riftbound_data.legality_status or "").strip().lower().startswith("banned"):
+                banned_cards.append({"id": card.id, "name": card.name, "quantity": quantity})
+
+        copy_limit_exceeded_cards = [
+            {
+                "source_card_id": copy_key,
+                "name": card_names_by_key.get(copy_key) or copy_key,
+                "quantity": quantity,
+            }
+            for copy_key, quantity in copy_counts_by_key.items()
+            if quantity > rules["max_copies_per_card"]
+        ]
+        duplicated_battlefields = [
+            {
+                "name": next(
+                    (
+                        entry["card"].name
+                        for entry in deck_entries
+                        if entry["storage_section"] == "battlefield"
+                        and " ".join((entry["card"].name or "").strip().lower().split()) == battlefield_key
+                    ),
+                    battlefield_key,
+                ),
+                "quantity": quantity,
+            }
+            for battlefield_key, quantity in battlefield_name_counts.items()
+            if quantity > 1
+        ]
+        invalid_signature_cards = [
+            card_info
+            for card_info in signature_cards
+            if not legend_champion_tag or card_info["champion_tag"] != legend_champion_tag
+        ]
+        chosen_champion_valid = bool(
+            chosen_champion_card
+            and chosen_champion_card.riftbound_data
+            and chosen_champion_card.riftbound_data.is_champion
+            and legend_champion_tag
+            and (chosen_champion_card.riftbound_data.champion_tag or "").strip().lower() == legend_champion_tag
+        )
+
+        unique_battlefields = len(battlefield_name_counts)
+        main_draw_pool_cards = max(main_deck_cards - chosen_champion_cards, 0)
+
+        return {
+            "format_mode": "riftbound",
+            "leader_cards": 0,
+            "required_leader_cards": 0,
+            "main_deck_cards": main_deck_cards,
+            "required_main_deck_cards": rules["required_main_deck_cards"],
+            "max_main_deck_cards": rules["max_main_deck_cards"],
+            "missing_main_deck_cards": max(rules["required_main_deck_cards"] - main_deck_cards, 0),
+            "extra_main_deck_cards": max(main_deck_cards - rules["max_main_deck_cards"], 0),
+            "don_cards": 0,
+            "recommended_don_cards": 0,
+            "don_is_optional": False,
+            "missing_don_cards": 0,
+            "extra_don_cards": 0,
+            "egg_cards": 0,
+            "required_egg_cards": 0,
+            "max_egg_cards": 0,
+            "missing_egg_cards": 0,
+            "extra_egg_cards": 0,
+            "leader_color_labels": [],
+            "deck_color_labels": domain_labels,
+            "max_deck_colors": 0,
+            "off_color_cards": off_domain_cards,
+            "copy_limit_exceeded_cards": copy_limit_exceeded_cards,
+            "banned_cards": banned_cards,
+            "banned_battlefields": banned_battlefields,
+            "legend_cards": legend_cards,
+            "required_legend_cards": rules["required_legend_cards"],
+            "rune_cards": rune_cards,
+            "required_rune_cards": rules["required_rune_cards"],
+            "max_rune_cards": rules["max_rune_cards"],
+            "battlefield_cards": battlefield_cards,
+            "required_battlefield_cards": rules["required_battlefield_cards"],
+            "max_battlefield_cards": rules["max_battlefield_cards"],
+            "unique_battlefields": unique_battlefields,
+            "duplicated_battlefields": duplicated_battlefields,
+            "sideboard_cards": sideboard_cards,
+            "max_sideboard_cards": rules["max_sideboard_cards"],
+            "chosen_champion_cards": chosen_champion_cards,
+            "required_chosen_champion_cards": rules["required_chosen_champion_cards"],
+            "domain_labels": domain_labels,
+            "main_draw_pool_cards": main_draw_pool_cards,
+            "invalid_signature_cards": invalid_signature_cards,
+            "chosen_champion_valid": chosen_champion_valid,
+            "color_match_ready": bool(domain_labels),
+            "is_color_valid": not off_domain_cards,
+            "is_valid": (
+                legend_cards == rules["required_legend_cards"]
+                and main_deck_cards == rules["required_main_deck_cards"]
+                and rune_cards == rules["required_rune_cards"]
+                and battlefield_cards == rules["required_battlefield_cards"]
+                and unique_battlefields == battlefield_cards
+                and chosen_champion_cards == rules["required_chosen_champion_cards"]
+                and chosen_champion_valid
+                and sideboard_cards <= rules["max_sideboard_cards"]
+                and not off_domain_cards
+                and not copy_limit_exceeded_cards
+                and not banned_cards
+                and not banned_battlefields
+                and not invalid_signature_cards
+            ),
+        }
+
+    def _build_deck_composition(self, deck_tgc, rules: dict, deck_entries: List[dict], deck=None):
         if self._is_one_piece_tgc(deck_tgc):
             return self._build_one_piece_deck_composition(rules, deck_entries)
         if self._is_gundam_tgc(deck_tgc):
             return self._build_gundam_deck_composition(rules, deck_entries)
         if self._is_digimon_tgc(deck_tgc):
             return self._build_digimon_deck_composition(rules, deck_entries)
+        if self._is_riftbound_tgc(deck_tgc):
+            return self._build_riftbound_deck_composition(deck_tgc, deck, rules, deck_entries)
         return self._build_generic_deck_composition(rules, deck_entries)
 
     def _validate_generic_quantity_rules(self, deck_tgc, rules: dict, next_quantity: int, next_total: int, card: Card):
@@ -350,7 +566,12 @@ class DeckServiceRulesMixin:
                 f"You can only have up to {card_limit} copies of this card in this deck"
             )
 
-        if not self._is_one_piece_tgc(deck_tgc) and not self._is_digimon_tgc(deck_tgc) and next_total > rules["deck_max_cards"]:
+        if (
+            not self._is_one_piece_tgc(deck_tgc)
+            and not self._is_digimon_tgc(deck_tgc)
+            and not self._is_riftbound_tgc(deck_tgc)
+            and next_total > rules["deck_max_cards"]
+        ):
             raise ValueError(
                 f"{deck_tgc.name if deck_tgc else 'This TCG'} decks cannot exceed {rules['deck_max_cards']} cards"
             )
@@ -442,8 +663,57 @@ class DeckServiceRulesMixin:
         if require_complete and composition["main_deck_cards"] != rules["required_main_deck_cards"]:
             raise ValueError("Un mazo de Digimon debe tener exactamente 50 cartas en el mazo principal.")
 
-    def _validate_deck_composition(self, deck_tgc, rules: dict, deck_entries: List[dict], card: Card, is_increase: bool = False, require_complete: bool = False):
-        composition = self._build_deck_composition(deck_tgc, rules, deck_entries)
+    def _validate_riftbound_composition(self, rules: dict, composition: dict, require_complete: bool):
+        if composition["legend_cards"] > rules["required_legend_cards"]:
+            raise ValueError("Riftbound solo permite 1 Legend por mazo.")
+        if composition["main_deck_cards"] > rules["max_main_deck_cards"]:
+            raise ValueError("El Main Deck de Riftbound debe quedarse en 40 cartas.")
+        if composition["rune_cards"] > rules["max_rune_cards"]:
+            raise ValueError("El Rune Deck de Riftbound debe quedarse en 12 cartas.")
+        if composition["battlefield_cards"] > rules["max_battlefield_cards"]:
+            raise ValueError("Riftbound solo permite 3 Battlefields.")
+        if composition["sideboard_cards"] > rules["max_sideboard_cards"]:
+            raise ValueError("El sideboard de Riftbound no puede superar 8 cartas.")
+        if composition["duplicated_battlefields"]:
+            duplicated = composition["duplicated_battlefields"][0]
+            raise ValueError(f"Los Battlefields de Riftbound deben tener nombre unico. Revisa {duplicated['name']}.")
+        if composition["copy_limit_exceeded_cards"]:
+            exceeded_card = composition["copy_limit_exceeded_cards"][0]
+            raise ValueError(
+                f"En Riftbound solo puedes llevar hasta 3 copias de {exceeded_card['name']} contando main y sideboard."
+            )
+        if composition["off_color_cards"]:
+            invalid_card = composition["off_color_cards"][0]
+            allowed_domains = " / ".join(composition.get("domain_labels") or [])
+            raise ValueError(
+                f"{invalid_card['name']} no encaja en los domains de la Legend ({allowed_domains or 'sin detectar'})."
+            )
+        if composition["banned_cards"]:
+            banned_card = composition["banned_cards"][0]
+            raise ValueError(f"{banned_card['name']} esta baneada en Standard de Riftbound.")
+        if composition["banned_battlefields"]:
+            banned_battlefield = composition["banned_battlefields"][0]
+            raise ValueError(f"{banned_battlefield['name']} esta baneado como Battlefield en Standard de Riftbound.")
+        if composition["invalid_signature_cards"]:
+            invalid_signature = composition["invalid_signature_cards"][0]
+            raise ValueError(f"{invalid_signature['name']} es Signature y no coincide con la Legend elegida.")
+        if composition["chosen_champion_cards"] > 0 and not composition["chosen_champion_valid"]:
+            raise ValueError("El Chosen Champion debe ser un Champion del mismo personaje que tu Legend.")
+
+        if require_complete:
+            if composition["legend_cards"] != rules["required_legend_cards"]:
+                raise ValueError("Un mazo de Riftbound necesita exactamente 1 Legend.")
+            if composition["main_deck_cards"] != rules["required_main_deck_cards"]:
+                raise ValueError("El Main Deck de Riftbound debe tener exactamente 40 cartas.")
+            if composition["rune_cards"] != rules["required_rune_cards"]:
+                raise ValueError("El Rune Deck de Riftbound debe tener exactamente 12 runes.")
+            if composition["battlefield_cards"] != rules["required_battlefield_cards"]:
+                raise ValueError("Un mazo de Riftbound necesita exactamente 3 Battlefields.")
+            if composition["chosen_champion_cards"] != rules["required_chosen_champion_cards"] or not composition["chosen_champion_valid"]:
+                raise ValueError("Un mazo de Riftbound necesita exactamente 1 Chosen Champion valido.")
+
+    def _validate_deck_composition(self, deck_tgc, rules: dict, deck_entries: List[dict], card: Card, is_increase: bool = False, require_complete: bool = False, deck=None):
+        composition = self._build_deck_composition(deck_tgc, rules, deck_entries, deck=deck)
 
         if self._is_one_piece_tgc(deck_tgc):
             self._validate_one_piece_composition(rules, composition, card, is_increase, require_complete)
@@ -451,5 +721,7 @@ class DeckServiceRulesMixin:
             self._validate_gundam_composition(rules, composition, require_complete)
         elif self._is_digimon_tgc(deck_tgc):
             self._validate_digimon_composition(rules, composition, require_complete)
+        elif self._is_riftbound_tgc(deck_tgc):
+            self._validate_riftbound_composition(rules, composition, require_complete)
 
         return composition

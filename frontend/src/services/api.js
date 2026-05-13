@@ -125,6 +125,13 @@ export const addCardToDeck = async (deckId, payload) => {
   return response.data || null;
 };
 
+export const setDeckChosenChampion = async (deckId, cardId) => {
+  const response = await apiClient.post(`/decks/${deckId}/chosen-champion`, {
+    card_id: cardId,
+  });
+  return response.data || null;
+};
+
 export const addCardToConsidering = async (deckId, payload) => {
   const response = await apiClient.post(`/decks/${deckId}/considering`, payload);
   return response.data || null;

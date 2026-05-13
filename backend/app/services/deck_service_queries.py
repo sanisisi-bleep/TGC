@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from sqlalchemy import func, literal
 
-from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, Tgc, User, UserCollection
+from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, DeckZoneCard, Tgc, User, UserCollection
 from app.services.game_rules import GUNDAM_TGC_NAME, get_tcg_rules
 
 
@@ -69,6 +69,15 @@ class DeckServiceQueryMixin:
         )
         if deck_egg_card:
             return "egg", deck_egg_card
+
+        deck_zone_card = (
+            self.db.query(DeckZoneCard)
+            .filter(DeckZoneCard.deck_id == deck_id, DeckZoneCard.card_id == card_id)
+            .order_by(DeckZoneCard.id.asc())
+            .first()
+        )
+        if deck_zone_card:
+            return deck_zone_card.zone, deck_zone_card
 
         raise ValueError("Card not found in deck")
 
@@ -184,6 +193,22 @@ class DeckServiceQueryMixin:
             .all()
         )
         coverage_rows.extend(egg_card_rows)
+
+        zone_card_rows = (
+            self.db.query(
+                Deck.id.label("deck_id"),
+                Deck.created_at.label("created_at"),
+                DeckZoneCard.id.label("deck_item_id"),
+                DeckZoneCard.card_id.label("card_id"),
+                DeckZoneCard.quantity.label("quantity"),
+                DeckZoneCard.assigned_quantity.label("assigned_quantity"),
+                DeckZoneCard.zone.label("storage_section"),
+            )
+            .join(DeckZoneCard, Deck.id == DeckZoneCard.deck_id)
+            .filter(Deck.user_id == user_id, DeckZoneCard.card_id.in_(card_ids))
+            .all()
+        )
+        coverage_rows.extend(zone_card_rows)
 
         rows_by_card_id: dict[int, list] = {}
         for row in coverage_rows:
@@ -341,7 +366,7 @@ class DeckServiceQueryMixin:
         ]
 
     def _get_playable_entries(self, deck_id: int):
-        return [*self._get_deck_entries(deck_id), *self._get_egg_entries(deck_id)]
+        return [*self._get_deck_entries(deck_id), *self._get_egg_entries(deck_id), *self._get_zone_entries(deck_id)]
 
     def _get_bulk_playable_entries_by_deck(self, deck_ids: List[int]) -> dict[int, list[dict]]:
         grouped_entries = {deck_id: [] for deck_id in deck_ids}
@@ -383,11 +408,35 @@ class DeckServiceQueryMixin:
                 }
             )
 
+        zone_rows = (
+            self.db.query(DeckZoneCard, Card)
+            .join(Card, Card.id == DeckZoneCard.card_id)
+            .filter(DeckZoneCard.deck_id.in_(deck_ids))
+            .order_by(DeckZoneCard.deck_id.asc(), DeckZoneCard.zone.asc(), DeckZoneCard.id.asc(), Card.id.asc())
+            .all()
+        )
+        for deck_zone_card, card in zone_rows:
+            grouped_entries.setdefault(deck_zone_card.deck_id, []).append(
+                {
+                    "deck_item": deck_zone_card,
+                    "card": card,
+                    "quantity": deck_zone_card.quantity,
+                    "storage_section": deck_zone_card.zone,
+                }
+            )
+
         return grouped_entries
 
     def _get_storage_total_quantity(self, deck_id: int, storage_section: str) -> int:
         if storage_section == "egg":
             return self._get_egg_total_quantity(deck_id)
+        if storage_section in {"legend", "rune", "battlefield", "sideboard"}:
+            return (
+                self.db.query(func.coalesce(func.sum(DeckZoneCard.quantity), 0))
+                .filter(DeckZoneCard.deck_id == deck_id, DeckZoneCard.zone == storage_section)
+                .scalar()
+                or 0
+            )
         return self._get_deck_total_quantity(deck_id)
 
     def _get_storage_card_record(self, deck_id: int, card_id: int, storage_section: str):
@@ -395,6 +444,16 @@ class DeckServiceQueryMixin:
             return (
                 self.db.query(DeckEggCard)
                 .filter(DeckEggCard.deck_id == deck_id, DeckEggCard.card_id == card_id)
+                .first()
+            )
+        if storage_section in {"legend", "rune", "battlefield", "sideboard"}:
+            return (
+                self.db.query(DeckZoneCard)
+                .filter(
+                    DeckZoneCard.deck_id == deck_id,
+                    DeckZoneCard.card_id == card_id,
+                    DeckZoneCard.zone == storage_section,
+                )
                 .first()
             )
         return self.db.query(DeckCard).filter(DeckCard.deck_id == deck_id, DeckCard.card_id == card_id).first()
@@ -414,6 +473,24 @@ class DeckServiceQueryMixin:
                 "quantity": considering_card.quantity,
             }
             for considering_card, card in rows
+        ]
+
+    def _get_zone_entries(self, deck_id: int):
+        rows = (
+            self.db.query(DeckZoneCard, Card)
+            .join(Card, Card.id == DeckZoneCard.card_id)
+            .filter(DeckZoneCard.deck_id == deck_id)
+            .order_by(DeckZoneCard.zone.asc(), DeckZoneCard.id.asc(), Card.id.asc())
+            .all()
+        )
+        return [
+            {
+                "deck_item": zone_card,
+                "card": card,
+                "quantity": zone_card.quantity,
+                "storage_section": zone_card.zone,
+            }
+            for zone_card, card in rows
         ]
 
     def _build_candidate_deck_entries(self, deck_tgc, deck_id: int, target_card: Card, next_quantity: int):

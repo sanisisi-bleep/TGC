@@ -14,6 +14,7 @@ function DeckSummaryCard({
 }) {
   const isOnePieceDeck = deck?.composition?.format_mode === 'one-piece';
   const isDigimonDeck = deck?.composition?.format_mode === 'digimon';
+  const isRiftboundDeck = deck?.composition?.format_mode === 'riftbound';
   const deckEggCount = isDigimonDeck ? getDeckEggCardCount(deck) : 0;
   const createdAtLabel = new Date(deck.created_at).toLocaleDateString();
   const totalCards = Number(deck.total_cards) || 0;
@@ -31,6 +32,12 @@ function DeckSummaryCard({
           ? 'Main deck y Digi-Eggs listos. Abre el mazo para revisar curva, mano inicial y variantes.'
           : 'Revisa el main deck, los Digi-Eggs y las copias por numero antes de darlo por cerrado.'
       )
+      : isRiftboundDeck
+        ? (
+          deck.is_complete
+            ? 'Legend, Main Deck, Runes, Battlefields y Chosen Champion listos para jugar.'
+            : 'Revisa la Legend, los domains, el Chosen Champion y las secciones especiales antes de cerrarlo.'
+        )
     : (
       deck.is_complete
         ? 'Mazo completo y listo para afinar copias, curva y sets desde el panel de detalle.'
@@ -58,6 +65,8 @@ function DeckSummaryCard({
             ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} main`
             : isDigimonDeck
               ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} main`
+              : isRiftboundDeck
+                ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 40} main`
               : `${totalCards}/${maxCards} cartas`}
         </span>
         <span className={`deck-status-chip ${remainingCards > 0 ? 'deck-missing-chip' : 'deck-progress-chip'}`}>
@@ -85,6 +94,21 @@ function DeckSummaryCard({
             </span>
             <span className="deck-status-chip deck-progress-chip">
               Eggs {deckEggCount}/{deck.max_egg_cards || 5}
+            </span>
+          </>
+        ) : isRiftboundDeck ? (
+          <>
+            <span className="deck-status-chip deck-progress-chip">
+              Legend {deck.legend_cards}/{deck.required_legend_cards || 1}
+            </span>
+            <span className="deck-status-chip deck-progress-chip">
+              Runes {deck.rune_cards}/{deck.required_rune_cards || 12}
+            </span>
+            <span className="deck-status-chip deck-progress-chip">
+              Fields {deck.battlefield_cards}/{deck.required_battlefield_cards || 3}
+            </span>
+            <span className="deck-status-chip deck-progress-chip">
+              Champion {deck.chosen_champion_cards}/{deck.required_chosen_champion_cards || 1}
             </span>
           </>
         ) : (

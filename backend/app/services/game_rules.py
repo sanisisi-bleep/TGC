@@ -4,10 +4,20 @@ GUNDAM_TGC_NAME = "Gundam TGC"
 ONE_PIECE_TCG_NAME = "One Piece TCG"
 MAGIC_TCG_NAME = "Magic: The Gathering"
 DIGIMON_TCG_NAME = "Digimon Card Game"
+RIFTBOUND_TCG_NAME = "Riftbound"
 
 GUNDAM_COLORS = ("Blue", "Green", "Red", "Purple", "White")
 ONE_PIECE_COLORS = ("Red", "Green", "Blue", "Purple", "Black", "Yellow")
 DIGIMON_COLORS = ("Red", "Blue", "Yellow", "Green", "White", "Black", "Purple")
+RIFTBOUND_DOMAINS = (
+    "Calm",
+    "Chaos",
+    "Body",
+    "Mind",
+    "Spirit",
+    "Order",
+    "Fury",
+)
 
 DEFAULT_RULES = {
     "deck_min_cards": 0,
@@ -22,6 +32,13 @@ DEFAULT_RULES = {
     "max_deck_colors": 0,
     "required_egg_cards": 0,
     "max_egg_cards": 0,
+    "required_legend_cards": 0,
+    "required_rune_cards": 0,
+    "max_rune_cards": 0,
+    "required_battlefield_cards": 0,
+    "max_battlefield_cards": 0,
+    "required_chosen_champion_cards": 0,
+    "max_sideboard_cards": 0,
 }
 
 
@@ -78,6 +95,27 @@ TGC_RULES = {
         "required_egg_cards": 0,
         "max_egg_cards": 5,
     },
+    RIFTBOUND_TCG_NAME: {
+        "deck_min_cards": 56,
+        "deck_max_cards": 64,
+        "max_copies_per_card": 3,
+        "required_leader_cards": 0,
+        "required_main_deck_cards": 40,
+        "max_main_deck_cards": 40,
+        "max_don_cards": 0,
+        "allow_optional_don_deck": False,
+        "enforce_color_identity": True,
+        "max_deck_colors": 0,
+        "required_egg_cards": 0,
+        "max_egg_cards": 0,
+        "required_legend_cards": 1,
+        "required_rune_cards": 12,
+        "max_rune_cards": 12,
+        "required_battlefield_cards": 3,
+        "max_battlefield_cards": 3,
+        "required_chosen_champion_cards": 1,
+        "max_sideboard_cards": 8,
+    },
 }
 
 
@@ -129,3 +167,7 @@ def get_digimon_card_role(card_type: str | None):
 
 def get_digimon_colors(raw_color: str | None):
     return detect_colors(raw_color, DIGIMON_COLORS)
+
+
+def get_riftbound_domains(raw_color: str | None):
+    return detect_colors(raw_color, RIFTBOUND_DOMAINS)

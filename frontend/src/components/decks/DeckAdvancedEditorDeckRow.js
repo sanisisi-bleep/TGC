@@ -7,8 +7,24 @@ const getRoleLabel = (deckRole) => {
     return 'Leader';
   }
 
+  if (deckRole === 'legend') {
+    return 'Legend';
+  }
+
   if (deckRole === 'egg') {
     return 'Digi-Egg';
+  }
+
+  if (deckRole === 'rune') {
+    return 'Rune';
+  }
+
+  if (deckRole === 'battlefield') {
+    return 'Battlefield';
+  }
+
+  if (deckRole === 'sideboard') {
+    return 'Sideboard';
   }
 
   if (deckRole === 'don') {
@@ -60,6 +76,7 @@ function DeckAdvancedEditorDeckRow({
           <h4>{card?.name}</h4>
           <div className="deck-owned-panel">
             <span className={`deck-role-badge is-${card?.deck_role || 'main'}`}>{roleLabel}</span>
+            {card?.is_chosen_champion && <span className="deck-role-badge is-main">Chosen Champion</span>}
             {isConsideringRow && <span className="deck-considering-badge">Considering</span>}
           </div>
         </div>

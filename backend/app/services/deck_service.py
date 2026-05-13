@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard
+from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, DeckZoneCard
 from app.services.deck_service_payloads import DeckServicePayloadMixin
 from app.services.deck_service_queries import DeckServiceQueryMixin
 from app.services.deck_service_rules import DeckServiceRulesMixin
@@ -34,9 +34,18 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         tgc_id: Optional[int],
         cards: List[dict],
         egg_cards: Optional[List[dict]] = None,
+        legend_cards: Optional[List[dict]] = None,
+        rune_cards: Optional[List[dict]] = None,
+        battlefield_cards: Optional[List[dict]] = None,
+        sideboard_cards: Optional[List[dict]] = None,
+        chosen_champion: Optional[dict] = None,
     ):
         egg_cards = egg_cards or []
-        if not cards and not egg_cards:
+        legend_cards = legend_cards or []
+        rune_cards = rune_cards or []
+        battlefield_cards = battlefield_cards or []
+        sideboard_cards = sideboard_cards or []
+        if not cards and not egg_cards and not legend_cards and not rune_cards and not battlefield_cards and not sideboard_cards:
             raise ValueError("Imported deck must include at least one card")
 
         target_tgc = self._get_tgc_by_id(tgc_id) if tgc_id is not None else self._get_default_tgc()
@@ -45,20 +54,43 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         resolved_tgc_id = target_tgc.id if target_tgc else None
         rules = get_tcg_rules(target_tgc.name if target_tgc else None)
 
-        aggregated_cards = {"main": {}, "egg": {}}
+        aggregated_cards = {
+            "main": {},
+            "egg": {},
+            "legend": {},
+            "rune": {},
+            "battlefield": {},
+            "sideboard": {},
+        }
         deck_entries = []
+        chosen_champion_card_id = None
 
-        for raw_card in [*cards, *egg_cards]:
+        for raw_card in [*cards, *egg_cards, *legend_cards, *rune_cards, *battlefield_cards, *sideboard_cards]:
             quantity = int(raw_card.get("quantity") or 0)
             if quantity <= 0:
                 raise ValueError("Imported card quantity must be greater than zero")
 
             card = self._resolve_import_card(resolved_tgc_id, raw_card)
+            requested_zone = (raw_card.get("zone") or "").strip().lower()
             storage_section = self._get_card_storage_section(target_tgc, card)
+            if self._is_riftbound_tgc(target_tgc) and requested_zone:
+                if requested_zone == "sideboard":
+                    if card.riftbound_data and (card.riftbound_data.is_legend or card.riftbound_data.is_rune or card.riftbound_data.is_battlefield):
+                        raise ValueError("Legends, runes and battlefields cannot go into the Riftbound sideboard")
+                    storage_section = "sideboard"
+                elif requested_zone in {"legend", "rune", "battlefield"}:
+                    if requested_zone != storage_section:
+                        raise ValueError(f"{card.name} does not belong to the {requested_zone} zone")
+                elif requested_zone != "main":
+                    raise ValueError(f"Unsupported import zone: {requested_zone}")
             current_quantity = aggregated_cards[storage_section].get(card.id, 0)
             aggregated_cards[storage_section][card.id] = current_quantity + quantity
 
-        for storage_section in ("main", "egg"):
+        if chosen_champion:
+            chosen_champion_card = self._resolve_import_card(resolved_tgc_id, chosen_champion)
+            chosen_champion_card_id = chosen_champion_card.id
+
+        for storage_section in ("main", "egg", "legend", "rune", "battlefield", "sideboard"):
             for card_id, quantity in aggregated_cards[storage_section].items():
                 card = self.db.query(Card).filter(Card.id == card_id).first()
                 deck_entries.append(
@@ -70,26 +102,45 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
                     }
                 )
 
+        candidate_deck = Deck(
+            user_id=user_id,
+            tgc_id=resolved_tgc_id,
+            name=((name or "").strip() or "Mazo importado")[:100],
+            riftbound_chosen_champion_card_id=chosen_champion_card_id,
+        )
+
         self._validate_deck_composition(
             target_tgc,
             rules,
             deck_entries,
             deck_entries[0]["card"] if deck_entries else None,
             require_complete=True,
+            deck=candidate_deck,
         )
 
         deck_name = (name or "").strip() or "Mazo importado"
-        deck = Deck(user_id=user_id, tgc_id=resolved_tgc_id, name=deck_name[:100])
+        deck = Deck(
+            user_id=user_id,
+            tgc_id=resolved_tgc_id,
+            name=deck_name[:100],
+            riftbound_chosen_champion_card_id=chosen_champion_card_id,
+        )
         self.db.add(deck)
         self.db.flush()
 
         for entry in deck_entries:
-            model_class = DeckEggCard if entry["storage_section"] == "egg" else DeckCard
+            if entry["storage_section"] == "egg":
+                model_class = DeckEggCard
+            elif entry["storage_section"] in {"legend", "rune", "battlefield", "sideboard"}:
+                model_class = DeckZoneCard
+            else:
+                model_class = DeckCard
             self.db.add(
                 model_class(
                     deck_id=deck.id,
                     card_id=entry["card"].id,
                     quantity=entry["quantity"],
+                    **({"zone": entry["storage_section"]} if model_class is DeckZoneCard else {}),
                 )
             )
 
@@ -114,6 +165,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
 
         self.db.query(DeckCard).filter(DeckCard.deck_id == deck.id).delete(synchronize_session=False)
         self.db.query(DeckEggCard).filter(DeckEggCard.deck_id == deck.id).delete(synchronize_session=False)
+        self.db.query(DeckZoneCard).filter(DeckZoneCard.deck_id == deck.id).delete(synchronize_session=False)
         self.db.query(DeckConsideringCard).filter(DeckConsideringCard.deck_id == deck.id).delete(synchronize_session=False)
         self.db.delete(deck)
         self.db.commit()
@@ -126,6 +178,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             user_id=user_id,
             tgc_id=source_deck.tgc_id,
             name=f"{source_deck.name} (Copia)",
+            riftbound_chosen_champion_card_id=source_deck.riftbound_chosen_champion_card_id,
         )
         self.db.add(cloned_deck)
         self.db.flush()
@@ -147,6 +200,18 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
                 DeckEggCard(
                     deck_id=cloned_deck.id,
                     card_id=source_card.card_id,
+                    quantity=source_card.quantity,
+                    assigned_quantity=None,
+                )
+            )
+
+        source_zone_cards = self.db.query(DeckZoneCard).filter(DeckZoneCard.deck_id == source_deck.id).all()
+        for source_card in source_zone_cards:
+            self.db.add(
+                DeckZoneCard(
+                    deck_id=cloned_deck.id,
+                    card_id=source_card.card_id,
+                    zone=source_card.zone,
                     quantity=source_card.quantity,
                     assigned_quantity=None,
                 )
@@ -180,7 +245,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
 
         return deck
 
-    def add_card_to_deck(self, deck_id: int, card_id: int, quantity: int, user_id: int):
+    def add_card_to_deck(self, deck_id: int, card_id: int, quantity: int, user_id: int, zone: Optional[str] = None):
         deck = self._get_user_deck_or_error(deck_id, user_id)
         deck_tgc, rules = self._get_rules_for_deck(deck)
 
@@ -195,6 +260,14 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             raise ValueError("Card belongs to a different TCG")
 
         storage_section = self._get_card_storage_section(deck_tgc, card)
+        if self._is_riftbound_tgc(deck_tgc):
+            requested_zone = (zone or "").strip().lower()
+            if requested_zone == "sideboard":
+                if card.riftbound_data and (card.riftbound_data.is_legend or card.riftbound_data.is_rune or card.riftbound_data.is_battlefield):
+                    raise ValueError("Legends, runes and battlefields cannot go into the Riftbound sideboard")
+                storage_section = "sideboard"
+            elif requested_zone in {"legend", "rune", "battlefield"} and requested_zone != storage_section:
+                raise ValueError(f"{card.name} does not belong to the {requested_zone} zone")
         deck_card = self._get_storage_card_record(deck_id, card_id, storage_section)
         current_quantity = deck_card.quantity if deck_card else 0
         next_quantity = current_quantity + quantity
@@ -203,15 +276,22 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
 
         self._validate_generic_quantity_rules(deck_tgc, rules, next_quantity, next_total, card)
         candidate_entries = self._build_candidate_deck_entries(deck_tgc, deck_id, card, next_quantity)
-        self._validate_deck_composition(deck_tgc, rules, candidate_entries, card, is_increase=True)
+        self._validate_deck_composition(deck_tgc, rules, candidate_entries, card, is_increase=True, deck=deck)
 
         if deck_card:
             deck_card.quantity = next_quantity
             if deck_card.assigned_quantity is not None:
                 deck_card.assigned_quantity = min(deck_card.assigned_quantity, deck_card.quantity)
         else:
-            model_class = DeckEggCard if storage_section == "egg" else DeckCard
-            deck_card = model_class(deck_id=deck_id, card_id=card_id, quantity=quantity)
+            if storage_section == "egg":
+                model_class = DeckEggCard
+                deck_card = model_class(deck_id=deck_id, card_id=card_id, quantity=quantity)
+            elif storage_section in {"legend", "rune", "battlefield", "sideboard"}:
+                model_class = DeckZoneCard
+                deck_card = model_class(deck_id=deck_id, card_id=card_id, zone=storage_section, quantity=quantity)
+            else:
+                model_class = DeckCard
+                deck_card = model_class(deck_id=deck_id, card_id=card_id, quantity=quantity)
             self.db.add(deck_card)
 
         self.db.commit()
@@ -340,13 +420,20 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
 
         self._validate_generic_quantity_rules(deck_tgc, rules, next_quantity, next_total, card)
         candidate_entries = self._build_candidate_deck_entries(deck_tgc, deck_id, card, next_quantity)
-        self._validate_deck_composition(deck_tgc, rules, candidate_entries, card, is_increase=True)
+        self._validate_deck_composition(deck_tgc, rules, candidate_entries, card, is_increase=True, deck=deck)
 
         if deck_card:
             deck_card.quantity = next_quantity
         else:
-            model_class = DeckEggCard if storage_section == "egg" else DeckCard
-            deck_card = model_class(deck_id=deck_id, card_id=card_id, quantity=quantity)
+            if storage_section == "egg":
+                model_class = DeckEggCard
+                deck_card = model_class(deck_id=deck_id, card_id=card_id, quantity=quantity)
+            elif storage_section in {"legend", "rune", "battlefield", "sideboard"}:
+                model_class = DeckZoneCard
+                deck_card = model_class(deck_id=deck_id, card_id=card_id, zone=storage_section, quantity=quantity)
+            else:
+                model_class = DeckCard
+                deck_card = model_class(deck_id=deck_id, card_id=card_id, quantity=quantity)
             self.db.add(deck_card)
 
         next_considering_quantity = considering_card.quantity - quantity
@@ -386,6 +473,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             candidate_entries,
             card,
             is_increase=delta > 0,
+            deck=deck,
         )
         candidate_total_cards = sum(entry["quantity"] for entry in candidate_entries)
         deck_overview = self._build_deck_response_base(
@@ -442,4 +530,46 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             "quantity": deck_card.quantity,
             "deck_section": storage_section,
             "assigned_quantity": deck_card.assigned_quantity,
+        }
+
+    def set_riftbound_chosen_champion(self, deck_id: int, user_id: int, card_id: Optional[int]):
+        deck = self._get_user_deck_or_error(deck_id, user_id)
+        deck_tgc, rules = self._get_rules_for_deck(deck)
+
+        if not self._is_riftbound_tgc(deck_tgc):
+            raise ValueError("Chosen Champion is only available for Riftbound decks")
+
+        chosen_card = None
+        if card_id is not None:
+            storage_section, deck_card = self._get_any_deck_card_or_error(deck_id, card_id)
+            if storage_section != "main":
+                raise ValueError("The Chosen Champion must belong to the Main Deck")
+
+            chosen_card = self.db.query(Card).filter(Card.id == card_id).first()
+            if not chosen_card or not chosen_card.riftbound_data or not chosen_card.riftbound_data.is_champion:
+                raise ValueError("The Chosen Champion must be a Riftbound champion unit")
+
+            candidate_entries = self._get_playable_entries(deck_id)
+            original_card_id = deck.riftbound_chosen_champion_card_id
+            deck.riftbound_chosen_champion_card_id = card_id
+            try:
+                self._validate_deck_composition(
+                    deck_tgc,
+                    rules,
+                    candidate_entries,
+                    chosen_card,
+                    require_complete=False,
+                    deck=deck,
+                )
+            except Exception:
+                deck.riftbound_chosen_champion_card_id = original_card_id
+                raise
+
+        deck.riftbound_chosen_champion_card_id = card_id
+        self.db.commit()
+        self.db.refresh(deck)
+        return {
+            "chosen_champion_card_id": deck.riftbound_chosen_champion_card_id,
+            "deck_section": "main",
+            "card_id": chosen_card.id if chosen_card else None,
         }

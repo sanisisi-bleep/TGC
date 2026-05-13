@@ -17,6 +17,7 @@ function DeckCardRow({
   onAdjustCoverage,
   onAdjustQuantity,
   onMoveToConsidering,
+  onSetChosenChampion,
   onOpenCard,
 }) {
   const isInventoryView = deckCardView === 'inventory';
@@ -32,8 +33,16 @@ function DeckCardRow({
   const transferQuantity = Math.max(1, Math.min(requestedQuantity, Number(card.quantity) || 1));
   const roleLabel = card.deck_role === 'leader'
     ? 'Leader'
+    : card.deck_role === 'legend'
+      ? 'Legend'
     : card.deck_role === 'egg'
       ? 'Digi-Egg'
+      : card.deck_role === 'rune'
+        ? 'Rune'
+        : card.deck_role === 'battlefield'
+          ? 'Battlefield'
+          : card.deck_role === 'sideboard'
+            ? 'Sideboard'
     : card.deck_role === 'don'
       ? 'DON!!'
       : 'Main';
@@ -88,6 +97,9 @@ function DeckCardRow({
         <h4>{card.name}</h4>
         <div className="deck-owned-panel">
           <span className={`deck-role-badge is-${card.deck_role || 'main'}`}>{roleLabel}</span>
+          {card.is_chosen_champion && (
+            <span className="deck-role-badge is-main">Chosen Champion</span>
+          )}
           {card.color_matches_leader === false && (
             <span className="deck-role-warning">
               {card.color_warning_text || 'Fuera de color con el Leader'}
@@ -236,6 +248,16 @@ function DeckCardRow({
                 disabled={isUpdatingQuantity || (card.quantity || 0) <= 0}
               >
                 {transferQuantity === 1 ? 'Considering' : `Considering x${transferQuantity}`}
+              </button>
+            )}
+            {onSetChosenChampion && card?.riftbound_data?.is_champion && card?.deck_section === 'main' && (
+              <button
+                type="button"
+                className="deck-action-button is-soft deck-inline-action"
+                onClick={() => onSetChosenChampion(card.id)}
+                disabled={isUpdatingQuantity}
+              >
+                {card.is_chosen_champion ? 'Chosen activo' : 'Marcar chosen'}
               </button>
             )}
           </>

@@ -72,6 +72,7 @@ class Card(Base):
     one_piece_data = relationship("OnePieceCard", back_populates="card", uselist=False)
     magic_data = relationship("MagicCard", back_populates="card", uselist=False)
     digimon_data = relationship("DigimonCard", back_populates="card", uselist=False)
+    riftbound_data = relationship("RiftboundCard", back_populates="card", uselist=False)
 
 
 class GundamCard(Base):
@@ -151,6 +152,33 @@ class DigimonCard(Base):
     card = relationship("Card", back_populates="digimon_data")
 
 
+class RiftboundCard(Base):
+    __tablename__ = "riftbound_cards"
+
+    card_id = Column(Integer, ForeignKey("cards.id"), primary_key=True)
+    domains = Column(Text)
+    energy_cost = Column(Integer)
+    power_cost = Column(Integer)
+    might = Column(Integer)
+    tags = Column(Text)
+    keywords = Column(Text)
+    champion_tag = Column(String(100))
+    is_signature = Column(Boolean, default=False)
+    is_rune = Column(Boolean, default=False)
+    is_battlefield = Column(Boolean, default=False)
+    is_legend = Column(Boolean, default=False)
+    is_champion = Column(Boolean, default=False)
+    collector_number = Column(Integer)
+    variant_code = Column(String(50))
+    set_code = Column(String(50))
+    legality_status = Column(String(50))
+    has_errata = Column(Boolean, default=False)
+    errata_source_url = Column(Text)
+    updated_text = Column(Text)
+
+    card = relationship("Card", back_populates="riftbound_data")
+
+
 class UserCollection(Base):
     __tablename__ = "user_collections"
 
@@ -169,12 +197,14 @@ class Deck(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     tgc_id = Column(Integer, ForeignKey("tgc.id"))
+    riftbound_chosen_champion_card_id = Column(Integer, ForeignKey("cards.id"))
     name = Column(String(100))
     share_token = Column(String(64), unique=True, index=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     user = relationship("User")
     tgc = relationship("Tgc")
+    riftbound_chosen_champion_card = relationship("Card", foreign_keys=[riftbound_chosen_champion_card_id])
 
 
 class DeckCard(Base):
@@ -215,6 +245,23 @@ class DeckEggCard(Base):
     card = relationship("Card")
 
 
+class DeckZoneCard(Base):
+    __tablename__ = "deck_zone_cards"
+    __table_args__ = (
+        UniqueConstraint("deck_id", "card_id", "zone", name="uq_deck_zone_cards_deck_card_zone"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    deck_id = Column(Integer, ForeignKey("decks.id"))
+    card_id = Column(Integer, ForeignKey("cards.id"))
+    zone = Column(String(30), nullable=False)
+    quantity = Column(Integer, default=1)
+    assigned_quantity = Column(Integer)
+
+    deck = relationship("Deck")
+    card = relationship("Card")
+
+
 class RateLimitCounter(Base):
     __tablename__ = "rate_limit_counters"
     __table_args__ = (
@@ -245,10 +292,12 @@ __all__ = [
     "OnePieceCard",
     "MagicCard",
     "DigimonCard",
+    "RiftboundCard",
     "UserCollection",
     "Deck",
     "DeckCard",
     "DeckConsideringCard",
     "DeckEggCard",
+    "DeckZoneCard",
     "RateLimitCounter",
 ]

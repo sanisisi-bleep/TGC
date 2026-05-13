@@ -24,6 +24,7 @@ class DeckRename(BaseModel):
 class DeckCardCreate(BaseModel):
     card_id: int
     quantity: int = Field(..., gt=0)
+    zone: Optional[str] = None
 
 
 class DeckConsideringCreate(BaseModel):
@@ -52,6 +53,11 @@ class DeckImportCard(BaseModel):
     source_card_id: Optional[str] = None
     version: Optional[str] = None
     quantity: int = Field(..., gt=0)
+    zone: Optional[str] = None
+
+
+class DeckChosenChampionPayload(BaseModel):
+    card_id: Optional[int] = None
 
 
 class DeckImportPayload(BaseModel):
@@ -59,6 +65,11 @@ class DeckImportPayload(BaseModel):
     tgc_id: Optional[int] = None
     cards: List[DeckImportCard] = Field(default_factory=list)
     egg_cards: List[DeckImportCard] = Field(default_factory=list)
+    legend_cards: List[DeckImportCard] = Field(default_factory=list)
+    rune_cards: List[DeckImportCard] = Field(default_factory=list)
+    battlefield_cards: List[DeckImportCard] = Field(default_factory=list)
+    sideboard_cards: List[DeckImportCard] = Field(default_factory=list)
+    chosen_champion: Optional[DeckImportCard] = None
 
 
 def _deck_service(db: Session) -> DeckService:
@@ -172,6 +183,11 @@ def import_deck(payload: DeckImportPayload, db: Session = Depends(get_db), curre
             payload.tgc_id,
             [card.dict() for card in payload.cards],
             [card.dict() for card in payload.egg_cards],
+            [card.dict() for card in payload.legend_cards],
+            [card.dict() for card in payload.rune_cards],
+            [card.dict() for card in payload.battlefield_cards],
+            [card.dict() for card in payload.sideboard_cards],
+            payload.chosen_champion.dict() if payload.chosen_champion else None,
         )
         logger.info(
             "Deck imported",
@@ -182,6 +198,10 @@ def import_deck(payload: DeckImportPayload, db: Session = Depends(get_db), curre
                 username=current_user.username,
                 imported_cards=len(payload.cards),
                 imported_egg_cards=len(payload.egg_cards),
+                imported_legend_cards=len(payload.legend_cards),
+                imported_rune_cards=len(payload.rune_cards),
+                imported_battlefield_cards=len(payload.battlefield_cards),
+                imported_sideboard_cards=len(payload.sideboard_cards),
                 tgc_id=payload.tgc_id,
             ),
         )
@@ -195,6 +215,10 @@ def import_deck(payload: DeckImportPayload, db: Session = Depends(get_db), curre
             username=current_user.username,
             imported_cards=len(payload.cards),
             imported_egg_cards=len(payload.egg_cards),
+            imported_legend_cards=len(payload.legend_cards),
+            imported_rune_cards=len(payload.rune_cards),
+            imported_battlefield_cards=len(payload.battlefield_cards),
+            imported_sideboard_cards=len(payload.sideboard_cards),
             tgc_id=payload.tgc_id,
         )
 
@@ -318,7 +342,7 @@ def share_deck(deck_id: int, db: Session = Depends(get_db), current_user: User =
 def add_card_to_deck(deck_id: int, card: DeckCardCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = _deck_service(db)
     try:
-        result = service.add_card_to_deck(deck_id, card.card_id, card.quantity, current_user.id)
+        result = service.add_card_to_deck(deck_id, card.card_id, card.quantity, current_user.id, zone=card.zone)
         logger.info(
             "Card added to deck",
             extra=build_log_extra(
@@ -330,6 +354,7 @@ def add_card_to_deck(deck_id: int, card: DeckCardCreate, db: Session = Depends(g
                 quantity=result["quantity"],
                 delta=card.quantity,
                 assigned_quantity=result["assigned_quantity"],
+                zone=card.zone,
             ),
         )
         return _deck_card_payload(
@@ -350,6 +375,7 @@ def add_card_to_deck(deck_id: int, card: DeckCardCreate, db: Session = Depends(g
             user_id=current_user.id,
             username=current_user.username,
             delta=card.quantity,
+            zone=card.zone,
         )
 
 
@@ -386,6 +412,40 @@ def add_card_to_considering(deck_id: int, card: DeckConsideringCreate, db: Sessi
             user_id=current_user.id,
             username=current_user.username,
             delta=card.quantity,
+        )
+
+
+@router.post("/{deck_id}/chosen-champion")
+def set_riftbound_chosen_champion(deck_id: int, payload: DeckChosenChampionPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        result = service.set_riftbound_chosen_champion(deck_id, current_user.id, payload.card_id)
+        logger.info(
+            "Riftbound chosen champion updated",
+            extra=build_log_extra(
+                "deck_riftbound_chosen_champion_updated",
+                deck_id=deck_id,
+                card_id=payload.card_id,
+                user_id=current_user.id,
+                username=current_user.username,
+            ),
+        )
+        return _deck_card_payload(
+            "Chosen Champion updated",
+            deck_id,
+            payload.card_id or 0,
+            chosen_champion_card_id=result["chosen_champion_card_id"],
+            deck_section="main",
+        )
+    except ValueError as error:
+        _raise_deck_http_error(
+            400,
+            error,
+            event="deck_riftbound_chosen_champion_rejected",
+            deck_id=deck_id,
+            card_id=payload.card_id,
+            user_id=current_user.id,
+            username=current_user.username,
         )
 
 

@@ -70,6 +70,26 @@ function CardDetailModal({
     primaryFacts.push({ label: 'Counter', value: card.counter });
   }
 
+  if (activeTcgSlug === 'riftbound' && hasCardValue(card.riftbound_data?.domains || card.riftbound_domains)) {
+    primaryFacts.push({ label: 'Domains', value: card.riftbound_data?.domains || card.riftbound_domains });
+  }
+
+  if (activeTcgSlug === 'riftbound' && hasCardValue(card.riftbound_data?.energy_cost)) {
+    primaryFacts.push({ label: 'Energy', value: card.riftbound_data.energy_cost });
+  }
+
+  if (activeTcgSlug === 'riftbound' && hasCardValue(card.riftbound_data?.power_cost)) {
+    primaryFacts.push({ label: 'Power', value: card.riftbound_data.power_cost });
+  }
+
+  if (activeTcgSlug === 'riftbound' && hasCardValue(card.riftbound_data?.might)) {
+    primaryFacts.push({ label: 'Might', value: card.riftbound_data.might });
+  }
+
+  if (activeTcgSlug === 'riftbound' && hasCardValue(card.riftbound_data?.legality_status)) {
+    primaryFacts.push({ label: 'Legalidad', value: card.riftbound_data.legality_status });
+  }
+
   if (hasCardValue(card.type_line)) {
     primaryFacts.push({ label: 'Linea de tipo', value: card.type_line });
   }
@@ -134,6 +154,18 @@ function CardDetailModal({
     {
       label: 'Notas',
       value: card.notes,
+    },
+    {
+      label: 'Tags',
+      value: activeTcgSlug === 'riftbound' ? card.riftbound_data?.tags : null,
+    },
+    {
+      label: 'Keywords',
+      value: activeTcgSlug === 'riftbound' ? card.riftbound_data?.keywords : null,
+    },
+    {
+      label: 'Errata',
+      value: activeTcgSlug === 'riftbound' ? card.riftbound_data?.updated_text : null,
     },
     {
       label: 'Q&A',

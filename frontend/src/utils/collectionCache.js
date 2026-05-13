@@ -1,10 +1,6 @@
 const normalizeDeckSection = (section) => {
-  if (section === 'egg') {
-    return 'egg';
-  }
-
-  if (section === 'don') {
-    return 'don';
+  if (['egg', 'don', 'legend', 'rune', 'battlefield', 'sideboard'].includes(section)) {
+    return section;
   }
 
   return 'main';

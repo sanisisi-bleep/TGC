@@ -48,6 +48,7 @@ import {
   getDecks,
   importDeck,
   renameDeck,
+  setDeckChosenChampion,
   shareDeck,
 } from '../services/api';
 
@@ -132,15 +133,24 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
   const selectedDeckIsOnePiece = selectedDeck?.composition?.format_mode === 'one-piece';
   const selectedDeckIsDigimon = selectedDeck?.composition?.format_mode === 'digimon';
+  const selectedDeckIsRiftbound = selectedDeck?.composition?.format_mode === 'riftbound';
   const selectedDeckEggCount = selectedDeckIsDigimon ? getDeckEggCardCount(selectedDeck) : 0;
   const selectedDeckConsideringTotal = Number(selectedDeck?.considering_total_cards) || 0;
   const selectedDeckDistinctCards = selectedDeckIsDigimon
     ? (selectedDeck?.cards?.length || 0) + (selectedDeck?.egg_cards?.length || 0)
+    : selectedDeckIsRiftbound
+      ? (selectedDeck?.cards?.length || 0)
+        + (selectedDeck?.legend_cards_data?.length || 0)
+        + (selectedDeck?.rune_cards_data?.length || 0)
+        + (selectedDeck?.battlefield_cards_data?.length || 0)
+        + (selectedDeck?.sideboard_cards_data?.length || 0)
     : (selectedDeck?.cards?.length || 0);
   const selectedDeckSummary = selectedDeckIsOnePiece
     ? `Leader ${selectedDeck?.leader_cards || 0}/${selectedDeck?.required_leader_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | DON ${selectedDeck?.don_cards || 0}/${selectedDeck?.recommended_don_cards || 10}`
     : selectedDeckIsDigimon
       ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | Eggs ${selectedDeckEggCount}/${selectedDeck?.max_egg_cards || 5}`
+      : selectedDeckIsRiftbound
+        ? `Legend ${selectedDeck?.legend_cards || 0}/${selectedDeck?.required_legend_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 40} | Runes ${selectedDeck?.rune_cards || 0}/${selectedDeck?.required_rune_cards || 12} | Fields ${selectedDeck?.battlefield_cards || 0}/${selectedDeck?.required_battlefield_cards || 3}`
     : `${selectedDeck?.total_cards || 0} cartas en total`;
   const {
     setDraft: setDeckActionQuantityDraft,
@@ -495,6 +505,28 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     },
   });
 
+  const setChosenChampionMutation = useMutation({
+    mutationFn: ({ deckId, cardId }) => setDeckChosenChampion(deckId, cardId),
+    onSuccess: async (_payload, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+        invalidateSearchDeckOptionsQuery(),
+      ]);
+      showToast({ type: 'success', message: 'Chosen Champion actualizado.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo actualizar el Chosen Champion.'),
+      });
+    },
+  });
+
   const adjustConsideringMutation = useMutation({
     mutationFn: ({ deckId, cardId, delta }) => adjustConsideringCard(deckId, cardId, delta),
     onSuccess: async (_payload, variables) => {
@@ -681,7 +713,14 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     try {
       const payload = buildImportDeckPayload(rawContent, activeTgc?.id, nameOverride);
 
-      if (!payload.cards.length && !(payload.egg_cards || []).length) {
+      if (
+        !payload.cards.length
+        && !(payload.egg_cards || []).length
+        && !(payload.legend_cards || []).length
+        && !(payload.rune_cards || []).length
+        && !(payload.battlefield_cards || []).length
+        && !(payload.sideboard_cards || []).length
+      ) {
         throw new Error(emptyContentMessage);
       }
 
@@ -857,6 +896,10 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
 
     setUpdatingAssignmentCardId(cardId);
     adjustAssignmentMutation.mutate({ deckId: selectedDeck.id, cardId, delta });
+  };
+
+  const setChosenChampionHandler = (deckId, cardId) => {
+    setChosenChampionMutation.mutate({ deckId, cardId });
   };
 
   const toggleAssignmentEditor = (cardId) => {
@@ -1074,6 +1117,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         selectedDeckEggCount={selectedDeckEggCount}
         selectedDeckIsOnePiece={selectedDeckIsOnePiece}
         selectedDeckIsDigimon={selectedDeckIsDigimon}
+        selectedDeckIsRiftbound={selectedDeckIsRiftbound}
         deckCardView={deckCardView}
         onDeckCardViewChange={setDeckCardView}
         deckStats={deckStats}
@@ -1105,6 +1149,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         onApplyDeckBatchQuantity={adjustDeckCardQuantityBatch}
         onAdjustDeckQuantity={adjustDeckCardQuantity}
         onMoveDeckCardToConsidering={moveDeckCardToConsideringHandler}
+        onSetChosenChampion={setChosenChampionHandler}
         onApplyConsideringBatchQuantity={adjustConsideringQuantityBatch}
         onAdjustConsideringQuantity={adjustConsideringQuantity}
         onMoveConsideringCardToDeck={moveConsideringCardToDeckHandler}

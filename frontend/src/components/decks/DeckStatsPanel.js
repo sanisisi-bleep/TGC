@@ -48,6 +48,10 @@ const getOpeningFormatLabel = (formatMode) => {
     return 'Gundam';
   }
 
+  if (formatMode === 'riftbound') {
+    return 'Riftbound';
+  }
+
   return 'este TCG';
 };
 
@@ -94,6 +98,17 @@ const buildMulliganHand = (pool, handSize, previousHand, mulliganMode) => {
     const previousInstanceKeys = new Set(previousHand.map((card) => card.instanceKey));
     const remainingDeck = expandedPool.filter((card) => !previousInstanceKeys.has(card.instanceKey));
     return shuffleSimulationPool(remainingDeck).slice(0, Math.min(handSize, remainingDeck.length));
+  }
+
+  if (mulliganMode === 'bottom-partial-redraw' && previousHand.length > 0) {
+    const previousInstanceKeys = new Set(previousHand.map((card) => card.instanceKey));
+    const remainingDeck = shuffleSimulationPool(
+      expandedPool.filter((card) => !previousInstanceKeys.has(card.instanceKey))
+    );
+    const keepCount = Math.max(handSize - 2, 0);
+    const keptCards = previousHand.slice(0, Math.min(keepCount, previousHand.length));
+    const redrawCount = Math.max(handSize - keptCards.length, 0);
+    return [...keptCards, ...remainingDeck.slice(0, Math.min(redrawCount, remainingDeck.length))];
   }
 
   const shuffledPool = shuffleSimulationPool(expandedPool);
@@ -711,11 +726,16 @@ function DeckStatsPanel({ stats }) {
 
   const isOnePieceDeck = stats.formatMode === 'one-piece';
   const isDigimonDeck = stats.formatMode === 'digimon';
+  const isRiftboundDeck = stats.formatMode === 'riftbound';
   const leaderReady = stats.leaderCards === stats.requiredLeaderCards;
   const mainDeckReady = stats.mainDeckCards === stats.requiredMainDeckCards;
   const donReady = stats.donCards === 0 || stats.donCards === stats.recommendedDonCards;
   const eggReady = stats.eggCards <= stats.maxEggCards;
   const colorReady = stats.offColorCards.length === 0 && stats.leaderColorLabels.length > 0;
+  const legendReady = stats.legendCards === stats.requiredLegendCards;
+  const runeReady = stats.runeCards === stats.requiredRuneCards;
+  const battlefieldReady = stats.battlefieldCards === stats.requiredBattlefieldCards;
+  const chosenChampionReady = stats.chosenChampionCards === stats.requiredChosenChampionCards;
 
   return (
     <section className="deck-stats-panel">
@@ -756,6 +776,25 @@ function DeckStatsPanel({ stats }) {
             <article className="deck-stat-card">
               <span>Copias faltantes</span>
               <strong>{stats.missingCopies}</strong>
+            </article>
+          </>
+        ) : isRiftboundDeck ? (
+          <>
+            <article className={`deck-stat-card ${legendReady ? 'is-valid' : 'is-warning'}`}>
+              <span>Legend</span>
+              <strong>{stats.legendCards}/{stats.requiredLegendCards}</strong>
+            </article>
+            <article className={`deck-stat-card ${mainDeckReady ? 'is-valid' : 'is-warning'}`}>
+              <span>Main Deck</span>
+              <strong>{stats.mainDeckCards}/{stats.requiredMainDeckCards}</strong>
+            </article>
+            <article className={`deck-stat-card ${runeReady ? 'is-valid' : 'is-warning'}`}>
+              <span>Runes</span>
+              <strong>{stats.runeCards}/{stats.requiredRuneCards}</strong>
+            </article>
+            <article className={`deck-stat-card ${battlefieldReady ? 'is-valid' : 'is-warning'}`}>
+              <span>Battlefields</span>
+              <strong>{stats.battlefieldCards}/{stats.requiredBattlefieldCards}</strong>
             </article>
           </>
         ) : (
@@ -861,6 +900,74 @@ function DeckStatsPanel({ stats }) {
                 {stats.copyLimitExceededCards.slice(0, 6).map((card) => (
                   <span key={card.source_card_id} className="deck-stat-chip is-danger">
                     {card.source_card_id} x{card.quantity}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isRiftboundDeck && (
+        <div className="deck-rules-panel">
+          <div className="deck-rule-meter">
+            <span className="deck-rule-label">Domains de la Legend</span>
+            <div className="deck-stat-chip-list">
+              {stats.domainLabels.length > 0 ? (
+                stats.domainLabels.map((label) => (
+                  <span key={label} className="deck-stat-chip">
+                    {label}
+                  </span>
+                ))
+              ) : (
+                <span className="deck-stat-chip is-warning">Anade 1 Legend</span>
+              )}
+            </div>
+          </div>
+
+          <div className="deck-rule-meter">
+            <span className="deck-rule-label">Estado de construccion</span>
+            <div className="deck-stat-chip-list">
+              <span className={`deck-stat-chip ${legendReady ? 'is-ok' : 'is-warning'}`}>
+                Legend {stats.legendCards}/{stats.requiredLegendCards}
+              </span>
+              <span className={`deck-stat-chip ${mainDeckReady ? 'is-ok' : 'is-warning'}`}>
+                Main {stats.mainDeckCards}/{stats.requiredMainDeckCards}
+              </span>
+              <span className={`deck-stat-chip ${runeReady ? 'is-ok' : 'is-warning'}`}>
+                Runes {stats.runeCards}/{stats.requiredRuneCards}
+              </span>
+              <span className={`deck-stat-chip ${battlefieldReady ? 'is-ok' : 'is-warning'}`}>
+                Fields {stats.battlefieldCards}/{stats.requiredBattlefieldCards}
+              </span>
+              <span className={`deck-stat-chip ${chosenChampionReady ? 'is-ok' : 'is-warning'}`}>
+                Champion {stats.chosenChampionCards}/{stats.requiredChosenChampionCards}
+              </span>
+            </div>
+          </div>
+
+          {(stats.offColorCards.length > 0 || stats.copyLimitExceededCards.length > 0 || stats.bannedCards.length > 0 || stats.bannedBattlefields.length > 0) && (
+            <div className="deck-rule-meter is-danger">
+              <span className="deck-rule-label">Alertas de legalidad</span>
+              <div className="deck-stat-chip-list">
+                {stats.offColorCards.slice(0, 4).map((card) => (
+                  <span key={`off-${card.id}`} className="deck-stat-chip is-danger">
+                    Fuera de domain: {card.name}
+                  </span>
+                ))}
+                {stats.copyLimitExceededCards.slice(0, 4).map((card) => (
+                  <span key={`copy-${card.source_card_id}`} className="deck-stat-chip is-danger">
+                    Copias: {card.name} x{card.quantity}
+                  </span>
+                ))}
+                {stats.bannedCards.slice(0, 4).map((card) => (
+                  <span key={`banned-${card.id}`} className="deck-stat-chip is-danger">
+                    Baneada: {card.name}
+                  </span>
+                ))}
+                {stats.bannedBattlefields.slice(0, 4).map((card) => (
+                  <span key={`battlefield-ban-${card.id}`} className="deck-stat-chip is-danger">
+                    Battlefield baneado: {card.name}
                   </span>
                 ))}
               </div>

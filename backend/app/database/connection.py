@@ -148,6 +148,32 @@ def ensure_game_detail_columns():
         "ALTER TABLE digimon_cards ADD COLUMN IF NOT EXISTS notes TEXT",
         "ALTER TABLE digimon_cards ADD COLUMN IF NOT EXISTS qa TEXT",
         "ALTER TABLE digimon_cards ADD COLUMN IF NOT EXISTS is_alternative_art BOOLEAN DEFAULT FALSE",
+        (
+            "CREATE TABLE IF NOT EXISTS riftbound_cards ("
+            "card_id INTEGER PRIMARY KEY REFERENCES cards(id), "
+            "domains TEXT, "
+            "energy_cost INTEGER, "
+            "power_cost INTEGER, "
+            "might INTEGER, "
+            "tags TEXT, "
+            "keywords TEXT, "
+            "champion_tag VARCHAR(100), "
+            "is_signature BOOLEAN DEFAULT FALSE, "
+            "is_rune BOOLEAN DEFAULT FALSE, "
+            "is_battlefield BOOLEAN DEFAULT FALSE, "
+            "is_legend BOOLEAN DEFAULT FALSE, "
+            "is_champion BOOLEAN DEFAULT FALSE, "
+            "collector_number INTEGER, "
+            "variant_code VARCHAR(50), "
+            "set_code VARCHAR(50), "
+            "legality_status VARCHAR(50), "
+            "has_errata BOOLEAN DEFAULT FALSE, "
+            "errata_source_url TEXT, "
+            "updated_text TEXT)"
+        ),
+        "CREATE INDEX IF NOT EXISTS idx_riftbound_cards_set_code ON riftbound_cards(set_code)",
+        "CREATE INDEX IF NOT EXISTS idx_riftbound_cards_legality_status ON riftbound_cards(legality_status)",
+        "CREATE INDEX IF NOT EXISTS idx_riftbound_cards_champion_tag ON riftbound_cards(champion_tag)",
     ]
 
     _run_schema_statements(statements)
@@ -156,6 +182,7 @@ def ensure_game_detail_columns():
 def ensure_deck_columns():
     statements = [
         "ALTER TABLE decks ADD COLUMN IF NOT EXISTS tgc_id INTEGER",
+        "ALTER TABLE decks ADD COLUMN IF NOT EXISTS riftbound_chosen_champion_card_id INTEGER",
         "ALTER TABLE decks ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)",
         "ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS assigned_quantity INTEGER",
         (
@@ -173,15 +200,28 @@ def ensure_deck_columns():
             "quantity INTEGER DEFAULT 1, "
             "assigned_quantity INTEGER)"
         ),
+        (
+            "CREATE TABLE IF NOT EXISTS deck_zone_cards ("
+            "id SERIAL PRIMARY KEY, "
+            "deck_id INTEGER REFERENCES decks(id), "
+            "card_id INTEGER REFERENCES cards(id), "
+            "zone VARCHAR(30) NOT NULL, "
+            "quantity INTEGER DEFAULT 1, "
+            "assigned_quantity INTEGER)"
+        ),
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_decks_share_token ON decks(share_token)",
         "CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_decks_user_tgc_id ON decks(user_id, tgc_id)",
+        "CREATE INDEX IF NOT EXISTS idx_decks_riftbound_chosen_champion_card_id ON decks(riftbound_chosen_champion_card_id)",
         "CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id)",
         "CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_card_id ON deck_cards(deck_id, card_id)",
         "CREATE INDEX IF NOT EXISTS idx_deck_considering_cards_deck_id ON deck_considering_cards(deck_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_deck_considering_cards_deck_card_id ON deck_considering_cards(deck_id, card_id)",
         "CREATE INDEX IF NOT EXISTS idx_deck_egg_cards_deck_id ON deck_egg_cards(deck_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_deck_egg_cards_deck_card_id ON deck_egg_cards(deck_id, card_id)",
+        "CREATE INDEX IF NOT EXISTS idx_deck_zone_cards_deck_id ON deck_zone_cards(deck_id)",
+        "CREATE INDEX IF NOT EXISTS idx_deck_zone_cards_deck_zone ON deck_zone_cards(deck_id, zone)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_deck_zone_cards_deck_card_zone ON deck_zone_cards(deck_id, card_id, zone)",
     ]
 
     _run_schema_statements(statements)

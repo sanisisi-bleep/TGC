@@ -52,6 +52,23 @@ export const GAME_CONFIGS = {
       colors: ['Red', 'Blue', 'Yellow', 'Green', 'White', 'Black', 'Purple'],
     },
   },
+  riftbound: {
+    slug: 'riftbound',
+    name: 'Riftbound',
+    shortName: 'Riftbound',
+    searchTitle: 'Buscar Cartas de Riftbound',
+    collectionTitle: 'Coleccion de Riftbound',
+    decksTitle: 'Mazos de Riftbound',
+    eyebrow: 'Runaterra',
+    accentClass: 'game-card-riftbound',
+    available: true,
+    description: 'Gestiona legends, runes, battlefields y listas completas de Riftbound en el mismo entorno.',
+    palette: 'theme-riftbound',
+    filters: {
+      types: ['Legend', 'Champion Unit', 'Unit', 'Spell', 'Gear', 'Rune', 'Battlefield'],
+      colors: ['Calm', 'Chaos', 'Body', 'Mind', 'Spirit', 'Order', 'Fury'],
+    },
+  },
   magic: {
     slug: 'magic',
     name: 'Magic: The Gathering',
@@ -84,6 +101,10 @@ export function resolveTcgSlug(name = '') {
 
   if (normalized.includes('digimon')) {
     return 'digimon';
+  }
+
+  if (normalized.includes('riftbound')) {
+    return 'riftbound';
   }
 
   if (normalized.includes('magic')) {

@@ -16,6 +16,7 @@ function DeckDetailModal({
   selectedDeckEggCount,
   selectedDeckIsOnePiece,
   selectedDeckIsDigimon,
+  selectedDeckIsRiftbound,
   deckCardView,
   onDeckCardViewChange,
   deckStats,
@@ -47,6 +48,7 @@ function DeckDetailModal({
   onApplyDeckBatchQuantity,
   onAdjustDeckQuantity,
   onMoveDeckCardToConsidering,
+  onSetChosenChampion,
   onApplyConsideringBatchQuantity,
   onAdjustConsideringQuantity,
   onMoveConsideringCardToDeck,
@@ -105,6 +107,8 @@ function DeckDetailModal({
                       ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50}`
                       : selectedDeckIsDigimon
                         ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50}`
+                        : selectedDeckIsRiftbound
+                          ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 40}`
                         : `${selectedDeck?.total_cards || 0}/${selectedDeck?.max_cards || 50}`}
                   </span>
                   {selectedDeckIsOnePiece && (
@@ -121,6 +125,22 @@ function DeckDetailModal({
                     <span className="deck-status-chip deck-progress-chip">
                       Eggs {selectedDeckEggCount || 0}/{selectedDeck?.max_egg_cards || 5}
                     </span>
+                  )}
+                  {selectedDeckIsRiftbound && (
+                    <>
+                      <span className="deck-status-chip deck-progress-chip">
+                        Legend {selectedDeck?.legend_cards || 0}/{selectedDeck?.required_legend_cards || 1}
+                      </span>
+                      <span className="deck-status-chip deck-progress-chip">
+                        Runes {selectedDeck?.rune_cards || 0}/{selectedDeck?.required_rune_cards || 12}
+                      </span>
+                      <span className="deck-status-chip deck-progress-chip">
+                        Fields {selectedDeck?.battlefield_cards || 0}/{selectedDeck?.required_battlefield_cards || 3}
+                      </span>
+                      <span className="deck-status-chip deck-progress-chip">
+                        Champion {selectedDeck?.chosen_champion_cards || 0}/{selectedDeck?.required_chosen_champion_cards || 1}
+                      </span>
+                    </>
                   )}
                   {(selectedDeck?.missing_copies || 0) > 0 && (
                     <span className="deck-status-chip deck-missing-chip">
@@ -199,6 +219,7 @@ function DeckDetailModal({
                     cardId,
                     Math.min(commitDeckActionQuantity(`main:${cardId}`), Number(card.quantity) || 1),
                   )}
+                  onSetChosenChampion={selectedDeckIsRiftbound ? (cardId) => onSetChosenChampion(selectedDeck.id, cardId) : null}
                   onOpenCard={onOpenCard}
                 />
               ))}
@@ -266,6 +287,155 @@ function DeckDetailModal({
                   </div>
                 )}
               </section>
+            )}
+
+            {selectedDeckIsRiftbound && (
+              <>
+                <section className="deck-considering-section panel">
+                  <div className="deck-considering-header">
+                    <div>
+                      <span className="eyebrow">Legend</span>
+                      <h3>Legend del mazo</h3>
+                      <p>Marca la identidad principal del mazo y fija los domains legales.</p>
+                    </div>
+                  </div>
+
+                  {selectedDeck?.legend_card ? (
+                    <div className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}>
+                      <DeckCardRow
+                        card={selectedDeck.legend_card}
+                        isGuestDemo={isGuestDemo}
+                        actionQuantity={getDeckActionQuantity(`legend:${selectedDeck.legend_card.id}`)}
+                        deckCardView={deckCardView}
+                        advancedDeckControlsEnabled={advancedDeckControlsEnabled}
+                        editingAssignmentCardId={editingAssignmentCardId}
+                        updatingAssignmentCardId={updatingAssignmentCardId}
+                        updatingDeckCardId={updatingDeckCardId}
+                        maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                        onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`legend:${cardId}`, value)}
+                        onApplyBatchQuantity={(cardId, direction) => onApplyDeckBatchQuantity(selectedDeck.id, cardId, `legend:${cardId}`, direction)}
+                        onToggleAssignmentEditor={onToggleAssignmentEditor}
+                        onAdjustCoverage={onAdjustCoverage}
+                        onAdjustQuantity={(cardId, delta) => onAdjustDeckQuantity(selectedDeck.id, cardId, delta)}
+                        onMoveToConsidering={(cardId) => onMoveDeckCardToConsidering(
+                          selectedDeck.id,
+                          cardId,
+                          Math.min(commitDeckActionQuantity(`legend:${cardId}`), Number(selectedDeck.legend_card.quantity) || 1),
+                        )}
+                        onOpenCard={onOpenCard}
+                      />
+                    </div>
+                  ) : (
+                    <div className="empty-state subtle-empty">
+                      <p>Todavia no has anadido la Legend del mazo.</p>
+                    </div>
+                  )}
+                </section>
+
+                <section className="deck-considering-section panel">
+                  <div className="deck-considering-header">
+                    <div>
+                      <span className="eyebrow">Rune Deck</span>
+                      <h3>Runes del mazo</h3>
+                      <p>Estas runes se validan aparte del Main Deck.</p>
+                    </div>
+                    <div className="deck-status-row">
+                      <span className="deck-status-chip deck-progress-chip">
+                        {selectedDeck?.rune_unique_cards || 0} distintas
+                      </span>
+                      <span className="deck-status-chip deck-progress-chip">
+                        {selectedDeck?.rune_total_cards || 0} copias
+                      </span>
+                    </div>
+                  </div>
+
+                  {(selectedDeck?.rune_cards_data || []).length > 0 ? (
+                    <div className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}>
+                      {(selectedDeck?.rune_cards_data || []).map((card) => (
+                        <DeckCardRow
+                          key={`rune-${card.id}`}
+                          card={card}
+                          isGuestDemo={isGuestDemo}
+                          actionQuantity={getDeckActionQuantity(`rune:${card.id}`)}
+                          deckCardView={deckCardView}
+                          advancedDeckControlsEnabled={advancedDeckControlsEnabled}
+                          editingAssignmentCardId={editingAssignmentCardId}
+                          updatingAssignmentCardId={updatingAssignmentCardId}
+                          updatingDeckCardId={updatingDeckCardId}
+                          maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                          onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`rune:${cardId}`, value)}
+                          onApplyBatchQuantity={(cardId, direction) => onApplyDeckBatchQuantity(selectedDeck.id, cardId, `rune:${cardId}`, direction)}
+                          onToggleAssignmentEditor={onToggleAssignmentEditor}
+                          onAdjustCoverage={onAdjustCoverage}
+                          onAdjustQuantity={(cardId, delta) => onAdjustDeckQuantity(selectedDeck.id, cardId, delta)}
+                          onMoveToConsidering={(cardId) => onMoveDeckCardToConsidering(
+                            selectedDeck.id,
+                            cardId,
+                            Math.min(commitDeckActionQuantity(`rune:${cardId}`), Number(card.quantity) || 1),
+                          )}
+                          onOpenCard={onOpenCard}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty-state subtle-empty">
+                      <p>Todavia no has anadido runes al mazo.</p>
+                    </div>
+                  )}
+                </section>
+
+                <section className="deck-considering-section panel">
+                  <div className="deck-considering-header">
+                    <div>
+                      <span className="eyebrow">Battlefields</span>
+                      <h3>Battlefields del mazo</h3>
+                      <p>Riftbound exige 3 battlefields con nombre unico.</p>
+                    </div>
+                    <div className="deck-status-row">
+                      <span className="deck-status-chip deck-progress-chip">
+                        {selectedDeck?.battlefield_unique_cards || 0} distintos
+                      </span>
+                      <span className="deck-status-chip deck-progress-chip">
+                        {selectedDeck?.battlefield_total_cards || 0} copias
+                      </span>
+                    </div>
+                  </div>
+
+                  {(selectedDeck?.battlefield_cards_data || []).length > 0 ? (
+                    <div className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}>
+                      {(selectedDeck?.battlefield_cards_data || []).map((card) => (
+                        <DeckCardRow
+                          key={`battlefield-${card.id}`}
+                          card={card}
+                          isGuestDemo={isGuestDemo}
+                          actionQuantity={getDeckActionQuantity(`battlefield:${card.id}`)}
+                          deckCardView={deckCardView}
+                          advancedDeckControlsEnabled={advancedDeckControlsEnabled}
+                          editingAssignmentCardId={editingAssignmentCardId}
+                          updatingAssignmentCardId={updatingAssignmentCardId}
+                          updatingDeckCardId={updatingDeckCardId}
+                          maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                          onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`battlefield:${cardId}`, value)}
+                          onApplyBatchQuantity={(cardId, direction) => onApplyDeckBatchQuantity(selectedDeck.id, cardId, `battlefield:${cardId}`, direction)}
+                          onToggleAssignmentEditor={onToggleAssignmentEditor}
+                          onAdjustCoverage={onAdjustCoverage}
+                          onAdjustQuantity={(cardId, delta) => onAdjustDeckQuantity(selectedDeck.id, cardId, delta)}
+                          onMoveToConsidering={(cardId) => onMoveDeckCardToConsidering(
+                            selectedDeck.id,
+                            cardId,
+                            Math.min(commitDeckActionQuantity(`battlefield:${cardId}`), Number(card.quantity) || 1),
+                          )}
+                          onOpenCard={onOpenCard}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty-state subtle-empty">
+                      <p>Todavia no has anadido battlefields al mazo.</p>
+                    </div>
+                  )}
+                </section>
+              </>
             )}
 
             <section className="deck-considering-section panel">
