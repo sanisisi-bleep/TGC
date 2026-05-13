@@ -250,6 +250,23 @@ function AppShell({
                 }
               />
               <Route
+                path="/decks/:deckId/editor"
+                element={
+                  <ProtectedGameRoute
+                    isBlocked={shouldBlockProtectedGameRoutes}
+                    fallback={protectedGameFallback}
+                    resetKey={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
+                  >
+                    <Decks
+                      key={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
+                      activeTcgSlug={activeTcgSlug}
+                      activeTgc={activeTgc}
+                      isGuestDemo={!isAuthenticated}
+                    />
+                  </ProtectedGameRoute>
+                }
+              />
+              <Route
                 path="/decks"
                 element={
                   <ProtectedGameRoute

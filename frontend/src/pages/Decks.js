@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import CardDetailModal from '../components/cards/CardDetailModal';
-import DeckAdvancedEditorModal from '../components/decks/DeckAdvancedEditorModal';
+import DeckAdvancedEditorPage from '../components/decks/DeckAdvancedEditorPage';
 import DeckDetailModal from '../components/decks/DeckDetailModal';
 import DeckImportPanel from '../components/decks/DeckImportPanel';
 import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
@@ -72,7 +72,6 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const [cloningDeckId, setCloningDeckId] = useState(null);
   const [sharingDeckId, setSharingDeckId] = useState(null);
   const [renamingDeckId, setRenamingDeckId] = useState(null);
-  const [isAdvancedEditorOpen, setIsAdvancedEditorOpen] = useState(false);
   const [importingDeck, setImportingDeck] = useState(false);
   const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
   const [importDeckName, setImportDeckName] = useState('');
@@ -83,19 +82,26 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const [updatingConsideringCardId, setUpdatingConsideringCardId] = useState(null);
   const [movingConsideringCardId, setMovingConsideringCardId] = useState(null);
   const [deckListPreview, setDeckListPreview] = useState(null);
+  const { deckId: editorRouteDeckId = null } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const isEditorRoute = Boolean(editorRouteDeckId);
+  const hasEditorRouteAccess = !isGuestDemo
+    && isEditorRoute
+    && location.state?.deckEditorAccess === true
+    && String(location.state?.deckId) === String(editorRouteDeckId);
+  const detailDeckId = isEditorRoute ? editorRouteDeckId : selectedDeckId;
 
   const deckListQuery = useQuery({
     queryKey: queryKeys.decks(activeTgc?.id),
     queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
-    enabled: Boolean(activeTgc?.id && !isGuestDemo),
+    enabled: Boolean(activeTgc?.id && !isGuestDemo && !isEditorRoute),
     staleTime: QUERY_STALE_TIMES.decks,
   });
   const selectedDeckQuery = useQuery({
-    queryKey: queryKeys.deckDetail(selectedDeckId),
-    queryFn: ({ signal }) => getDeckDetail(selectedDeckId, signal),
-    enabled: Boolean(selectedDeckId && !isGuestDemo),
+    queryKey: queryKeys.deckDetail(detailDeckId),
+    queryFn: ({ signal }) => getDeckDetail(detailDeckId, signal),
+    enabled: Boolean(detailDeckId && !isGuestDemo),
     staleTime: QUERY_STALE_TIMES.deckDetail,
   });
 
@@ -105,7 +111,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   );
   const decks = isGuestDemo ? demoDecks : (deckListQuery.data || []);
   const selectedDeck = isGuestDemo
-    ? decks.find((deck) => deck.id === selectedDeckId) || null
+    ? decks.find((deck) => String(deck.id) === String(detailDeckId)) || null
     : (selectedDeckQuery.data || null);
   const advancedMode = Boolean(profile?.advanced_mode);
   const advancedDeckControlsEnabled = !isGuestDemo && Boolean(
@@ -142,11 +148,10 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   }, [selectedDeck?.name]);
 
   useEffect(() => {
-    if (!selectedDeckId) {
+    if (!selectedDeckId && !isEditorRoute) {
       resetDeckActionQuantityDrafts();
-      setIsAdvancedEditorOpen(false);
     }
-  }, [resetDeckActionQuantityDrafts, selectedDeckId]);
+  }, [isEditorRoute, resetDeckActionQuantityDrafts, selectedDeckId]);
 
   useEffect(() => {
     const deckId = location.state?.openDeckId;
@@ -157,6 +162,20 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     setSelectedDeckId(deckId);
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.pathname, location.state, navigate]);
+
+  useEffect(() => {
+    if (!isEditorRoute) {
+      return;
+    }
+
+    if (hasEditorRouteAccess) {
+      return;
+    }
+
+    setSelectedCard(null);
+    setSelectedDeckId(null);
+    navigate('/decks', { replace: true });
+  }, [hasEditorRouteAccess, isEditorRoute, navigate]);
 
   const deckQueryErrors = useMemo(
     () => [deckListQuery.error, selectedDeckQuery.error],
@@ -827,17 +846,40 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   };
 
   const closeDeckDetails = () => {
-    setIsAdvancedEditorOpen(false);
     setSelectedCard(null);
     setSelectedDeckId(null);
   };
 
   const openAdvancedEditor = () => {
-    setIsAdvancedEditorOpen(true);
+    if (!selectedDeck?.id) {
+      return;
+    }
+
+    navigate(`/decks/${selectedDeck.id}/editor`, {
+      state: {
+        deckEditorAccess: true,
+        deckId: selectedDeck.id,
+      },
+    });
+  };
+
+  const closeAdvancedEditorToDetail = () => {
+    if (!selectedDeck?.id) {
+      navigate('/decks');
+      return;
+    }
+
+    navigate('/decks', {
+      state: {
+        openDeckId: selectedDeck.id,
+      },
+    });
   };
 
   const closeAdvancedEditor = () => {
-    setIsAdvancedEditorOpen(false);
+    setSelectedCard(null);
+    setSelectedDeckId(null);
+    navigate('/decks');
   };
 
   const addDeckCardFromEditor = (cardId, quantity) => {
@@ -864,6 +906,60 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
           </div>
         </section>
       </div>
+    );
+  }
+
+  if (isEditorRoute) {
+    if (!hasEditorRouteAccess) {
+      return null;
+    }
+
+    if (!selectedDeck && selectedDeckQuery.isPending) {
+      return (
+        <div className="decks page-shell">
+          <section className="page-hero decks-hero deck-editor-hero">
+            <div>
+              <span className="eyebrow">Editor avanzado</span>
+              <h1>Cargando mazo...</h1>
+              <p>Preparando el editor de {activeGame.shortName} con tus cartas y reglas actuales.</p>
+            </div>
+          </section>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <DeckAdvancedEditorPage
+          selectedDeck={selectedDeck}
+          selectedDeckDistinctCards={selectedDeckDistinctCards}
+          selectedDeckSummary={selectedDeckSummary}
+          selectedDeckConsideringTotal={selectedDeckConsideringTotal}
+          selectedDeckEggCount={selectedDeckEggCount}
+          selectedDeckIsDigimon={selectedDeckIsDigimon}
+          activeGame={activeGame}
+          activeTgc={activeTgc}
+          deckStats={deckStats}
+          addingDeckCardId={addingDeckCardId}
+          onAddCardToDeck={addDeckCardFromEditor}
+          updatingDeckCardId={updatingDeckCardId}
+          updatingConsideringCardId={updatingConsideringCardId}
+          movingConsideringCardId={movingConsideringCardId}
+          onAdjustDeckQuantity={adjustDeckCardQuantity}
+          onAdjustConsideringQuantity={adjustConsideringQuantity}
+          onMoveDeckCardToConsidering={moveDeckCardToConsideringHandler}
+          onMoveConsideringCardToDeck={moveConsideringCardToDeckHandler}
+          onOpenCard={setSelectedCard}
+          onBackToDetail={closeAdvancedEditorToDetail}
+          onClose={closeAdvancedEditor}
+        />
+
+        <CardDetailModal
+          card={selectedCard}
+          activeTcgSlug={activeTcgSlug}
+          onClose={() => setSelectedCard(null)}
+        />
+      </>
     );
   }
 
@@ -955,7 +1051,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       </section>
 
       <DeckDetailModal
-        isOpen={Boolean(selectedDeckId) && !isAdvancedEditorOpen}
+        isOpen={Boolean(selectedDeckId)}
         isLoading={!isGuestDemo && selectedDeckQuery.isPending}
         isGuestDemo={isGuestDemo}
         selectedDeck={selectedDeck}
@@ -1000,32 +1096,6 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         onAdjustConsideringQuantity={adjustConsideringQuantity}
         onMoveConsideringCardToDeck={moveConsideringCardToDeckHandler}
         onOpenCard={setSelectedCard}
-      />
-
-      <DeckAdvancedEditorModal
-        isOpen={Boolean(selectedDeckId) && isAdvancedEditorOpen}
-        selectedDeck={selectedDeck}
-        selectedDeckDistinctCards={selectedDeckDistinctCards}
-        selectedDeckSummary={selectedDeckSummary}
-        selectedDeckConsideringTotal={selectedDeckConsideringTotal}
-        selectedDeckEggCount={selectedDeckEggCount}
-        selectedDeckIsOnePiece={selectedDeckIsOnePiece}
-        selectedDeckIsDigimon={selectedDeckIsDigimon}
-        activeGame={activeGame}
-        activeTgc={activeTgc}
-        deckStats={deckStats}
-        addingDeckCardId={addingDeckCardId}
-        onAddCardToDeck={addDeckCardFromEditor}
-        updatingDeckCardId={updatingDeckCardId}
-        updatingConsideringCardId={updatingConsideringCardId}
-        movingConsideringCardId={movingConsideringCardId}
-        onAdjustDeckQuantity={adjustDeckCardQuantity}
-        onAdjustConsideringQuantity={adjustConsideringQuantity}
-        onMoveDeckCardToConsidering={moveDeckCardToConsideringHandler}
-        onMoveConsideringCardToDeck={moveConsideringCardToDeckHandler}
-        onOpenCard={setSelectedCard}
-        onBackToDetail={closeAdvancedEditor}
-        onClose={closeDeckDetails}
       />
 
       <CardDetailModal

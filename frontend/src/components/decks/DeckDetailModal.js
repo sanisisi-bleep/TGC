@@ -159,10 +159,9 @@ function DeckDetailModal({
               </div>
               <DeckDetailActions
                 isGuestDemo={isGuestDemo}
-                isAdvancedEditorOpen={false}
                 onOpenList={() => onOpenDeckList(selectedDeck)}
                 onExportJson={() => onExportDeck(selectedDeck)}
-                onToggleAdvancedEditor={onOpenAdvancedEditor}
+                onOpenAdvancedEditor={onOpenAdvancedEditor}
                 onShare={() => onShareDeck(selectedDeck)}
                 onClone={() => onCloneDeck(selectedDeck.id)}
                 onDelete={() => onDeleteDeck(selectedDeck.id, selectedDeck.name)}

@@ -2,10 +2,9 @@ import React from 'react';
 
 function DeckDetailActions({
   isGuestDemo = false,
-  isAdvancedEditorOpen = false,
   onOpenList,
   onExportJson,
-  onToggleAdvancedEditor,
+  onOpenAdvancedEditor,
   onShare,
   onClone,
   onDelete,
@@ -76,9 +75,9 @@ function DeckDetailActions({
           <button
             type="button"
             className="deck-action-button is-primary"
-            onClick={onToggleAdvancedEditor}
+            onClick={onOpenAdvancedEditor}
           >
-            {isAdvancedEditorOpen ? 'Volver al detalle' : 'Abrir editor avanzado'}
+            Abrir editor avanzado
           </button>
           <button
             type="button"
