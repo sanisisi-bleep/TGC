@@ -169,6 +169,7 @@ def clean_multiline_text(text):
 def normalize_image_url(url):
     cleaned = clean_text(url)
     if not cleaned:
+        
         return ""
 
     if "images.weserv.nl" in cleaned:

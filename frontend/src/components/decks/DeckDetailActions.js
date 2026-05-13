@@ -2,8 +2,10 @@ import React from 'react';
 
 function DeckDetailActions({
   isGuestDemo = false,
+  isAdvancedEditorOpen = false,
   onOpenList,
   onExportJson,
+  onToggleAdvancedEditor,
   onShare,
   onClone,
   onDelete,
@@ -71,6 +73,13 @@ function DeckDetailActions({
       <div className="deck-action-group">
         <span className="deck-action-group-label">Gestion del mazo</span>
         <div className="deck-action-strip">
+          <button
+            type="button"
+            className="deck-action-button is-primary"
+            onClick={onToggleAdvancedEditor}
+          >
+            {isAdvancedEditorOpen ? 'Volver al detalle' : 'Editor avanzado'}
+          </button>
           <button
             type="button"
             className="deck-action-button is-soft"

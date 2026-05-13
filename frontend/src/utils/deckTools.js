@@ -491,7 +491,7 @@ export const getSearchDeckOptionState = ({ activeTcgSlug, deck, card, quantity }
   if (activeTcgSlug === 'digimon') {
     const mainDeckCards = Number(deck?.main_deck_cards) || 0;
     const requiredMainDeckCards = Number(deck?.required_main_deck_cards) || rules.requiredMainDeckCards || 50;
-    const eggCards = Number(deck?.egg_cards) || 0;
+    const eggCards = getDeckEggCardCount(deck);
     const maxEggCards = Number(deck?.max_egg_cards) || rules.maxEggCards || 5;
     const summary = buildDigimonSearchDeckSummary(deck, rules);
 

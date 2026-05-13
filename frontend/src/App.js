@@ -96,6 +96,7 @@ function AppShell({
     authReady,
     isAuthenticated,
     logout,
+    profile,
     refreshSession,
   } = useSession();
   const { showToast } = useToast();
@@ -161,6 +162,7 @@ function AppShell({
 
   const activeGame = getGameConfig(activeTcgSlug);
   const activeTgc = tgcBySlug[activeTcgSlug] || null;
+  const authRouteScope = isAuthenticated ? `auth-${profile?.id || 'session'}` : 'guest';
   const availableGames = useMemo(() => buildAvailableGames(tgcBySlug), [tgcBySlug]);
   const fallbackGames = useMemo(
     () => Object.values(GAME_CONFIGS).filter((game) => game.available),
@@ -219,10 +221,10 @@ function AppShell({
                   <ProtectedGameRoute
                     isBlocked={shouldBlockProtectedGameRoutes}
                     fallback={protectedGameFallback}
-                    resetKey={`search-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                    resetKey={`search-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
                   >
                     <Search
-                      key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                      key={`search-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
                       activeTcgSlug={activeTcgSlug}
                       activeTgc={activeTgc}
                       isGuestDemo={!isAuthenticated}
@@ -236,10 +238,10 @@ function AppShell({
                   <ProtectedGameRoute
                     isBlocked={shouldBlockProtectedGameRoutes}
                     fallback={protectedGameFallback}
-                    resetKey={`collection-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                    resetKey={`collection-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
                   >
                     <Collection
-                      key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                      key={`collection-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
                       activeTcgSlug={activeTcgSlug}
                       activeTgc={activeTgc}
                       isGuestDemo={!isAuthenticated}
@@ -253,10 +255,10 @@ function AppShell({
                   <ProtectedGameRoute
                     isBlocked={shouldBlockProtectedGameRoutes}
                     fallback={protectedGameFallback}
-                    resetKey={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                    resetKey={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
                   >
                     <Decks
-                      key={`${activeTcgSlug}-${activeTgc?.id || 'pending'}`}
+                      key={`decks-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`}
                       activeTcgSlug={activeTcgSlug}
                       activeTgc={activeTgc}
                       isGuestDemo={!isAuthenticated}

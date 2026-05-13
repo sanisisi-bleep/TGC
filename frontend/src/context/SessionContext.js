@@ -38,7 +38,9 @@ export function SessionProvider({ children }) {
   }, [markSessionAsLoggedOut, queryClient]);
 
   const refreshSession = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.sessionProfile() });
+    const profile = await getSessionProfile();
+    queryClient.setQueryData(queryKeys.sessionProfile(), profile);
+    return profile;
   }, [queryClient]);
 
   const logout = useCallback(async () => {

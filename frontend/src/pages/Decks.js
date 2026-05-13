@@ -36,6 +36,7 @@ import {
 import {
   adjustDeckAssignment,
   adjustConsideringCard,
+  addCardToDeck,
   adjustDeckCard,
   moveConsideringCardToDeck,
   moveDeckCardToConsidering,
@@ -70,10 +71,12 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const [cloningDeckId, setCloningDeckId] = useState(null);
   const [sharingDeckId, setSharingDeckId] = useState(null);
   const [renamingDeckId, setRenamingDeckId] = useState(null);
+  const [isAdvancedEditorOpen, setIsAdvancedEditorOpen] = useState(false);
   const [importingDeck, setImportingDeck] = useState(false);
   const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
   const [importDeckName, setImportDeckName] = useState('');
   const [importDeckText, setImportDeckText] = useState('');
+  const [addingDeckCardId, setAddingDeckCardId] = useState(null);
   const [updatingDeckCardId, setUpdatingDeckCardId] = useState(null);
   const [updatingAssignmentCardId, setUpdatingAssignmentCardId] = useState(null);
   const [updatingConsideringCardId, setUpdatingConsideringCardId] = useState(null);
@@ -140,6 +143,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   useEffect(() => {
     if (!selectedDeckId) {
       resetDeckActionQuantityDrafts();
+      setIsAdvancedEditorOpen(false);
     }
   }, [resetDeckActionQuantityDrafts, selectedDeckId]);
 
@@ -347,6 +351,46 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     },
     onSettled: () => {
       setRenamingDeckId(null);
+    },
+  });
+
+  const addDeckCardMutation = useMutation({
+    mutationFn: ({ deckId, cardId, quantity }) => addCardToDeck(deckId, {
+      card_id: cardId,
+      quantity,
+    }),
+    onSuccess: async (payload, variables) => {
+      syncCollectionDeckUsage({
+        cardId: variables.cardId,
+        quantity: payload?.quantity ?? variables.quantity,
+        assignedQuantity: payload?.assigned_quantity,
+        deckSection: payload?.deck_section || 'main',
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+        invalidateSearchDeckOptionsQuery(),
+        invalidateCollectionQuery(),
+      ]);
+      showToast({
+        type: 'success',
+        message: Number(variables.quantity) === 1
+          ? '1 copia agregada al mazo.'
+          : `${variables.quantity} copias agregadas al mazo.`,
+      });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo anadir la carta al mazo.'),
+      });
+    },
+    onSettled: () => {
+      setAddingDeckCardId(null);
     },
   });
 
@@ -782,8 +826,26 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   };
 
   const closeDeckDetails = () => {
+    setIsAdvancedEditorOpen(false);
     setSelectedCard(null);
     setSelectedDeckId(null);
+  };
+
+  const toggleAdvancedEditor = () => {
+    setIsAdvancedEditorOpen((current) => !current);
+  };
+
+  const addDeckCardFromEditor = (cardId, quantity) => {
+    if (!selectedDeck?.id) {
+      return;
+    }
+
+    setAddingDeckCardId(cardId);
+    addDeckCardMutation.mutate({
+      deckId: selectedDeck.id,
+      cardId,
+      quantity,
+    });
   };
 
   if (!isGuestDemo && deckListQuery.isPending && decks.length === 0) {
@@ -898,6 +960,8 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         selectedDeckEggCount={selectedDeckEggCount}
         selectedDeckIsOnePiece={selectedDeckIsOnePiece}
         selectedDeckIsDigimon={selectedDeckIsDigimon}
+        activeGame={activeGame}
+        activeTgc={activeTgc}
         deckCardView={deckCardView}
         onDeckCardViewChange={setDeckCardView}
         deckStats={deckStats}
@@ -908,12 +972,16 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         sharingDeckId={sharingDeckId}
         cloningDeckId={cloningDeckId}
         deletingDeckId={deletingDeckId}
+        isAdvancedEditorOpen={isAdvancedEditorOpen}
+        onToggleAdvancedEditor={toggleAdvancedEditor}
         onShareDeck={shareDeckHandler}
         onCloneDeck={cloneDeckHandler}
         onDeleteDeck={deleteDeckHandler}
         onClose={closeDeckDetails}
         onOpenDeckList={openDeckListPreview}
         onExportDeck={exportDeckHandler}
+        addingDeckCardId={addingDeckCardId}
+        onAddCardToDeck={addDeckCardFromEditor}
         advancedDeckControlsEnabled={advancedDeckControlsEnabled}
         editingAssignmentCardId={editingAssignmentCardId}
         updatingAssignmentCardId={updatingAssignmentCardId}
