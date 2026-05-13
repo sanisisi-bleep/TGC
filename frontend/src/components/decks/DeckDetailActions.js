@@ -78,7 +78,7 @@ function DeckDetailActions({
             className="deck-action-button is-primary"
             onClick={onToggleAdvancedEditor}
           >
-            {isAdvancedEditorOpen ? 'Volver al detalle' : 'Editor avanzado'}
+            {isAdvancedEditorOpen ? 'Volver al detalle' : 'Abrir editor avanzado'}
           </button>
           <button
             type="button"

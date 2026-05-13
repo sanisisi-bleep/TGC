@@ -1,5 +1,4 @@
 import React from 'react';
-import DeckAdvancedEditorPanel from './DeckAdvancedEditorPanel';
 import DeckCardRow from './DeckCardRow';
 import DeckConsideringRow from './DeckConsideringRow';
 import DeckDetailActions from './DeckDetailActions';
@@ -17,8 +16,6 @@ function DeckDetailModal({
   selectedDeckEggCount,
   selectedDeckIsOnePiece,
   selectedDeckIsDigimon,
-  activeGame,
-  activeTgc,
   deckCardView,
   onDeckCardViewChange,
   deckStats,
@@ -29,16 +26,13 @@ function DeckDetailModal({
   sharingDeckId,
   cloningDeckId,
   deletingDeckId,
-  isAdvancedEditorOpen,
-  onToggleAdvancedEditor,
+  onOpenAdvancedEditor,
   onShareDeck,
   onCloneDeck,
   onDeleteDeck,
   onClose,
   onOpenDeckList,
   onExportDeck,
-  addingDeckCardId,
-  onAddCardToDeck,
   advancedDeckControlsEnabled,
   editingAssignmentCardId,
   updatingAssignmentCardId,
@@ -70,7 +64,7 @@ function DeckDetailModal({
             <h2>Cargando mazo...</h2>
           </div>
         ) : selectedDeck ? (
-          <>
+          <div className="deck-detail-body">
             <div className="deck-detail-header">
               <div>
                 <span className="eyebrow">Detalle del mazo</span>
@@ -139,38 +133,36 @@ function DeckDetailModal({
                     </span>
                   )}
                 </div>
-                {!isAdvancedEditorOpen && (
-                  <div className="view-toggle deck-view-toggle" role="tablist" aria-label="Vista del mazo">
-                    <button
-                      type="button"
-                      className={deckCardView === 'detail' ? 'is-active' : ''}
-                      onClick={() => onDeckCardViewChange('detail')}
-                    >
-                      Ficha
-                    </button>
-                    <button
-                      type="button"
-                      className={deckCardView === 'grid' ? 'is-active' : ''}
-                      onClick={() => onDeckCardViewChange('grid')}
-                    >
-                      Cuadricula
-                    </button>
-                    <button
-                      type="button"
-                      className={deckCardView === 'inventory' ? 'is-active' : ''}
-                      onClick={() => onDeckCardViewChange('inventory')}
-                    >
-                      Solo copias
-                    </button>
-                  </div>
-                )}
+                <div className="view-toggle deck-view-toggle" role="tablist" aria-label="Vista del mazo">
+                  <button
+                    type="button"
+                    className={deckCardView === 'detail' ? 'is-active' : ''}
+                    onClick={() => onDeckCardViewChange('detail')}
+                  >
+                    Ficha
+                  </button>
+                  <button
+                    type="button"
+                    className={deckCardView === 'grid' ? 'is-active' : ''}
+                    onClick={() => onDeckCardViewChange('grid')}
+                  >
+                    Cuadricula
+                  </button>
+                  <button
+                    type="button"
+                    className={deckCardView === 'inventory' ? 'is-active' : ''}
+                    onClick={() => onDeckCardViewChange('inventory')}
+                  >
+                    Solo copias
+                  </button>
+                </div>
               </div>
               <DeckDetailActions
                 isGuestDemo={isGuestDemo}
-                isAdvancedEditorOpen={isAdvancedEditorOpen}
+                isAdvancedEditorOpen={false}
                 onOpenList={() => onOpenDeckList(selectedDeck)}
                 onExportJson={() => onExportDeck(selectedDeck)}
-                onToggleAdvancedEditor={onToggleAdvancedEditor}
+                onToggleAdvancedEditor={onOpenAdvancedEditor}
                 onShare={() => onShareDeck(selectedDeck)}
                 onClone={() => onCloneDeck(selectedDeck.id)}
                 onDelete={() => onDeleteDeck(selectedDeck.id, selectedDeck.name)}
@@ -181,174 +173,151 @@ function DeckDetailModal({
               />
             </div>
 
-            {isAdvancedEditorOpen ? (
-              <DeckAdvancedEditorPanel
-                selectedDeck={selectedDeck}
-                activeTcgSlug={activeGame?.slug || 'gundam'}
-                activeTgc={activeTgc}
-                activeGame={activeGame}
-                selectedDeckIsOnePiece={selectedDeckIsOnePiece}
-                selectedDeckIsDigimon={selectedDeckIsDigimon}
-                addingDeckCardId={addingDeckCardId}
-                onAddCardToDeck={onAddCardToDeck}
-                updatingDeckCardId={updatingDeckCardId}
-                updatingConsideringCardId={updatingConsideringCardId}
-                movingConsideringCardId={movingConsideringCardId}
-                onAdjustDeckQuantity={onAdjustDeckQuantity}
-                onAdjustConsideringQuantity={onAdjustConsideringQuantity}
-                onMoveDeckCardToConsidering={onMoveDeckCardToConsidering}
-                onMoveConsideringCardToDeck={onMoveConsideringCardToDeck}
-                onOpenCard={onOpenCard}
-              />
-            ) : (
-              <>
-                <DeckStatsPanel stats={deckStats} />
+            <DeckStatsPanel stats={deckStats} />
 
-                <div
-                  className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}
-                >
-                  {(selectedDeck?.cards || []).map((card) => (
-                    <DeckCardRow
-                      key={card.id}
+            <div
+              className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}
+            >
+              {(selectedDeck?.cards || []).map((card) => (
+                <DeckCardRow
+                  key={card.id}
+                  card={card}
+                  isGuestDemo={isGuestDemo}
+                  actionQuantity={getDeckActionQuantity(`main:${card.id}`)}
+                  deckCardView={deckCardView}
+                  advancedDeckControlsEnabled={advancedDeckControlsEnabled}
+                  editingAssignmentCardId={editingAssignmentCardId}
+                  updatingAssignmentCardId={updatingAssignmentCardId}
+                  updatingDeckCardId={updatingDeckCardId}
+                  maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                  onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`main:${cardId}`, value)}
+                  onApplyBatchQuantity={(cardId, direction) => onApplyDeckBatchQuantity(selectedDeck.id, cardId, `main:${cardId}`, direction)}
+                  onToggleAssignmentEditor={onToggleAssignmentEditor}
+                  onAdjustCoverage={onAdjustCoverage}
+                  onAdjustQuantity={(cardId, delta) => onAdjustDeckQuantity(selectedDeck.id, cardId, delta)}
+                  onMoveToConsidering={(cardId) => onMoveDeckCardToConsidering(
+                    selectedDeck.id,
+                    cardId,
+                    Math.min(commitDeckActionQuantity(`main:${cardId}`), Number(card.quantity) || 1),
+                  )}
+                  onOpenCard={onOpenCard}
+                />
+              ))}
+            </div>
+
+            {(selectedDeck?.cards || []).length === 0 && (
+              <div className="empty-state subtle-empty">
+                <p>Este mazo todavia no tiene cartas.</p>
+              </div>
+            )}
+
+            {selectedDeckIsDigimon && (
+              <section className="deck-considering-section panel">
+                <div className="deck-considering-header">
+                  <div>
+                    <span className="eyebrow">Digi-Egg Deck</span>
+                    <h3>Huevos del mazo</h3>
+                    <p>
+                      Esta seccion no entra en la mano inicial y se valida aparte del main deck.
+                    </p>
+                  </div>
+                  <div className="deck-status-row">
+                    <span className="deck-status-chip deck-progress-chip">
+                      {selectedDeck?.egg_unique_cards || 0} distintas
+                    </span>
+                    <span className="deck-status-chip deck-progress-chip">
+                      {selectedDeck?.egg_total_cards || 0} copias
+                    </span>
+                  </div>
+                </div>
+
+                {(selectedDeck?.egg_cards || []).length > 0 ? (
+                  <div
+                    className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}
+                  >
+                    {(selectedDeck?.egg_cards || []).map((card) => (
+                      <DeckCardRow
+                        key={`egg-${card.id}`}
+                        card={card}
+                        isGuestDemo={isGuestDemo}
+                        actionQuantity={getDeckActionQuantity(`egg:${card.id}`)}
+                        deckCardView={deckCardView}
+                        advancedDeckControlsEnabled={advancedDeckControlsEnabled}
+                        editingAssignmentCardId={editingAssignmentCardId}
+                        updatingAssignmentCardId={updatingAssignmentCardId}
+                        updatingDeckCardId={updatingDeckCardId}
+                        maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                        onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`egg:${cardId}`, value)}
+                        onApplyBatchQuantity={(cardId, direction) => onApplyDeckBatchQuantity(selectedDeck.id, cardId, `egg:${cardId}`, direction)}
+                        onToggleAssignmentEditor={onToggleAssignmentEditor}
+                        onAdjustCoverage={onAdjustCoverage}
+                        onAdjustQuantity={(cardId, delta) => onAdjustDeckQuantity(selectedDeck.id, cardId, delta)}
+                        onMoveToConsidering={(cardId) => onMoveDeckCardToConsidering(
+                          selectedDeck.id,
+                          cardId,
+                          Math.min(commitDeckActionQuantity(`egg:${cardId}`), Number(card.quantity) || 1),
+                        )}
+                        onOpenCard={onOpenCard}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state subtle-empty">
+                    <p>Todavia no has anadido cartas al Digi-Egg Deck.</p>
+                  </div>
+                )}
+              </section>
+            )}
+
+            <section className="deck-considering-section panel">
+              <div className="deck-considering-header">
+                <div>
+                  <span className="eyebrow">Considering</span>
+                  <h3>Cartas en observacion</h3>
+                  <p>
+                    Guarda aqui pruebas y opciones sin que cuenten para la lista principal,
+                    la curva ni la mano inicial.
+                  </p>
+                </div>
+                <div className="deck-status-row">
+                  <span className="deck-status-chip deck-progress-chip">
+                    {selectedDeck?.considering_unique_cards || 0} distintas
+                  </span>
+                  <span className="deck-status-chip deck-progress-chip">
+                    {selectedDeckConsideringTotal} copias
+                  </span>
+                </div>
+              </div>
+
+              {(selectedDeck?.considering_cards || []).length > 0 ? (
+                <div className="deck-considering-list">
+                  {(selectedDeck?.considering_cards || []).map((card) => (
+                    <DeckConsideringRow
+                      key={`considering-${card.id}`}
                       card={card}
                       isGuestDemo={isGuestDemo}
-                      actionQuantity={getDeckActionQuantity(`main:${card.id}`)}
-                      deckCardView={deckCardView}
-                      advancedDeckControlsEnabled={advancedDeckControlsEnabled}
-                      editingAssignmentCardId={editingAssignmentCardId}
-                      updatingAssignmentCardId={updatingAssignmentCardId}
-                      updatingDeckCardId={updatingDeckCardId}
-                      maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
-                      onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`main:${cardId}`, value)}
-                      onApplyBatchQuantity={(cardId, direction) => onApplyDeckBatchQuantity(selectedDeck.id, cardId, `main:${cardId}`, direction)}
-                      onToggleAssignmentEditor={onToggleAssignmentEditor}
-                      onAdjustCoverage={onAdjustCoverage}
-                      onAdjustQuantity={(cardId, delta) => onAdjustDeckQuantity(selectedDeck.id, cardId, delta)}
-                      onMoveToConsidering={(cardId) => onMoveDeckCardToConsidering(
+                      actionQuantity={getDeckActionQuantity(`considering:${card.id}`)}
+                      movingConsideringCardId={movingConsideringCardId}
+                      updatingConsideringCardId={updatingConsideringCardId}
+                      onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`considering:${cardId}`, value)}
+                      onApplyBatchQuantity={(cardId, direction) => onApplyConsideringBatchQuantity(selectedDeck.id, cardId, `considering:${cardId}`, direction)}
+                      onAdjustQuantity={(cardId, delta) => onAdjustConsideringQuantity(selectedDeck.id, cardId, delta)}
+                      onMoveToMainDeck={(cardId) => onMoveConsideringCardToDeck(
                         selectedDeck.id,
                         cardId,
-                        Math.min(commitDeckActionQuantity(`main:${cardId}`), Number(card.quantity) || 1),
+                        Math.min(commitDeckActionQuantity(`considering:${cardId}`), Number(card.quantity) || 1),
                       )}
                       onOpenCard={onOpenCard}
                     />
                   ))}
                 </div>
-
-                {(selectedDeck?.cards || []).length === 0 && (
-                  <div className="empty-state subtle-empty">
-                    <p>Este mazo todavia no tiene cartas.</p>
-                  </div>
-                )}
-
-                {selectedDeckIsDigimon && (
-                  <section className="deck-considering-section panel">
-                    <div className="deck-considering-header">
-                      <div>
-                        <span className="eyebrow">Digi-Egg Deck</span>
-                        <h3>Huevos del mazo</h3>
-                        <p>
-                          Esta seccion no entra en la mano inicial y se valida aparte del main deck.
-                        </p>
-                      </div>
-                      <div className="deck-status-row">
-                        <span className="deck-status-chip deck-progress-chip">
-                          {selectedDeck?.egg_unique_cards || 0} distintas
-                        </span>
-                        <span className="deck-status-chip deck-progress-chip">
-                          {selectedDeck?.egg_total_cards || 0} copias
-                        </span>
-                      </div>
-                    </div>
-
-                    {(selectedDeck?.egg_cards || []).length > 0 ? (
-                      <div
-                        className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}
-                      >
-                        {(selectedDeck?.egg_cards || []).map((card) => (
-                          <DeckCardRow
-                            key={`egg-${card.id}`}
-                            card={card}
-                            isGuestDemo={isGuestDemo}
-                            actionQuantity={getDeckActionQuantity(`egg:${card.id}`)}
-                            deckCardView={deckCardView}
-                            advancedDeckControlsEnabled={advancedDeckControlsEnabled}
-                            editingAssignmentCardId={editingAssignmentCardId}
-                            updatingAssignmentCardId={updatingAssignmentCardId}
-                            updatingDeckCardId={updatingDeckCardId}
-                            maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
-                            onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`egg:${cardId}`, value)}
-                            onApplyBatchQuantity={(cardId, direction) => onApplyDeckBatchQuantity(selectedDeck.id, cardId, `egg:${cardId}`, direction)}
-                            onToggleAssignmentEditor={onToggleAssignmentEditor}
-                            onAdjustCoverage={onAdjustCoverage}
-                            onAdjustQuantity={(cardId, delta) => onAdjustDeckQuantity(selectedDeck.id, cardId, delta)}
-                            onMoveToConsidering={(cardId) => onMoveDeckCardToConsidering(
-                              selectedDeck.id,
-                              cardId,
-                              Math.min(commitDeckActionQuantity(`egg:${cardId}`), Number(card.quantity) || 1),
-                            )}
-                            onOpenCard={onOpenCard}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="empty-state subtle-empty">
-                        <p>Todavia no has anadido cartas al Digi-Egg Deck.</p>
-                      </div>
-                    )}
-                  </section>
-                )}
-
-                <section className="deck-considering-section panel">
-                  <div className="deck-considering-header">
-                    <div>
-                      <span className="eyebrow">Considering</span>
-                      <h3>Cartas en observacion</h3>
-                      <p>
-                        Guarda aqui pruebas y opciones sin que cuenten para la lista principal,
-                        la curva ni la mano inicial.
-                      </p>
-                    </div>
-                    <div className="deck-status-row">
-                      <span className="deck-status-chip deck-progress-chip">
-                        {selectedDeck?.considering_unique_cards || 0} distintas
-                      </span>
-                      <span className="deck-status-chip deck-progress-chip">
-                        {selectedDeckConsideringTotal} copias
-                      </span>
-                    </div>
-                  </div>
-
-                  {(selectedDeck?.considering_cards || []).length > 0 ? (
-                    <div className="deck-considering-list">
-                      {(selectedDeck?.considering_cards || []).map((card) => (
-                        <DeckConsideringRow
-                          key={`considering-${card.id}`}
-                          card={card}
-                          isGuestDemo={isGuestDemo}
-                          actionQuantity={getDeckActionQuantity(`considering:${card.id}`)}
-                          movingConsideringCardId={movingConsideringCardId}
-                          updatingConsideringCardId={updatingConsideringCardId}
-                          onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`considering:${cardId}`, value)}
-                          onApplyBatchQuantity={(cardId, direction) => onApplyConsideringBatchQuantity(selectedDeck.id, cardId, `considering:${cardId}`, direction)}
-                          onAdjustQuantity={(cardId, delta) => onAdjustConsideringQuantity(selectedDeck.id, cardId, delta)}
-                          onMoveToMainDeck={(cardId) => onMoveConsideringCardToDeck(
-                            selectedDeck.id,
-                            cardId,
-                            Math.min(commitDeckActionQuantity(`considering:${cardId}`), Number(card.quantity) || 1),
-                          )}
-                          onOpenCard={onOpenCard}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="empty-state subtle-empty">
-                      <p>Todavia no has guardado cartas en considering para este mazo.</p>
-                    </div>
-                  )}
-                </section>
-              </>
-            )}
-          </>
+              ) : (
+                <div className="empty-state subtle-empty">
+                  <p>Todavia no has guardado cartas en considering para este mazo.</p>
+                </div>
+              )}
+            </section>
+          </div>
         ) : (
           <div className="deck-detail-loading">
             <h2>No se pudo cargar el mazo.</h2>

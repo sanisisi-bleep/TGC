@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import CardDetailModal from '../components/cards/CardDetailModal';
+import DeckAdvancedEditorModal from '../components/decks/DeckAdvancedEditorModal';
 import DeckDetailModal from '../components/decks/DeckDetailModal';
 import DeckImportPanel from '../components/decks/DeckImportPanel';
 import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
@@ -831,8 +832,12 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     setSelectedDeckId(null);
   };
 
-  const toggleAdvancedEditor = () => {
-    setIsAdvancedEditorOpen((current) => !current);
+  const openAdvancedEditor = () => {
+    setIsAdvancedEditorOpen(true);
+  };
+
+  const closeAdvancedEditor = () => {
+    setIsAdvancedEditorOpen(false);
   };
 
   const addDeckCardFromEditor = (cardId, quantity) => {
@@ -950,7 +955,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       </section>
 
       <DeckDetailModal
-        isOpen={Boolean(selectedDeckId)}
+        isOpen={Boolean(selectedDeckId) && !isAdvancedEditorOpen}
         isLoading={!isGuestDemo && selectedDeckQuery.isPending}
         isGuestDemo={isGuestDemo}
         selectedDeck={selectedDeck}
@@ -960,8 +965,6 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         selectedDeckEggCount={selectedDeckEggCount}
         selectedDeckIsOnePiece={selectedDeckIsOnePiece}
         selectedDeckIsDigimon={selectedDeckIsDigimon}
-        activeGame={activeGame}
-        activeTgc={activeTgc}
         deckCardView={deckCardView}
         onDeckCardViewChange={setDeckCardView}
         deckStats={deckStats}
@@ -972,16 +975,13 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         sharingDeckId={sharingDeckId}
         cloningDeckId={cloningDeckId}
         deletingDeckId={deletingDeckId}
-        isAdvancedEditorOpen={isAdvancedEditorOpen}
-        onToggleAdvancedEditor={toggleAdvancedEditor}
+        onOpenAdvancedEditor={openAdvancedEditor}
         onShareDeck={shareDeckHandler}
         onCloneDeck={cloneDeckHandler}
         onDeleteDeck={deleteDeckHandler}
         onClose={closeDeckDetails}
         onOpenDeckList={openDeckListPreview}
         onExportDeck={exportDeckHandler}
-        addingDeckCardId={addingDeckCardId}
-        onAddCardToDeck={addDeckCardFromEditor}
         advancedDeckControlsEnabled={advancedDeckControlsEnabled}
         editingAssignmentCardId={editingAssignmentCardId}
         updatingAssignmentCardId={updatingAssignmentCardId}
@@ -1000,6 +1000,32 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         onAdjustConsideringQuantity={adjustConsideringQuantity}
         onMoveConsideringCardToDeck={moveConsideringCardToDeckHandler}
         onOpenCard={setSelectedCard}
+      />
+
+      <DeckAdvancedEditorModal
+        isOpen={Boolean(selectedDeckId) && isAdvancedEditorOpen}
+        selectedDeck={selectedDeck}
+        selectedDeckDistinctCards={selectedDeckDistinctCards}
+        selectedDeckSummary={selectedDeckSummary}
+        selectedDeckConsideringTotal={selectedDeckConsideringTotal}
+        selectedDeckEggCount={selectedDeckEggCount}
+        selectedDeckIsOnePiece={selectedDeckIsOnePiece}
+        selectedDeckIsDigimon={selectedDeckIsDigimon}
+        activeGame={activeGame}
+        activeTgc={activeTgc}
+        deckStats={deckStats}
+        addingDeckCardId={addingDeckCardId}
+        onAddCardToDeck={addDeckCardFromEditor}
+        updatingDeckCardId={updatingDeckCardId}
+        updatingConsideringCardId={updatingConsideringCardId}
+        movingConsideringCardId={movingConsideringCardId}
+        onAdjustDeckQuantity={adjustDeckCardQuantity}
+        onAdjustConsideringQuantity={adjustConsideringQuantity}
+        onMoveDeckCardToConsidering={moveDeckCardToConsideringHandler}
+        onMoveConsideringCardToDeck={moveConsideringCardToDeckHandler}
+        onOpenCard={setSelectedCard}
+        onBackToDetail={closeAdvancedEditor}
+        onClose={closeDeckDetails}
       />
 
       <CardDetailModal
