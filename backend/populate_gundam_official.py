@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 from app.env import load_environment
 from app.models import Card, DeckCard, DeckConsideringCard, DeckEggCard, GundamCard, Tgc, UserCollection
-from app.services.game_rules import GUNDAM_TGC_NAME
+from app.services.game_rules import GUNDAM_TCG_NAME, get_tgc_name_aliases
 
 load_environment()
 
@@ -785,11 +785,23 @@ def scrape_gundam_cards():
 
 
 def ensure_tgc(db):
-    tgc = db.query(Tgc).filter(Tgc.name == GUNDAM_TGC_NAME).first()
+    alias_names = {alias.lower() for alias in get_tgc_name_aliases(GUNDAM_TCG_NAME)}
+    tgc = next(
+        (
+            item for item in db.query(Tgc).all()
+            if (item.name or "").strip().lower() in alias_names
+        ),
+        None,
+    )
     if tgc:
+        if tgc.name != GUNDAM_TCG_NAME:
+            tgc.name = GUNDAM_TCG_NAME
+        if tgc.description != "Gundam Card Game":
+            tgc.description = "Gundam Card Game"
+        db.commit()
         return tgc
 
-    tgc = Tgc(name=GUNDAM_TGC_NAME, description="Gundam Card Game")
+    tgc = Tgc(name=GUNDAM_TCG_NAME, description="Gundam Card Game")
     db.add(tgc)
     db.commit()
     db.refresh(tgc)
@@ -1006,7 +1018,7 @@ def main():
         if POPULATE_FETCH_ONLY:
             print("")
             print("Fetch-only summary")
-            print(f"- TCG: {GUNDAM_TGC_NAME}")
+            print(f"- TCG: {GUNDAM_TCG_NAME}")
             print(f"- Cards collected: {len(scraped_cards)}")
             print(f"- Deduplicated exact repeats: {duplicate_count}")
             print(f"- Failed targets: {len(failed_targets)}")
@@ -1017,7 +1029,7 @@ def main():
 
         print("")
         print("Populate summary")
-        print(f"- TCG: {GUNDAM_TGC_NAME}")
+        print(f"- TCG: {GUNDAM_TCG_NAME}")
         print(f"- Inserted: {result['inserted']}")
         print(f"- Updated: {result['updated']}")
         print(f"- Existing not seen in this run: {result['stale']}")

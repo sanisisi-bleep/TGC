@@ -435,6 +435,58 @@ function DeckDetailModal({
                     </div>
                   )}
                 </section>
+
+                <section className="deck-considering-section panel">
+                  <div className="deck-considering-header">
+                    <div>
+                      <span className="eyebrow">Sideboard</span>
+                      <h3>Sideboard competitivo</h3>
+                      <p>Zona opcional para ajustes de torneo sin tocar las 40 cartas del Main Deck.</p>
+                    </div>
+                    <div className="deck-status-row">
+                      <span className="deck-status-chip deck-progress-chip">
+                        {selectedDeck?.sideboard_unique_cards || 0} distintas
+                      </span>
+                      <span className="deck-status-chip deck-progress-chip">
+                        {selectedDeck?.sideboard_total_cards || 0}/{selectedDeck?.max_sideboard_cards || 8} copias
+                      </span>
+                    </div>
+                  </div>
+
+                  {(selectedDeck?.sideboard_cards_data || []).length > 0 ? (
+                    <div className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}>
+                      {(selectedDeck?.sideboard_cards_data || []).map((card) => (
+                        <DeckCardRow
+                          key={`sideboard-${card.id}`}
+                          card={card}
+                          isGuestDemo={isGuestDemo}
+                          actionQuantity={getDeckActionQuantity(`sideboard:${card.id}`)}
+                          deckCardView={deckCardView}
+                          advancedDeckControlsEnabled={advancedDeckControlsEnabled}
+                          editingAssignmentCardId={editingAssignmentCardId}
+                          updatingAssignmentCardId={updatingAssignmentCardId}
+                          updatingDeckCardId={updatingDeckCardId}
+                          maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                          onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`sideboard:${cardId}`, value)}
+                          onApplyBatchQuantity={(cardId, direction) => onApplyDeckBatchQuantity(selectedDeck.id, cardId, `sideboard:${cardId}`, direction)}
+                          onToggleAssignmentEditor={onToggleAssignmentEditor}
+                          onAdjustCoverage={onAdjustCoverage}
+                          onAdjustQuantity={(cardId, delta) => onAdjustDeckQuantity(selectedDeck.id, cardId, delta)}
+                          onMoveToConsidering={(cardId) => onMoveDeckCardToConsidering(
+                            selectedDeck.id,
+                            cardId,
+                            Math.min(commitDeckActionQuantity(`sideboard:${cardId}`), Number(card.quantity) || 1),
+                          )}
+                          onOpenCard={onOpenCard}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty-state subtle-empty">
+                      <p>Todavia no has anadido cartas al sideboard.</p>
+                    </div>
+                  )}
+                </section>
               </>
             )}
 

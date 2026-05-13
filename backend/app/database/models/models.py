@@ -197,14 +197,13 @@ class Deck(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     tgc_id = Column(Integer, ForeignKey("tgc.id"))
-    riftbound_chosen_champion_card_id = Column(Integer, ForeignKey("cards.id"))
+    riftbound_chosen_champion_card_id = Column(Integer)
     name = Column(String(100))
     share_token = Column(String(64), unique=True, index=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     user = relationship("User")
     tgc = relationship("Tgc")
-    riftbound_chosen_champion_card = relationship("Card", foreign_keys=[riftbound_chosen_champion_card_id])
 
 
 class DeckCard(Base):

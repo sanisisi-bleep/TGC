@@ -4,7 +4,7 @@ from collections import defaultdict
 
 from app.env import load_environment
 from app.models import Card, DeckCard, DeckConsideringCard, DeckEggCard, GundamCard, Tgc, UserCollection
-from app.services.game_rules import GUNDAM_TGC_NAME
+from app.services.game_rules import GUNDAM_TCG_NAME, get_tgc_name_aliases
 
 load_environment()
 
@@ -278,7 +278,14 @@ def find_target_card(current_card, detail_by_card_id, indexes):
 
 
 def get_gundam_tgc(db):
-    return db.query(Tgc).filter(Tgc.name == GUNDAM_TGC_NAME).first()
+    alias_names = {alias.lower() for alias in get_tgc_name_aliases(GUNDAM_TCG_NAME)}
+    return next(
+        (
+            item for item in db.query(Tgc).all()
+            if (item.name or "").strip().lower() in alias_names
+        ),
+        None,
+    )
 
 
 def build_reference_mapping(db, gundam_tgc_id):

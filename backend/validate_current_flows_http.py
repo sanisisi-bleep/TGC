@@ -7,7 +7,7 @@ import requests
 
 from app.services.game_rules import (
     DIGIMON_TCG_NAME,
-    GUNDAM_TGC_NAME,
+    GUNDAM_TCG_NAME,
     ONE_PIECE_TCG_NAME,
     get_digimon_card_role,
     get_gundam_colors,
@@ -69,7 +69,7 @@ def get_tgc_ids(session: requests.Session):
     available = {item["name"]: item["id"] for item in tgcs}
     required_names = (
         ONE_PIECE_TCG_NAME,
-        GUNDAM_TGC_NAME,
+        GUNDAM_TCG_NAME,
         DIGIMON_TCG_NAME,
     )
     mapping = {}
@@ -334,7 +334,7 @@ def assert_collection_and_settings_flow(
     gundam_card = gundam_flow["first_card"]
 
     collection_snapshots[leader["id"]] = snapshot_collection_card(session, tgc_ids[ONE_PIECE_TCG_NAME], leader["id"])
-    collection_snapshots[gundam_card["id"]] = snapshot_collection_card(session, tgc_ids[GUNDAM_TGC_NAME], gundam_card["id"])
+    collection_snapshots[gundam_card["id"]] = snapshot_collection_card(session, tgc_ids[GUNDAM_TCG_NAME], gundam_card["id"])
 
     op_add = request(session, "POST", "/collection", json={"card_id": leader["id"], "quantity": 4})
     expect_status(op_add, 200, "Adding One Piece leader copies to collection must work")
@@ -359,7 +359,7 @@ def assert_collection_and_settings_flow(
     expect_status(update_settings, 200, "Enabling advanced mode must work")
     expect(update_settings.json()["advanced_mode"] is True, "Advanced mode must remain enabled")
 
-    gundam_collection = get_collection(session, tgc_ids[GUNDAM_TGC_NAME])
+    gundam_collection = get_collection(session, tgc_ids[GUNDAM_TCG_NAME])
     gundam_entry = get_collection_entry(gundam_collection, gundam_card["id"])
     expect(gundam_entry is not None, "Gundam card must appear in collection after add")
     expected_gundam_available = collection_snapshots[gundam_card["id"]].available_quantity + 3
@@ -376,7 +376,7 @@ def assert_collection_and_settings_flow(
     )
     expect_status(assignment_down, 200, "Lowering assignment in advanced mode must work")
 
-    gundam_collection_released = get_collection(session, tgc_ids[GUNDAM_TGC_NAME])
+    gundam_collection_released = get_collection(session, tgc_ids[GUNDAM_TCG_NAME])
     gundam_entry_released = get_collection_entry(gundam_collection_released, gundam_card["id"])
     expect(
         int(gundam_entry_released["available_quantity"]) == collection_snapshots[gundam_card["id"]].available_quantity + 4,
@@ -399,7 +399,7 @@ def assert_collection_and_settings_flow(
     )
     expect_status(remove_card, 200, "Removing Gundam card from deck must work")
 
-    gundam_collection_removed = get_collection(session, tgc_ids[GUNDAM_TGC_NAME])
+    gundam_collection_removed = get_collection(session, tgc_ids[GUNDAM_TCG_NAME])
     gundam_entry_removed = get_collection_entry(gundam_collection_removed, gundam_card["id"])
     expect(
         int(gundam_entry_removed["available_quantity"]) == collection_snapshots[gundam_card["id"]].available_quantity + 4,
@@ -409,7 +409,7 @@ def assert_collection_and_settings_flow(
     add_back = request(session, "POST", f"/decks/{gundam_flow['deck_id']}/cards", json={"card_id": gundam_card["id"], "quantity": 1})
     expect_status(add_back, 200, "Adding Gundam card back to deck must work")
 
-    gundam_collection_restored = get_collection(session, tgc_ids[GUNDAM_TGC_NAME])
+    gundam_collection_restored = get_collection(session, tgc_ids[GUNDAM_TCG_NAME])
     gundam_entry_restored = get_collection_entry(gundam_collection_restored, gundam_card["id"])
     expect(
         int(gundam_entry_restored["available_quantity"]) == collection_snapshots[gundam_card["id"]].available_quantity + 3,
@@ -477,7 +477,7 @@ def main():
         one_piece_flow = assert_one_piece_flow(session, tgc_ids[ONE_PIECE_TCG_NAME], created_decks)
 
         print("STEP gundam")
-        gundam_flow = assert_gundam_flow(session, tgc_ids[GUNDAM_TGC_NAME], created_decks)
+        gundam_flow = assert_gundam_flow(session, tgc_ids[GUNDAM_TCG_NAME], created_decks)
 
         print("STEP digimon")
         assert_digimon_flow(session, tgc_ids[DIGIMON_TCG_NAME], created_decks)

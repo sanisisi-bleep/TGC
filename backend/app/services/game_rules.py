@@ -1,10 +1,37 @@
 import re
 
-GUNDAM_TGC_NAME = "Gundam TGC"
-ONE_PIECE_TCG_NAME = "One Piece TCG"
+GUNDAM_TCG_NAME = "Gundam Card Game"
+ONE_PIECE_TCG_NAME = "One Piece Card Game"
 MAGIC_TCG_NAME = "Magic: The Gathering"
 DIGIMON_TCG_NAME = "Digimon Card Game"
 RIFTBOUND_TCG_NAME = "Riftbound"
+
+TGC_NAME_ALIASES = {
+    GUNDAM_TCG_NAME: {
+        "gundam",
+        "gundam card game",
+        "gundam tcg",
+    },
+    ONE_PIECE_TCG_NAME: {
+        "one piece",
+        "one piece card game",
+        "one piece tcg",
+    },
+    DIGIMON_TCG_NAME: {
+        "digimon",
+        "digimon card game",
+        "digimon tcg",
+    },
+    MAGIC_TCG_NAME: {
+        "magic: the gathering",
+        "magic the gathering",
+        "magic",
+    },
+    RIFTBOUND_TCG_NAME: {
+        "riftbound",
+        "riftbound tcg",
+    },
+}
 
 GUNDAM_COLORS = ("Blue", "Green", "Red", "Purple", "White")
 ONE_PIECE_COLORS = ("Red", "Green", "Blue", "Purple", "Black", "Yellow")
@@ -43,7 +70,7 @@ DEFAULT_RULES = {
 
 
 TGC_RULES = {
-    GUNDAM_TGC_NAME: {
+    GUNDAM_TCG_NAME: {
         "deck_min_cards": 50,
         "deck_max_cards": 50,
         "max_copies_per_card": 4,
@@ -119,10 +146,51 @@ TGC_RULES = {
 }
 
 
+def normalize_tgc_name(value: str | None):
+    return re.sub(r"\s+", " ", (value or "").strip()).lower()
+
+
+def canonicalize_tgc_name(value: str | None):
+    normalized = normalize_tgc_name(value)
+    if not normalized:
+        return None
+
+    for canonical_name, aliases in TGC_NAME_ALIASES.items():
+        if normalized in aliases:
+            return canonical_name
+
+    return re.sub(r"\s+", " ", (value or "").strip()) or None
+
+
+def get_tgc_name_aliases(value: str | None):
+    canonical_name = canonicalize_tgc_name(value)
+    if not canonical_name:
+        return ()
+
+    aliases = TGC_NAME_ALIASES.get(canonical_name)
+    if not aliases:
+        return (canonical_name,)
+
+    ordered_aliases = [canonical_name]
+    for alias in sorted(aliases):
+        pretty_alias = re.sub(r"\s+", " ", alias).strip()
+        if pretty_alias.lower() == canonical_name.lower():
+            continue
+        if pretty_alias not in ordered_aliases:
+            ordered_aliases.append(pretty_alias)
+
+    return tuple(ordered_aliases)
+
+
+def is_tgc_name(value: str | None, expected_name: str | None):
+    return canonicalize_tgc_name(value) == canonicalize_tgc_name(expected_name)
+
+
 def get_tcg_rules(tgc_name: str | None):
-    if not tgc_name:
+    canonical_name = canonicalize_tgc_name(tgc_name)
+    if not canonical_name:
         return DEFAULT_RULES
-    return TGC_RULES.get(tgc_name, DEFAULT_RULES)
+    return TGC_RULES.get(canonical_name, DEFAULT_RULES)
 
 
 def normalize_card_type(card_type: str | None):

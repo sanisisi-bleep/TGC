@@ -9,7 +9,7 @@ import requests
 from app.env import load_environment
 from app.models import Card, Tgc, GundamCard, OnePieceCard, DeckCard, DeckConsideringCard, DeckEggCard, UserCollection
 from app.database.repositories.tgc_repository import TgcRepository
-from app.services.game_rules import GUNDAM_TGC_NAME, ONE_PIECE_TCG_NAME
+from app.services.game_rules import GUNDAM_TCG_NAME, ONE_PIECE_TCG_NAME, get_tgc_name_aliases
 
 load_environment()
 
@@ -104,7 +104,7 @@ APITCG_HEADERS = {
 
 TCG_CONFIG = {
     "gundam": {
-        "name": GUNDAM_TGC_NAME,
+        "name": GUNDAM_TCG_NAME,
         "description": "Gundam Card Game",
         "provider": "apitcg",
         "api_slug": "gundam",
@@ -239,9 +239,21 @@ def build_session(config):
 
 def ensure_tgc(db, config):
     tgc_repo = TgcRepository(db)
-    tgc = db.query(Tgc).filter(Tgc.name == config["name"]).first()
+    alias_names = {alias.lower() for alias in get_tgc_name_aliases(config["name"])}
+    tgc = next(
+        (
+            item for item in db.query(Tgc).all()
+            if (item.name or "").strip().lower() in alias_names
+        ),
+        None,
+    )
 
     if tgc:
+        if tgc.name != config["name"]:
+            tgc.name = config["name"]
+        if config["description"] and tgc.description != config["description"]:
+            tgc.description = config["description"]
+        db.commit()
         return tgc
 
     return tgc_repo.create(Tgc(name=config["name"], description=config["description"]))
@@ -325,7 +337,7 @@ def fetch_optcg_catalog(session, catalog):
 def build_gundam_card_data(api_card):
     code = normalize_source_card_code(api_card.get("code") or api_card.get("id"))
     set_info = api_card.get("set") or {}
-    set_name = clean_text(set_info.get("name") or api_card.get("getIt") or GUNDAM_TGC_NAME)
+    set_name = clean_text(set_info.get("name") or api_card.get("getIt") or GUNDAM_TCG_NAME)
     version = clean_text(set_info.get("id") or code.split("-")[0]).upper()
     description_parts = []
 

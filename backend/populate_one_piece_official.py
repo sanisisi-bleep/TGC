@@ -12,7 +12,7 @@ from pypdf import PdfReader
 
 from app.env import load_environment
 from app.models import Card, DeckCard, DeckConsideringCard, DeckEggCard, OnePieceCard, Tgc, UserCollection
-from app.services.game_rules import ONE_PIECE_TCG_NAME
+from app.services.game_rules import ONE_PIECE_TCG_NAME, get_tgc_name_aliases
 
 load_environment()
 
@@ -880,8 +880,20 @@ def scrape_one_piece_cards():
 
 
 def ensure_tgc(db):
-    tgc = db.query(Tgc).filter(Tgc.name == ONE_PIECE_TCG_NAME).first()
+    alias_names = {alias.lower() for alias in get_tgc_name_aliases(ONE_PIECE_TCG_NAME)}
+    tgc = next(
+        (
+            item for item in db.query(Tgc).all()
+            if (item.name or "").strip().lower() in alias_names
+        ),
+        None,
+    )
     if tgc:
+        if tgc.name != ONE_PIECE_TCG_NAME:
+            tgc.name = ONE_PIECE_TCG_NAME
+        if tgc.description != "One Piece Card Game":
+            tgc.description = "One Piece Card Game"
+        db.commit()
         return tgc
 
     tgc = Tgc(name=ONE_PIECE_TCG_NAME, description="One Piece Card Game")

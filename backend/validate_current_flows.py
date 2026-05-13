@@ -17,7 +17,7 @@ from app.database.connection import SessionLocal
 from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, User, UserCollection
 from app.services.game_rules import (
     DIGIMON_TCG_NAME,
-    GUNDAM_TGC_NAME,
+    GUNDAM_TCG_NAME,
     ONE_PIECE_TCG_NAME,
     get_digimon_card_role,
     get_gundam_colors,
@@ -238,7 +238,7 @@ def get_tgc_ids(session: requests.Session):
     tgcs = response.json()
     mapping = {item["name"]: item["id"] for item in tgcs}
     expect(ONE_PIECE_TCG_NAME in mapping, "One Piece TCG must exist in catalog")
-    expect(GUNDAM_TGC_NAME in mapping, "Gundam TGC must exist in catalog")
+    expect(GUNDAM_TCG_NAME in mapping, "Gundam TGC must exist in catalog")
     expect(DIGIMON_TCG_NAME in mapping, "Digimon Card Game must exist in catalog")
     return mapping
 

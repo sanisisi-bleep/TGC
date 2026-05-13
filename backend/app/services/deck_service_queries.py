@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy import func, literal
 
 from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, DeckZoneCard, Tgc, User, UserCollection
-from app.services.game_rules import GUNDAM_TGC_NAME, get_tcg_rules
+from app.services.game_rules import DEFAULT_RULES, GUNDAM_TCG_NAME, get_tcg_rules, get_tgc_name_aliases
 
 
 class DeckServiceQueryMixin:
@@ -103,20 +103,94 @@ class DeckServiceQueryMixin:
         return {tgc.id: tgc for tgc in tgcs}
 
     def _get_default_tgc(self):
-        tgc = self.db.query(Tgc).filter(Tgc.name == GUNDAM_TGC_NAME).first()
-        if tgc:
-            return tgc
+        alias_names = {alias.lower() for alias in get_tgc_name_aliases(GUNDAM_TCG_NAME)}
+        candidates = [
+            tgc for tgc in self.db.query(Tgc).all()
+            if (tgc.name or "").strip().lower() in alias_names
+        ]
+        if candidates:
+            card_counts = {
+                tgc_id: quantity
+                for tgc_id, quantity in (
+                    self.db.query(Card.tgc_id, func.count(Card.id))
+                    .group_by(Card.tgc_id)
+                    .all()
+                )
+                if tgc_id is not None
+            }
+            return max(
+                candidates,
+                key=lambda tgc: (
+                    int(card_counts.get(tgc.id, 0) > 0),
+                    card_counts.get(tgc.id, 0),
+                    int((tgc.name or "").strip() == GUNDAM_TCG_NAME),
+                    -tgc.id,
+                ),
+            )
 
-        tgc = Tgc(name=GUNDAM_TGC_NAME, description="Gundam Card Game")
+        tgc = Tgc(name=GUNDAM_TCG_NAME, description="Gundam Card Game")
         self.db.add(tgc)
         self.db.commit()
         self.db.refresh(tgc)
         return tgc
 
     def _resolve_deck_tgc(self, deck: Deck):
+        inferred_tgc = self._infer_deck_tgc_from_cards(deck.id)
+
         if deck.tgc_id:
-            return self.db.query(Tgc).filter(Tgc.id == deck.tgc_id).first()
+            tgc = self.db.query(Tgc).filter(Tgc.id == deck.tgc_id).first()
+            if tgc and get_tcg_rules(tgc.name) != DEFAULT_RULES:
+                return tgc
+            if inferred_tgc:
+                return inferred_tgc
+            return tgc
+
+        if inferred_tgc:
+            return inferred_tgc
+
         return self._get_default_tgc()
+
+    def _infer_deck_tgc_from_cards(self, deck_id: int):
+        tgc_counts: dict[int, int] = {}
+
+        deck_rows = (
+            self.db.query(Card.tgc_id, func.coalesce(func.sum(DeckCard.quantity), 0))
+            .join(DeckCard, DeckCard.card_id == Card.id)
+            .filter(DeckCard.deck_id == deck_id, Card.tgc_id.isnot(None))
+            .group_by(Card.tgc_id)
+            .all()
+        )
+        for tgc_id, quantity in deck_rows:
+            tgc_counts[tgc_id] = tgc_counts.get(tgc_id, 0) + int(quantity or 0)
+
+        egg_rows = (
+            self.db.query(Card.tgc_id, func.coalesce(func.sum(DeckEggCard.quantity), 0))
+            .join(DeckEggCard, DeckEggCard.card_id == Card.id)
+            .filter(DeckEggCard.deck_id == deck_id, Card.tgc_id.isnot(None))
+            .group_by(Card.tgc_id)
+            .all()
+        )
+        for tgc_id, quantity in egg_rows:
+            tgc_counts[tgc_id] = tgc_counts.get(tgc_id, 0) + int(quantity or 0)
+
+        zone_rows = (
+            self.db.query(Card.tgc_id, func.coalesce(func.sum(DeckZoneCard.quantity), 0))
+            .join(DeckZoneCard, DeckZoneCard.card_id == Card.id)
+            .filter(DeckZoneCard.deck_id == deck_id, Card.tgc_id.isnot(None))
+            .group_by(Card.tgc_id)
+            .all()
+        )
+        for tgc_id, quantity in zone_rows:
+            tgc_counts[tgc_id] = tgc_counts.get(tgc_id, 0) + int(quantity or 0)
+
+        if not tgc_counts:
+            return None
+
+        inferred_tgc_id = max(
+            tgc_counts.items(),
+            key=lambda item: (item[1], -item[0]),
+        )[0]
+        return self._get_tgc_by_id(inferred_tgc_id)
 
     def _generate_share_token(self):
         while True:

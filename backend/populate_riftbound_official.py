@@ -19,7 +19,7 @@ from app.models import (
     Tgc,
     UserCollection,
 )
-from app.services.game_rules import RIFTBOUND_TCG_NAME
+from app.services.game_rules import RIFTBOUND_TCG_NAME, get_tgc_name_aliases
 
 load_environment()
 
@@ -229,6 +229,21 @@ def extract_label_values(raw_values):
     return values
 
 
+def extract_keyword_values(item):
+    keyword_candidates = []
+    for key in ("keywords", "keyword", "abilities", "abilityKeywords"):
+        raw_value = item.get(key)
+        if isinstance(raw_value, dict):
+            keyword_candidates.extend(extract_label_values(raw_value.get("values") or raw_value.get("items") or raw_value.get("tags")))
+        elif isinstance(raw_value, list):
+            keyword_candidates.extend(extract_label_values(raw_value))
+    deduplicated = []
+    for keyword in keyword_candidates:
+        if keyword and keyword not in deduplicated:
+            deduplicated.append(keyword)
+    return deduplicated
+
+
 def build_card_type(item):
     card_type_data = item.get("cardType") or {}
     super_types = [value.title() for value in extract_label_values(card_type_data.get("superType"))]
@@ -368,6 +383,7 @@ def build_riftbound_record(item, banned_names):
     rarity_label = clip_text(((item.get("rarity") or {}).get("value") or {}).get("label"), RIFTBOUND_STRING_LIMITS["rarity"])
     card_type = build_card_type(item)
     tags = extract_label_values((item.get("tags") or {}).get("tags"))
+    keywords = extract_keyword_values(item)
     collector_number, variant_code = extract_collector_parts(public_code)
     description = clean_multiline_text((((item.get("text") or {}).get("richText") or {}).get("body")))
     image_url = clean_text(((item.get("cardImage") or {}).get("url")))
@@ -375,6 +391,7 @@ def build_riftbound_record(item, banned_names):
     is_battlefield = "Battlefield" in (card_type or "")
     is_legend = "Legend" in (card_type or "")
     is_champion = "Champion" in (card_type or "")
+    is_signature = any("signature" in value.lower() for value in [*tags, *keywords])
     champion_tag = infer_champion_tag(tags, domains, is_legend=is_legend, is_champion=is_champion)
     legality_status = "banned-standard" if clean_text(name).lower() in banned_names else "standard"
 
@@ -396,9 +413,9 @@ def build_riftbound_record(item, banned_names):
         "power_cost": to_int((((item.get("power") or {}).get("value") or {}).get("id"))),
         "might": to_int((((item.get("might") or {}).get("value") or {}).get("id"))),
         "tags": "\n".join(tags) if tags else None,
-        "keywords": None,
+        "keywords": "\n".join(keywords) if keywords else None,
         "champion_tag": champion_tag,
-        "is_signature": False,
+        "is_signature": is_signature,
         "is_rune": is_rune,
         "is_battlefield": is_battlefield,
         "is_legend": is_legend,
@@ -425,8 +442,20 @@ def should_prune_stale():
 
 
 def ensure_riftbound_tgc(db):
-    tgc = db.query(Tgc).filter(Tgc.name == RIFTBOUND_TCG_NAME).first()
+    alias_names = {alias.lower() for alias in get_tgc_name_aliases(RIFTBOUND_TCG_NAME)}
+    tgc = next(
+        (
+            item for item in db.query(Tgc).all()
+            if (item.name or "").strip().lower() in alias_names
+        ),
+        None,
+    )
     if tgc:
+        if tgc.name != RIFTBOUND_TCG_NAME:
+            tgc.name = RIFTBOUND_TCG_NAME
+        if tgc.description != "Riftbound":
+            tgc.description = "Riftbound"
+        db.commit()
         return tgc
 
     tgc = Tgc(name=RIFTBOUND_TCG_NAME, description="Riftbound")

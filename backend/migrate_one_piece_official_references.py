@@ -4,7 +4,7 @@ from collections import defaultdict
 
 from app.env import load_environment
 from app.models import Card, DeckCard, DeckConsideringCard, DeckEggCard, OnePieceCard, Tgc, UserCollection
-from app.services.game_rules import ONE_PIECE_TCG_NAME
+from app.services.game_rules import ONE_PIECE_TCG_NAME, get_tgc_name_aliases
 
 load_environment()
 
@@ -264,7 +264,14 @@ def find_target_card(current_card, detail_by_card_id, indexes):
 
 
 def get_one_piece_tgc(db):
-    return db.query(Tgc).filter(Tgc.name == ONE_PIECE_TCG_NAME).first()
+    alias_names = {alias.lower() for alias in get_tgc_name_aliases(ONE_PIECE_TCG_NAME)}
+    return next(
+        (
+            item for item in db.query(Tgc).all()
+            if (item.name or "").strip().lower() in alias_names
+        ),
+        None,
+    )
 
 
 def build_reference_mapping(db, one_piece_tgc_id):

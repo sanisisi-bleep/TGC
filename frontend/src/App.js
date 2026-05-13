@@ -162,6 +162,7 @@ function AppShell({
 
   const activeGame = getGameConfig(activeTcgSlug);
   const activeTgc = tgcBySlug[activeTcgSlug] || null;
+  const hasResolvedCatalog = Object.keys(tgcBySlug).length > 0;
   const authRouteScope = isAuthenticated ? `auth-${profile?.id || 'session'}` : 'guest';
   const protectedRouteKey = `game-${activeTcgSlug}-${activeTgc?.id || 'pending'}-${authRouteScope}`;
   const availableGames = useMemo(() => buildAvailableGames(tgcBySlug), [tgcBySlug]);
@@ -172,7 +173,7 @@ function AppShell({
   const navGames = availableGames.length > 0 ? availableGames : fallbackGames;
   const loadingTgcs = tgcCatalogQuery.isPending && !tgcCatalogQuery.data;
   const tgcLoadError = tgcCatalogQuery.error || null;
-  const shouldBlockProtectedGameRoutes = loadingTgcs || !activeTgc || Boolean(tgcLoadError);
+  const shouldBlockProtectedGameRoutes = loadingTgcs || (!activeTgc && (!hasResolvedCatalog || Boolean(tgcLoadError)));
   const protectedGameFallback = (
     <TgcBootstrapPanel
       activeGame={activeGame}

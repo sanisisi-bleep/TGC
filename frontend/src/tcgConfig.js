@@ -117,7 +117,17 @@ export function resolveTcgSlug(name = '') {
 export function buildTcgMap(tgcList = []) {
   return tgcList.reduce((acc, item) => {
     const slug = resolveTcgSlug(item.name);
-    acc[slug] = item;
+    const current = acc[slug];
+    if (!current) {
+      acc[slug] = item;
+      return acc;
+    }
+
+    const currentCardCount = Number(current.card_count) || 0;
+    const nextCardCount = Number(item.card_count) || 0;
+    if (nextCardCount > currentCardCount) {
+      acc[slug] = item;
+    }
     return acc;
   }, {});
 }

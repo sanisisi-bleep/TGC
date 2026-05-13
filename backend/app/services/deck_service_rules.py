@@ -3,7 +3,7 @@ from typing import List
 from app.models import Card
 from app.services.game_rules import (
     DIGIMON_TCG_NAME,
-    GUNDAM_TGC_NAME,
+    GUNDAM_TCG_NAME,
     ONE_PIECE_TCG_NAME,
     RIFTBOUND_TCG_NAME,
     get_digimon_card_role,
@@ -12,21 +12,22 @@ from app.services.game_rules import (
     get_one_piece_card_role,
     get_one_piece_colors,
     get_riftbound_domains,
+    is_tgc_name,
 )
 
 
 class DeckServiceRulesMixin:
     def _is_one_piece_tgc(self, deck_tgc) -> bool:
-        return bool(deck_tgc and deck_tgc.name == ONE_PIECE_TCG_NAME)
+        return bool(deck_tgc and is_tgc_name(deck_tgc.name, ONE_PIECE_TCG_NAME))
 
     def _is_gundam_tgc(self, deck_tgc) -> bool:
-        return bool(deck_tgc and deck_tgc.name == GUNDAM_TGC_NAME)
+        return bool(deck_tgc and is_tgc_name(deck_tgc.name, GUNDAM_TCG_NAME))
 
     def _is_digimon_tgc(self, deck_tgc) -> bool:
-        return bool(deck_tgc and deck_tgc.name == DIGIMON_TCG_NAME)
+        return bool(deck_tgc and is_tgc_name(deck_tgc.name, DIGIMON_TCG_NAME))
 
     def _is_riftbound_tgc(self, deck_tgc) -> bool:
-        return bool(deck_tgc and deck_tgc.name == RIFTBOUND_TCG_NAME)
+        return bool(deck_tgc and is_tgc_name(deck_tgc.name, RIFTBOUND_TCG_NAME))
 
     def _get_card_role(self, deck_tgc, card: Card) -> str:
         if self._is_one_piece_tgc(deck_tgc):

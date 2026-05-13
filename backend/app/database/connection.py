@@ -1,9 +1,17 @@
 import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, func, text
 from sqlalchemy.orm import sessionmaker
 
 from app.env import load_environment
-from app.database.models import Base
+from app.database.models import Base, Card, Deck, Tgc, User
+from app.services.game_rules import (
+    DIGIMON_TCG_NAME,
+    GUNDAM_TCG_NAME,
+    MAGIC_TCG_NAME,
+    ONE_PIECE_TCG_NAME,
+    RIFTBOUND_TCG_NAME,
+    canonicalize_tgc_name,
+)
 
 load_environment()
 
@@ -35,6 +43,14 @@ DATABASE_URL = resolve_database_url()
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+CANONICAL_TGC_DESCRIPTIONS = {
+    GUNDAM_TCG_NAME: "Gundam Card Game",
+    ONE_PIECE_TCG_NAME: "One Piece Card Game",
+    DIGIMON_TCG_NAME: "Digimon Card Game",
+    MAGIC_TCG_NAME: "Magic: The Gathering",
+    RIFTBOUND_TCG_NAME: "Riftbound",
+}
 
 
 def _run_schema_statements(statements):
@@ -227,6 +243,7 @@ def ensure_deck_columns():
     _run_schema_statements(statements)
 
 
+
 def ensure_user_columns():
     statements = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(30) DEFAULT 'player'",
@@ -276,12 +293,75 @@ def ensure_rate_limit_tables():
     _run_schema_statements(statements)
 
 
+def ensure_tgc_canonicalization():
+    db = SessionLocal()
+    try:
+        tgcs = db.query(Tgc).order_by(Tgc.id.asc()).all()
+        if not tgcs:
+            return
+
+        card_counts = {
+            tgc_id: quantity
+            for tgc_id, quantity in (
+                db.query(Card.tgc_id, func.count(Card.id))
+                .group_by(Card.tgc_id)
+                .all()
+            )
+            if tgc_id is not None
+        }
+        canonical_groups = {}
+        for tgc in tgcs:
+            canonical_name = canonicalize_tgc_name(tgc.name)
+            if not canonical_name:
+                continue
+            canonical_groups.setdefault(canonical_name, []).append(tgc)
+
+        has_changes = False
+
+        for canonical_name, group in canonical_groups.items():
+            target = max(
+                group,
+                key=lambda item: (
+                    int((item.name or "").strip() == canonical_name),
+                    int(card_counts.get(item.id, 0) > 0),
+                    card_counts.get(item.id, 0),
+                    -item.id,
+                ),
+            )
+
+            if target.name != canonical_name:
+                target.name = canonical_name
+                has_changes = True
+
+            canonical_description = CANONICAL_TGC_DESCRIPTIONS.get(canonical_name)
+            if canonical_description and target.description != canonical_description:
+                target.description = canonical_description
+                has_changes = True
+
+            for duplicate in group:
+                if duplicate.id == target.id:
+                    continue
+
+                db.query(Card).filter(Card.tgc_id == duplicate.id).update({"tgc_id": target.id}, synchronize_session=False)
+                db.query(Deck).filter(Deck.tgc_id == duplicate.id).update({"tgc_id": target.id}, synchronize_session=False)
+                db.query(User).filter(User.favorite_tgc_id == duplicate.id).update({"favorite_tgc_id": target.id}, synchronize_session=False)
+                db.query(User).filter(User.default_tgc_id == duplicate.id).update({"default_tgc_id": target.id}, synchronize_session=False)
+                db.delete(duplicate)
+                has_changes = True
+
+        if has_changes:
+            db.commit()
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     ensure_card_columns()
     ensure_game_detail_columns()
     ensure_deck_columns()
     ensure_user_columns()
+    ensure_tgc_canonicalization()
     ensure_collection_indexes()
     ensure_rate_limit_tables()
 

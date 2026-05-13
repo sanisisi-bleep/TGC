@@ -943,6 +943,12 @@ function DeckStatsPanel({ stats }) {
               <span className={`deck-stat-chip ${chosenChampionReady ? 'is-ok' : 'is-warning'}`}>
                 Champion {stats.chosenChampionCards}/{stats.requiredChosenChampionCards}
               </span>
+              <span className={`deck-stat-chip ${stats.sideboardCards <= stats.maxSideboardCards ? 'is-ok' : 'is-warning'}`}>
+                Sideboard {stats.sideboardCards}/{stats.maxSideboardCards}
+              </span>
+              <span className="deck-stat-chip">
+                Draw pool {stats.mainDrawPoolCards}
+              </span>
             </div>
           </div>
 

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload, load_only
 from app.models import Card, Deck, DeckCard, DeckEggCard, DeckZoneCard, Tgc, User, UserCollection
 from app.database.repositories.card_repository import CardRepository
 from app.services.game_rules import DIGIMON_TCG_NAME, GUNDAM_TCG_NAME, ONE_PIECE_TCG_NAME, get_one_piece_card_role
+from app.services.game_rules import get_tgc_name_aliases, is_tgc_name
 from app.services.image_service import (
     build_card_thumbnail_url,
     resolve_card_image_url,
@@ -181,7 +182,7 @@ class CardService:
         return self._tgc_name_cache[tgc_id]
 
     def _is_one_piece_tgc(self, tgc_id: Optional[int]) -> bool:
-        return self._get_tgc_name(tgc_id) == ONE_PIECE_TCG_NAME
+        return is_tgc_name(self._get_tgc_name(tgc_id), ONE_PIECE_TCG_NAME)
 
     def _normalize_set_name(
         self,
@@ -534,8 +535,33 @@ class CardService:
         return self.card_repo.create(card)
 
     def _get_default_tgc_id(self):
-        tgc = self.db.query(Tgc).filter(Tgc.name == GUNDAM_TGC_NAME).first()
-        return tgc.id if tgc else None
+        alias_names = {alias.lower() for alias in get_tgc_name_aliases(GUNDAM_TCG_NAME)}
+        candidates = [
+            tgc for tgc in self.db.query(Tgc).all()
+            if (tgc.name or "").strip().lower() in alias_names
+        ]
+        if not candidates:
+            return None
+
+        card_counts = {
+            tgc_id: quantity
+            for tgc_id, quantity in (
+                self.db.query(Card.tgc_id, func.count(Card.id))
+                .group_by(Card.tgc_id)
+                .all()
+            )
+            if tgc_id is not None
+        }
+        selected = max(
+            candidates,
+            key=lambda tgc: (
+                int(card_counts.get(tgc.id, 0) > 0),
+                card_counts.get(tgc.id, 0),
+                int((tgc.name or "").strip() == GUNDAM_TCG_NAME),
+                -tgc.id,
+            ),
+        )
+        return selected.id
 
     def _is_advanced_mode_enabled(self, user_id: int) -> bool:
         return bool(
