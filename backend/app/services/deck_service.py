@@ -1,15 +1,154 @@
+import json
 from typing import List, Optional
 
-from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, DeckZoneCard
+from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, DeckVersion, DeckZoneCard
 from app.services.deck_service_payloads import DeckServicePayloadMixin
 from app.services.deck_service_queries import DeckServiceQueryMixin
 from app.services.deck_service_rules import DeckServiceRulesMixin
 from app.services.game_rules import get_tcg_rules
 
 
+DECK_HISTORY_VERSION_LIMIT = 60
+DECK_HISTORY_SOURCE_LABELS = {
+    "create": "Creacion",
+    "import": "Importacion",
+    "rename": "Renombrado",
+    "clone": "Clonado",
+    "add-card": "Carta anadida",
+    "adjust-card": "Cantidad actualizada",
+    "add-considering": "Considering actualizado",
+    "adjust-considering": "Considering actualizado",
+    "move-to-considering": "Carta movida a considering",
+    "move-from-considering": "Carta recuperada de considering",
+    "set-chosen-champion": "Chosen Champion actualizado",
+    "checkpoint": "Checkpoint manual",
+}
+
+
 class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQueryMixin):
     def __init__(self, db):
         self.db = db
+
+    def _build_deck_snapshot_payload(self, deck: Deck) -> dict:
+        deck_tgc, rules = self._get_rules_for_deck(deck)
+        payload = self._serialize_deck_payload(deck, deck_tgc, rules)
+        payload["history_source"] = None
+        return payload
+
+    def _serialize_snapshot_data(self, payload: dict) -> str:
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+
+    def _parse_snapshot_data(self, snapshot_data: str) -> dict:
+        return json.loads(snapshot_data or "{}")
+
+    def _get_latest_deck_version(self, deck_id: int) -> Optional[DeckVersion]:
+        return (
+            self.db.query(DeckVersion)
+            .filter(DeckVersion.deck_id == deck_id)
+            .order_by(DeckVersion.version_number.desc(), DeckVersion.id.desc())
+            .first()
+        )
+
+    def _prune_deck_versions(self, deck_id: int, keep_latest: int = DECK_HISTORY_VERSION_LIMIT):
+        stale_versions = (
+            self.db.query(DeckVersion)
+            .filter(DeckVersion.deck_id == deck_id)
+            .order_by(DeckVersion.version_number.desc(), DeckVersion.id.desc())
+            .offset(max(keep_latest, 0))
+            .all()
+        )
+        for stale_version in stale_versions:
+            self.db.delete(stale_version)
+
+    def _record_deck_version(self, deck: Deck, source: str, label: Optional[str] = None, force: bool = False) -> Optional[DeckVersion]:
+        snapshot_payload = self._build_deck_snapshot_payload(deck)
+        snapshot_payload["history_source"] = source
+        snapshot_data = self._serialize_snapshot_data(snapshot_payload)
+        latest_version = self._get_latest_deck_version(deck.id)
+
+        if not force and latest_version and latest_version.snapshot_data == snapshot_data:
+            return latest_version
+
+        version = DeckVersion(
+            deck_id=deck.id,
+            version_number=(latest_version.version_number if latest_version else 0) + 1,
+            source=source,
+            label=((label or "").strip() or None),
+            snapshot_data=snapshot_data,
+        )
+        self.db.add(version)
+        self.db.flush()
+        self._prune_deck_versions(deck.id)
+        return version
+
+    def _commit_deck_version(self, deck: Deck, source: str, label: Optional[str] = None, force: bool = False):
+        self._record_deck_version(deck, source, label=label, force=force)
+        self.db.commit()
+
+    def _build_deck_version_summary(self, version: DeckVersion) -> dict:
+        snapshot = self._parse_snapshot_data(version.snapshot_data)
+        return {
+            "id": version.id,
+            "deck_id": version.deck_id,
+            "version_number": version.version_number,
+            "source": version.source,
+            "source_label": DECK_HISTORY_SOURCE_LABELS.get(version.source, version.source),
+            "label": version.label,
+            "created_at": version.created_at,
+            "name": snapshot.get("name"),
+            "tgc_name": snapshot.get("tgc_name"),
+            "is_complete": bool(snapshot.get("is_complete")),
+            "total_cards": int(snapshot.get("total_cards") or 0),
+            "main_deck_cards": int(snapshot.get("main_deck_cards") or 0),
+            "egg_total_cards": int(snapshot.get("egg_total_cards") or 0),
+            "considering_total_cards": int(snapshot.get("considering_total_cards") or 0),
+            "leader_cards": int(snapshot.get("leader_cards") or 0),
+            "don_cards": int(snapshot.get("don_cards") or 0),
+            "legend_total_cards": int(snapshot.get("legend_total_cards") or 0),
+            "rune_total_cards": int(snapshot.get("rune_total_cards") or 0),
+            "battlefield_total_cards": int(snapshot.get("battlefield_total_cards") or 0),
+            "sideboard_total_cards": int(snapshot.get("sideboard_total_cards") or 0),
+            "distinct_cards": (
+                len(snapshot.get("cards") or [])
+                + len(snapshot.get("egg_cards") or [])
+                + len(snapshot.get("legend_cards_data") or [])
+                + len(snapshot.get("rune_cards_data") or [])
+                + len(snapshot.get("battlefield_cards_data") or [])
+                + len(snapshot.get("sideboard_cards_data") or [])
+            ),
+        }
+
+    def get_deck_history(self, deck_id: int, user_id: int):
+        self._get_user_deck_or_error(deck_id, user_id)
+        versions = (
+            self.db.query(DeckVersion)
+            .filter(DeckVersion.deck_id == deck_id)
+            .order_by(DeckVersion.version_number.desc(), DeckVersion.id.desc())
+            .all()
+        )
+        return [self._build_deck_version_summary(version) for version in versions]
+
+    def get_deck_history_version(self, deck_id: int, version_id: int, user_id: int):
+        self._get_user_deck_or_error(deck_id, user_id)
+        version = (
+            self.db.query(DeckVersion)
+            .filter(DeckVersion.deck_id == deck_id, DeckVersion.id == version_id)
+            .first()
+        )
+        if not version:
+            raise ValueError("Deck history version not found")
+
+        return {
+            **self._build_deck_version_summary(version),
+            "snapshot": self._parse_snapshot_data(version.snapshot_data),
+        }
+
+    def create_deck_checkpoint(self, deck_id: int, user_id: int, label: Optional[str] = None):
+        deck = self._get_user_deck_or_error(deck_id, user_id)
+        version = self._record_deck_version(deck, "checkpoint", label=label, force=True)
+        self.db.commit()
+        self.db.refresh(version)
+        return version
 
     def create_deck(self, user_id: int, name: str, tgc_id: Optional[int] = None) -> Deck:
         resolved_tgc_id = tgc_id
@@ -25,6 +164,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         self.db.add(deck)
         self.db.commit()
         self.db.refresh(deck)
+        self._commit_deck_version(deck, "create")
         return deck
 
     def import_deck(
@@ -146,6 +286,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
 
         self.db.commit()
         self.db.refresh(deck)
+        self._commit_deck_version(deck, "import")
         return deck
 
     def rename_deck(self, deck_id: int, user_id: int, name: str):
@@ -158,6 +299,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         deck.name = cleaned_name[:100]
         self.db.commit()
         self.db.refresh(deck)
+        self._commit_deck_version(deck, "rename")
         return deck
 
     def delete_deck(self, deck_id: int, user_id: int):
@@ -167,6 +309,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         self.db.query(DeckEggCard).filter(DeckEggCard.deck_id == deck.id).delete(synchronize_session=False)
         self.db.query(DeckZoneCard).filter(DeckZoneCard.deck_id == deck.id).delete(synchronize_session=False)
         self.db.query(DeckConsideringCard).filter(DeckConsideringCard.deck_id == deck.id).delete(synchronize_session=False)
+        self.db.query(DeckVersion).filter(DeckVersion.deck_id == deck.id).delete(synchronize_session=False)
         self.db.delete(deck)
         self.db.commit()
         return deck
@@ -233,6 +376,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
 
         self.db.commit()
         self.db.refresh(cloned_deck)
+        self._commit_deck_version(cloned_deck, "clone")
         return cloned_deck
 
     def ensure_share_token(self, deck_id: int, user_id: int):
@@ -296,6 +440,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
 
         self.db.commit()
         self.db.refresh(deck_card)
+        self._commit_deck_version(deck, "add-card")
         return {
             "quantity": deck_card.quantity,
             "assigned_quantity": deck_card.assigned_quantity,
@@ -333,6 +478,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
 
         self.db.commit()
         self.db.refresh(considering_card)
+        self._commit_deck_version(deck, "add-considering")
         return {"quantity": considering_card.quantity}
 
     def adjust_considering_card_quantity(self, deck_id: int, card_id: int, delta: int, user_id: int):
@@ -348,11 +494,13 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         if next_quantity <= 0:
             self.db.delete(considering_card)
             self.db.commit()
+            self._commit_deck_version(deck, "adjust-considering")
             return {"quantity": 0}
 
         considering_card.quantity = next_quantity
         self.db.commit()
         self.db.refresh(considering_card)
+        self._commit_deck_version(deck, "adjust-considering")
         return {"quantity": considering_card.quantity}
 
     def move_card_to_considering(self, deck_id: int, card_id: int, quantity: int, user_id: int):
@@ -393,6 +541,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
 
         self.db.commit()
         self.db.refresh(considering_card)
+        self._commit_deck_version(deck, "move-to-considering")
         return {
             "deck_quantity": max(next_deck_quantity, 0),
             "deck_section": storage_section,
@@ -446,6 +595,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
 
         self.db.commit()
         self.db.refresh(deck_card)
+        self._commit_deck_version(deck, "move-from-considering")
         return {
             "deck_quantity": deck_card.quantity,
             "deck_section": storage_section,
@@ -487,6 +637,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         if next_quantity <= 0:
             self.db.delete(deck_card)
             self.db.commit()
+            self._commit_deck_version(deck, "adjust-card")
             return {
                 "quantity": 0,
                 "deck_section": storage_section,
@@ -499,6 +650,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             deck_card.assigned_quantity = min(deck_card.assigned_quantity, deck_card.quantity)
         self.db.commit()
         self.db.refresh(deck_card)
+        self._commit_deck_version(deck, "adjust-card")
         return {
             "quantity": deck_card.quantity,
             "deck_section": storage_section,
@@ -568,6 +720,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         deck.riftbound_chosen_champion_card_id = card_id
         self.db.commit()
         self.db.refresh(deck)
+        self._commit_deck_version(deck, "set-chosen-champion")
         return {
             "chosen_champion_card_id": deck.riftbound_chosen_champion_card_id,
             "deck_section": "main",

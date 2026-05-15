@@ -261,6 +261,23 @@ class DeckZoneCard(Base):
     card = relationship("Card")
 
 
+class DeckVersion(Base):
+    __tablename__ = "deck_versions"
+    __table_args__ = (
+        UniqueConstraint("deck_id", "version_number", name="uq_deck_versions_deck_version_number"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    deck_id = Column(Integer, ForeignKey("decks.id"))
+    version_number = Column(Integer, nullable=False)
+    source = Column(String(40), nullable=False)
+    label = Column(String(100))
+    snapshot_data = Column(Text, nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+    deck = relationship("Deck")
+
+
 class RateLimitCounter(Base):
     __tablename__ = "rate_limit_counters"
     __table_args__ = (
@@ -298,5 +315,6 @@ __all__ = [
     "DeckConsideringCard",
     "DeckEggCard",
     "DeckZoneCard",
+    "DeckVersion",
     "RateLimitCounter",
 ]

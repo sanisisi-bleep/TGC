@@ -225,6 +225,16 @@ def ensure_deck_columns():
             "quantity INTEGER DEFAULT 1, "
             "assigned_quantity INTEGER)"
         ),
+        (
+            "CREATE TABLE IF NOT EXISTS deck_versions ("
+            "id SERIAL PRIMARY KEY, "
+            "deck_id INTEGER REFERENCES decks(id), "
+            "version_number INTEGER NOT NULL, "
+            "source VARCHAR(40) NOT NULL, "
+            "label VARCHAR(100), "
+            "snapshot_data TEXT NOT NULL, "
+            "created_at TIMESTAMP DEFAULT NOW() NOT NULL)"
+        ),
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_decks_share_token ON decks(share_token)",
         "CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_decks_user_tgc_id ON decks(user_id, tgc_id)",
@@ -238,6 +248,9 @@ def ensure_deck_columns():
         "CREATE INDEX IF NOT EXISTS idx_deck_zone_cards_deck_id ON deck_zone_cards(deck_id)",
         "CREATE INDEX IF NOT EXISTS idx_deck_zone_cards_deck_zone ON deck_zone_cards(deck_id, zone)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_deck_zone_cards_deck_card_zone ON deck_zone_cards(deck_id, card_id, zone)",
+        "CREATE INDEX IF NOT EXISTS idx_deck_versions_deck_id ON deck_versions(deck_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_deck_versions_deck_version_number ON deck_versions(deck_id, version_number)",
+        "CREATE INDEX IF NOT EXISTS idx_deck_versions_created_at ON deck_versions(deck_id, created_at DESC)",
     ]
 
     _run_schema_statements(statements)

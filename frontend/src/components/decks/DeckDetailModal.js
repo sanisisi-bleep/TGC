@@ -34,6 +34,8 @@ function DeckDetailModal({
   onClose,
   onOpenDeckList,
   onExportDeck,
+  onOpenHistory,
+  onOpenCompare,
   advancedDeckControlsEnabled,
   editingAssignmentCardId,
   updatingAssignmentCardId,
@@ -181,6 +183,8 @@ function DeckDetailModal({
                 isGuestDemo={isGuestDemo}
                 onOpenList={() => onOpenDeckList(selectedDeck)}
                 onExportJson={() => onExportDeck(selectedDeck)}
+                onOpenHistory={() => onOpenHistory(selectedDeck)}
+                onOpenCompare={() => onOpenCompare(selectedDeck)}
                 onOpenAdvancedEditor={onOpenAdvancedEditor}
                 onShare={() => onShareDeck(selectedDeck)}
                 onClone={() => onCloneDeck(selectedDeck.id)}

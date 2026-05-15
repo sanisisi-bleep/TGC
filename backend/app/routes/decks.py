@@ -60,6 +60,10 @@ class DeckChosenChampionPayload(BaseModel):
     card_id: Optional[int] = None
 
 
+class DeckHistoryCheckpointCreate(BaseModel):
+    label: Optional[str] = None
+
+
 class DeckImportPayload(BaseModel):
     name: Optional[str] = None
     tgc_id: Optional[int] = None
@@ -123,6 +127,75 @@ def get_deck_options(tgc_id: Optional[int] = None, db: Session = Depends(get_db)
 def get_deck_search_options(tgc_id: Optional[int] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = _deck_service(db)
     return service.get_user_deck_search_options(current_user.id, tgc_id)
+
+
+@router.get("/{deck_id}/history")
+def get_deck_history(deck_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        return service.get_deck_history(deck_id, current_user.id)
+    except ValueError as error:
+        _raise_deck_http_error(
+            404,
+            error,
+            event="deck_history_lookup_failed",
+            deck_id=deck_id,
+            user_id=current_user.id,
+            username=current_user.username,
+        )
+
+
+@router.get("/{deck_id}/history/{version_id}")
+def get_deck_history_version(deck_id: int, version_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        return service.get_deck_history_version(deck_id, version_id, current_user.id)
+    except ValueError as error:
+        _raise_deck_http_error(
+            404,
+            error,
+            event="deck_history_version_lookup_failed",
+            deck_id=deck_id,
+            version_id=version_id,
+            user_id=current_user.id,
+            username=current_user.username,
+        )
+
+
+@router.post("/{deck_id}/history")
+def create_deck_history_checkpoint(deck_id: int, payload: DeckHistoryCheckpointCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        version = service.create_deck_checkpoint(deck_id, current_user.id, payload.label)
+        logger.info(
+            "Deck checkpoint created",
+            extra=build_log_extra(
+                "deck_history_checkpoint_created",
+                deck_id=deck_id,
+                version_id=version.id,
+                version_number=version.version_number,
+                user_id=current_user.id,
+                username=current_user.username,
+                label=version.label,
+            ),
+        )
+        return {
+            "message": "Deck checkpoint created",
+            "deck_id": deck_id,
+            "version_id": version.id,
+            "version_number": version.version_number,
+            "label": version.label,
+        }
+    except ValueError as error:
+        _raise_deck_http_error(
+            400,
+            error,
+            event="deck_history_checkpoint_rejected",
+            deck_id=deck_id,
+            user_id=current_user.id,
+            username=current_user.username,
+            label=payload.label,
+        )
 
 
 @router.get("/{deck_id}")

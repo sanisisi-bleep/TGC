@@ -6,13 +6,17 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
 import './App.css';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { SessionBootstrapPanel, TgcBootstrapPanel } from './components/layout/BootstrapPanels';
+import SiteFooter from './components/layout/SiteFooter';
 import SiteNavigation from './components/layout/SiteNavigation';
+import AboutPage from './pages/AboutPage';
+import ContactPage from './pages/ContactPage';
 import Home from './pages/Home';
 import Search from './pages/Search';
 import Collection from './pages/Collection';
 import Decks from './pages/Decks';
 import Settings from './pages/Settings';
 import SharedDeck from './pages/SharedDeck';
+import UpdatesPage from './pages/UpdatesPage';
 import { SessionProvider, useSession } from './context/SessionContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import useBrowserStorageState from './hooks/useBrowserStorageState';
@@ -173,7 +177,9 @@ function AppShell({
   const navGames = availableGames.length > 0 ? availableGames : fallbackGames;
   const loadingTgcs = tgcCatalogQuery.isPending && !tgcCatalogQuery.data;
   const tgcLoadError = tgcCatalogQuery.error || null;
-  const shouldBlockProtectedGameRoutes = loadingTgcs || (!activeTgc && (!hasResolvedCatalog || Boolean(tgcLoadError)));
+  const shouldBlockProtectedGameRoutes = isAuthenticated
+    ? (loadingTgcs || (!activeTgc && (!hasResolvedCatalog || Boolean(tgcLoadError))))
+    : false;
   const protectedGameFallback = (
     <TgcBootstrapPanel
       activeGame={activeGame}
@@ -226,6 +232,9 @@ function AppShell({
                   />
                 }
               />
+              <Route path="/updates" element={<UpdatesPage />} />
+              <Route path="/contact" element={<ContactPage />} />
+              <Route path="/about" element={<AboutPage />} />
               <Route
                 path="/search"
                 element={
@@ -282,6 +291,7 @@ function AppShell({
               <Route path="/settings" element={isAuthenticated ? <Settings /> : <Navigate to="/" />} />
             </Routes>
           </main>
+          <SiteFooter navGames={navGames} />
         </>
       )}
       <Analytics beforeSend={sanitizeTelemetryPayload} />

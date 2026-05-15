@@ -126,6 +126,9 @@ function SiteNavigation({
           <div className="nav-session nav-session-public">
             <ul className="nav-links">
               <li><Link to="/" onClick={closeMobileMenu}>Inicio</Link></li>
+              <li><Link to="/updates" onClick={closeMobileMenu}>Novedades</Link></li>
+              <li><Link to="/contact" onClick={closeMobileMenu}>Contacto</Link></li>
+              <li><Link to="/about" onClick={closeMobileMenu}>Acerca de</Link></li>
               {installAction}
               <li>
                 <button

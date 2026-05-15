@@ -23,6 +23,7 @@ from app.services.feedback_service import (
     FeedbackDeliveryError,
     FeedbackSubmission,
     FeedbackAttachmentValidationError,
+    FEEDBACK_CATEGORY_OPTIONS,
     deliver_feedback_email,
     validate_feedback_attachment,
 )
@@ -37,7 +38,6 @@ ALLOWED_ROLES = {
     "organizer",
     "admin",
 }
-FEEDBACK_CATEGORY_OPTIONS = {"idea", "ux", "data", "bug", "other"}
 FEEDBACK_RATE_LIMIT_POLICY = RateLimitPolicy(
     bucket="settings-feedback",
     limit=5,
@@ -232,6 +232,7 @@ async def submit_feedback(
         display_name=current_user.display_name or current_user.username,
         role=current_user.role or "player",
         user_id=current_user.id,
+        source_label="settings-feedback",
         attachment=feedback_attachment,
     )
 

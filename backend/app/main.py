@@ -14,6 +14,7 @@ from app.routes.auth import router as auth_router
 from app.routes.cards import router as cards_router
 from app.routes.collection import router as collection_router
 from app.routes.decks import router as decks_router
+from app.routes.public import router as public_router
 from app.routes.settings import router as settings_router
 from app.routes.tgc import router as tgc_router
 from middleware.logger_middleware import LoggerMiddleware
@@ -127,6 +128,7 @@ app.include_router(decks_router)
 app.include_router(tgc_router)
 app.include_router(collection_router)
 app.include_router(settings_router)
+app.include_router(public_router)
 
 
 @app.exception_handler(HTTPException)

@@ -9,6 +9,7 @@ from app.logger import build_log_extra, logger
 
 DEFAULT_FEEDBACK_TO_EMAIL = "multiversetgc@gmail.com"
 FEEDBACK_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
+FEEDBACK_CATEGORY_OPTIONS = {"idea", "ux", "data", "bug", "other"}
 
 
 class FeedbackDeliveryError(Exception):
@@ -36,11 +37,12 @@ class FeedbackSubmission:
     subject: str
     message: str
     allow_contact: bool
-    username: str
-    email: str
-    display_name: str
-    role: str
-    user_id: int
+    email: str = ""
+    display_name: str = ""
+    username: str = ""
+    role: str = "public"
+    user_id: int | None = None
+    source_label: str = "public-contact"
     attachment: FeedbackAttachment | None = None
 
 
@@ -205,7 +207,7 @@ def _build_feedback_message(submission: FeedbackSubmission, config: dict):
     if submission.allow_contact and submission.email:
         message["Reply-To"] = submission.email
 
-    author_name = submission.display_name or submission.username
+    author_name = submission.display_name or submission.username or "Visitante"
     contact_line = (
         f"{author_name} <{submission.email}>"
         if submission.allow_contact and submission.email
@@ -214,12 +216,18 @@ def _build_feedback_message(submission: FeedbackSubmission, config: dict):
     body_lines = [
         "Buzon de sugerencias - Multiverse TCG Manager",
         "",
+        f"Origen: {submission.source_label}",
         f"Categoria: {normalized_category}",
         f"Asunto: {normalized_subject}",
-        f"Usuario: {submission.username}",
         f"Nombre visible: {author_name}",
-        f"Rol: {submission.role}",
-        f"User ID: {submission.user_id}",
+    ]
+    if submission.username:
+        body_lines.append(f"Usuario: {submission.username}")
+    if submission.role:
+        body_lines.append(f"Rol: {submission.role}")
+    if submission.user_id is not None:
+        body_lines.append(f"User ID: {submission.user_id}")
+    body_lines.extend([
         f"Contacto permitido: {'si' if submission.allow_contact else 'no'}",
         f"Contacto: {contact_line}",
         (
@@ -231,7 +239,7 @@ def _build_feedback_message(submission: FeedbackSubmission, config: dict):
         "",
         "Mensaje:",
         submission.message.strip() or "Sin detalles.",
-    ]
+    ])
     message.set_content("\n".join(body_lines))
 
     if submission.attachment:

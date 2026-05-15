@@ -3,7 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import CardDetailModal from '../components/cards/CardDetailModal';
 import DeckAdvancedEditorPage from '../components/decks/DeckAdvancedEditorPage';
+import DeckComparePickerModal from '../components/decks/DeckComparePickerModal';
+import DeckCompareResultModal from '../components/decks/DeckCompareResultModal';
 import DeckDetailModal from '../components/decks/DeckDetailModal';
+import DeckHistoryModal from '../components/decks/DeckHistoryModal';
 import DeckImportPanel from '../components/decks/DeckImportPanel';
 import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
 import DeckSummaryCard from '../components/decks/DeckSummaryCard';
@@ -34,6 +37,7 @@ import {
   parseImportedDeckFile,
   safeDeckFilename,
 } from '../utils/deckTools';
+import { formatDeckComparisonTargetLabel } from '../utils/deckCompare';
 import {
   adjustDeckAssignment,
   adjustConsideringCard,
@@ -42,9 +46,12 @@ import {
   moveConsideringCardToDeck,
   moveDeckCardToConsidering,
   cloneDeck,
+  createDeckCheckpoint,
   createDeck,
   deleteDeck,
   getDeckDetail,
+  getDeckHistory,
+  getDeckHistoryVersion,
   getDecks,
   importDeck,
   renameDeck,
@@ -95,6 +102,10 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const [updatingConsideringCardId, setUpdatingConsideringCardId] = useState(null);
   const [movingConsideringCardId, setMovingConsideringCardId] = useState(null);
   const [deckListPreview, setDeckListPreview] = useState(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isComparePickerOpen, setIsComparePickerOpen] = useState(false);
+  const [compareDeckTargetId, setCompareDeckTargetId] = useState('');
+  const [compareHistoryVersionId, setCompareHistoryVersionId] = useState(null);
   const { deckId: editorRouteDeckId = null } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -117,12 +128,33 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     enabled: Boolean(detailDeckId && !isGuestDemo),
     staleTime: QUERY_STALE_TIMES.deckDetail,
   });
+  const deckHistoryQuery = useQuery({
+    queryKey: queryKeys.deckHistory(detailDeckId),
+    queryFn: ({ signal }) => getDeckHistory(detailDeckId, signal),
+    enabled: Boolean(detailDeckId && !isGuestDemo && isHistoryModalOpen),
+    staleTime: QUERY_STALE_TIMES.deckDetail,
+  });
+  const compareHistoryVersionQuery = useQuery({
+    queryKey: queryKeys.deckHistoryVersion(detailDeckId, compareHistoryVersionId),
+    queryFn: ({ signal }) => getDeckHistoryVersion(detailDeckId, compareHistoryVersionId, signal),
+    enabled: Boolean(detailDeckId && compareHistoryVersionId && !isGuestDemo),
+    staleTime: QUERY_STALE_TIMES.deckDetail,
+  });
+  const compareDeckDetailQuery = useQuery({
+    queryKey: queryKeys.deckDetail(compareDeckTargetId),
+    queryFn: ({ signal }) => getDeckDetail(compareDeckTargetId, signal),
+    enabled: Boolean(compareDeckTargetId && !isGuestDemo),
+    staleTime: QUERY_STALE_TIMES.deckDetail,
+  });
 
   const demoDecks = useMemo(
     () => getGuestDemoDecks(activeTcgSlug),
     [activeTcgSlug]
   );
-  const decks = isGuestDemo ? demoDecks : (deckListQuery.data || []);
+  const decks = useMemo(
+    () => (isGuestDemo ? demoDecks : (deckListQuery.data || [])),
+    [deckListQuery.data, demoDecks, isGuestDemo]
+  );
   const selectedDeck = isGuestDemo
     ? decks.find((deck) => String(deck.id) === String(detailDeckId)) || null
     : (selectedDeckQuery.data || null);
@@ -152,6 +184,10 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       : selectedDeckIsRiftbound
         ? `Legend ${selectedDeck?.legend_cards || 0}/${selectedDeck?.required_legend_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 40} | Runes ${selectedDeck?.rune_cards || 0}/${selectedDeck?.required_rune_cards || 12} | Fields ${selectedDeck?.battlefield_cards || 0}/${selectedDeck?.required_battlefield_cards || 3}`
     : `${selectedDeck?.total_cards || 0} cartas en total`;
+  const comparisonDeckCandidates = useMemo(
+    () => decks.filter((deck) => String(deck.id) !== String(selectedDeck?.id)),
+    [decks, selectedDeck?.id]
+  );
   const {
     setDraft: setDeckActionQuantityDraft,
     getQuantity: getDeckActionQuantity,
@@ -174,6 +210,13 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       resetDeckActionQuantityDrafts();
     }
   }, [isEditorRoute, resetDeckActionQuantityDrafts, selectedDeckId]);
+
+  useEffect(() => {
+    setIsHistoryModalOpen(false);
+    setIsComparePickerOpen(false);
+    setCompareDeckTargetId('');
+    setCompareHistoryVersionId(null);
+  }, [selectedDeckId]);
 
   useEffect(() => {
     const deckId = location.state?.[OPEN_DECK_ROUTE_STATE_KEY];
@@ -200,8 +243,20 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   }, [hasEditorRouteAccess, isEditorRoute, navigate]);
 
   const deckQueryErrors = useMemo(
-    () => [deckListQuery.error, selectedDeckQuery.error],
-    [deckListQuery.error, selectedDeckQuery.error]
+    () => [
+      deckListQuery.error,
+      selectedDeckQuery.error,
+      deckHistoryQuery.error,
+      compareHistoryVersionQuery.error,
+      compareDeckDetailQuery.error,
+    ],
+    [
+      deckListQuery.error,
+      selectedDeckQuery.error,
+      deckHistoryQuery.error,
+      compareHistoryVersionQuery.error,
+      compareDeckDetailQuery.error,
+    ]
   );
 
   useQueryErrorToast(deckQueryErrors, showToast, 'No se pudieron cargar los datos de mazos.');
@@ -229,6 +284,14 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
 
     return queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc.id) });
   }, [activeTgc?.id, queryClient]);
+
+  const invalidateDeckHistoryQuery = useCallback((deckId) => {
+    if (!deckId) {
+      return Promise.resolve();
+    }
+
+    return queryClient.invalidateQueries({ queryKey: queryKeys.deckHistory(deckId) });
+  }, [queryClient]);
 
   const syncCollectionDeckUsage = useCallback(({
     cardId,
@@ -280,6 +343,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         ];
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc?.id) });
+      invalidateDeckHistoryQuery(createdDeck?.id);
       setNewDeckName('');
       showToast({ type: 'success', message: 'Mazo creado.' });
     },
@@ -335,6 +399,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         invalidateDeckOptionsQuery(),
         invalidateSearchDeckOptionsQuery(),
         invalidateCollectionQuery(),
+        invalidateDeckHistoryQuery(response?.deck_id),
       ]);
       if (response?.deck_id) {
         setSelectedDeckId(response.deck_id);
@@ -378,7 +443,10 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       queryClient.setQueryData(queryKeys.collection(activeTgc?.id), (current) => (
         renameDeckInCollection(current, variables.deckId, nextName)
       ));
-      await invalidateCollectionQuery();
+      await Promise.all([
+        invalidateCollectionQuery(),
+        invalidateDeckHistoryQuery(variables.deckId),
+      ]);
       showToast({ type: 'success', message: 'Nombre del mazo actualizado.' });
     },
     onError: (error) => {
@@ -413,6 +481,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
         invalidateSearchDeckOptionsQuery(),
         invalidateCollectionQuery(),
+        invalidateDeckHistoryQuery(variables.deckId),
       ]);
       showToast({
         type: 'success',
@@ -456,6 +525,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
         invalidateCollectionQuery(),
+        invalidateDeckHistoryQuery(variables.deckId),
       ]);
     },
     onError: (error) => {
@@ -512,6 +582,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
         invalidateSearchDeckOptionsQuery(),
+        invalidateDeckHistoryQuery(variables.deckId),
       ]);
       showToast({ type: 'success', message: 'Chosen Champion actualizado.' });
     },
@@ -533,6 +604,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.deckDetail(variables.deckId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
+        invalidateDeckHistoryQuery(variables.deckId),
       ]);
     },
     onError: (error) => {
@@ -564,6 +636,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
         invalidateSearchDeckOptionsQuery(),
         invalidateCollectionQuery(),
+        invalidateDeckHistoryQuery(variables.deckId),
       ]);
       showToast({ type: 'success', message: 'Carta movida a considering.' });
     },
@@ -597,6 +670,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         queryClient.invalidateQueries({ queryKey: queryKeys.decks(activeTgc?.id) }),
         invalidateSearchDeckOptionsQuery(),
         invalidateCollectionQuery(),
+        invalidateDeckHistoryQuery(variables.deckId),
       ]);
       showToast({ type: 'success', message: 'Carta devuelta al mazo principal.' });
     },
@@ -623,6 +697,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         invalidateDeckOptionsQuery(),
         invalidateSearchDeckOptionsQuery(),
         invalidateCollectionQuery(),
+        invalidateDeckHistoryQuery(response?.deck_id),
       ]);
       if (response?.deck_id) {
         setSelectedDeckId(response.deck_id);
@@ -647,6 +722,38 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const shareDeckMutation = useMutation({
     mutationFn: shareDeck,
   });
+
+  const createDeckCheckpointMutation = useMutation({
+    mutationFn: ({ deckId, label }) => createDeckCheckpoint(deckId, { label }),
+    onSuccess: async (_response, variables) => {
+      await invalidateDeckHistoryQuery(variables.deckId);
+      showToast({ type: 'success', message: 'Checkpoint guardado.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo guardar el checkpoint.'),
+      });
+    },
+  });
+
+  const historyEntries = deckHistoryQuery.data || [];
+  const compareTargetDeck = compareDeckDetailQuery.data || null;
+  const compareHistoryVersion = compareHistoryVersionQuery.data || null;
+  const compareTargetDeckPayload = compareTargetDeck || compareHistoryVersion?.snapshot || null;
+  const compareTargetTitle = compareHistoryVersion
+    ? `${selectedDeck?.name || 'Mazo actual'} vs ${formatDeckComparisonTargetLabel({
+      type: 'version',
+      versionNumber: compareHistoryVersion.version_number,
+      label: compareHistoryVersion.label,
+    })}`
+    : compareTargetDeck
+      ? `${selectedDeck?.name || 'Mazo actual'} vs ${compareTargetDeck.name}`
+      : 'Comparacion de mazos';
 
   const closeDeckListPreview = () => {
     setDeckListPreview(null);
@@ -909,6 +1016,64 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const closeDeckDetails = () => {
     setSelectedCard(null);
     setSelectedDeckId(null);
+    setIsHistoryModalOpen(false);
+    setIsComparePickerOpen(false);
+    setCompareDeckTargetId('');
+    setCompareHistoryVersionId(null);
+  };
+
+  const openHistoryModal = () => {
+    if (!selectedDeck?.id) {
+      return;
+    }
+
+    setIsHistoryModalOpen(true);
+  };
+
+  const closeHistoryModal = () => {
+    setIsHistoryModalOpen(false);
+  };
+
+  const openComparePicker = () => {
+    if (!selectedDeck?.id) {
+      return;
+    }
+
+    setCompareHistoryVersionId(null);
+    setCompareDeckTargetId('');
+    setIsComparePickerOpen(true);
+  };
+
+  const closeComparePicker = () => {
+    setIsComparePickerOpen(false);
+    setCompareDeckTargetId('');
+  };
+
+  const closeCompareResult = () => {
+    setCompareDeckTargetId('');
+    setCompareHistoryVersionId(null);
+  };
+
+  const confirmDeckComparison = () => {
+    if (!compareDeckTargetId) {
+      return;
+    }
+
+    setIsComparePickerOpen(false);
+  };
+
+  const compareWithHistoryVersion = (historyEntry) => {
+    setCompareDeckTargetId('');
+    setCompareHistoryVersionId(historyEntry?.id || null);
+    setIsHistoryModalOpen(false);
+  };
+
+  const createCheckpointHandler = () => {
+    if (!selectedDeck?.id) {
+      return;
+    }
+
+    createDeckCheckpointMutation.mutate({ deckId: selectedDeck.id });
   };
 
   const openAdvancedEditor = () => {
@@ -1135,6 +1300,8 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         onClose={closeDeckDetails}
         onOpenDeckList={openDeckListPreview}
         onExportDeck={exportDeckHandler}
+        onOpenHistory={openHistoryModal}
+        onOpenCompare={openComparePicker}
         advancedDeckControlsEnabled={advancedDeckControlsEnabled}
         editingAssignmentCardId={editingAssignmentCardId}
         updatingAssignmentCardId={updatingAssignmentCardId}
@@ -1167,6 +1334,37 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         onClose={closeDeckListPreview}
         onCopy={() => copyDeckList(deckListPreview.name, deckListPreview.text)}
         onDownload={() => downloadText(deckListPreview.filename, deckListPreview.text)}
+      />
+
+      <DeckHistoryModal
+        isOpen={isHistoryModalOpen}
+        deckName={selectedDeck?.name}
+        history={historyEntries}
+        isLoading={deckHistoryQuery.isPending}
+        isSavingCheckpoint={createDeckCheckpointMutation.isPending}
+        onCreateCheckpoint={createCheckpointHandler}
+        onCompareVersion={compareWithHistoryVersion}
+        onClose={closeHistoryModal}
+      />
+
+      <DeckComparePickerModal
+        isOpen={isComparePickerOpen}
+        deckName={selectedDeck?.name}
+        decks={comparisonDeckCandidates}
+        selectedDeckId={compareDeckTargetId}
+        onSelectDeckId={setCompareDeckTargetId}
+        onConfirm={confirmDeckComparison}
+        onClose={closeComparePicker}
+        isLoading={compareDeckDetailQuery.isPending}
+      />
+
+      <DeckCompareResultModal
+        isOpen={Boolean((compareDeckTargetId && !isComparePickerOpen) || compareHistoryVersionId)}
+        title={compareTargetTitle}
+        baseDeck={selectedDeck}
+        targetDeck={compareTargetDeckPayload}
+        isLoading={compareDeckDetailQuery.isPending || compareHistoryVersionQuery.isPending}
+        onClose={closeCompareResult}
       />
     </div>
   );

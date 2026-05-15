@@ -4,6 +4,8 @@ function DeckDetailActions({
   isGuestDemo = false,
   onOpenList,
   onExportJson,
+  onOpenHistory,
+  onOpenCompare,
   onOpenAdvancedEditor,
   onShare,
   onClone,
@@ -65,6 +67,20 @@ function DeckDetailActions({
             disabled={isSharing}
           >
             {isSharing ? 'Compartiendo...' : 'Compartir'}
+          </button>
+          <button
+            type="button"
+            className="deck-action-button is-soft"
+            onClick={onOpenHistory}
+          >
+            Historial
+          </button>
+          <button
+            type="button"
+            className="deck-action-button is-soft"
+            onClick={onOpenCompare}
+          >
+            Comparar
           </button>
         </div>
       </div>

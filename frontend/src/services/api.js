@@ -90,6 +90,21 @@ export const getDeckDetail = async (deckId, signal) => {
   return response.data || null;
 };
 
+export const getDeckHistory = async (deckId, signal) => {
+  const response = await apiClient.get(`/decks/${deckId}/history`, { signal });
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+export const getDeckHistoryVersion = async (deckId, versionId, signal) => {
+  const response = await apiClient.get(`/decks/${deckId}/history/${versionId}`, { signal });
+  return response.data || null;
+};
+
+export const createDeckCheckpoint = async (deckId, payload = {}) => {
+  const response = await apiClient.post(`/decks/${deckId}/history`, payload);
+  return response.data || null;
+};
+
 export const createDeck = async (payload) => {
   const response = await apiClient.post('/decks', payload);
   return response.data || null;
@@ -189,6 +204,23 @@ export const sendFeedback = async (payload) => {
   }
 
   const response = await apiClient.post('/settings/feedback', formData);
+  return response.data || null;
+};
+
+export const sendPublicContact = async (payload) => {
+  const formData = new FormData();
+  formData.append('name', payload.name || '');
+  formData.append('email', payload.email || '');
+  formData.append('category', payload.category || '');
+  formData.append('subject', payload.subject || '');
+  formData.append('message', payload.message || '');
+  formData.append('allow_contact', String(Boolean(payload.allow_contact)));
+
+  if (typeof File !== 'undefined' && payload.attachment instanceof File) {
+    formData.append('attachment', payload.attachment);
+  }
+
+  const response = await apiClient.post('/public/contact', formData);
   return response.data || null;
 };
 

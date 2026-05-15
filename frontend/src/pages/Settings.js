@@ -6,6 +6,12 @@ import { useToast } from '../context/ToastContext';
 import useBrowserStorageState from '../hooks/useBrowserStorageState';
 import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import { getApiErrorMessage } from '../utils/apiMessages';
+import {
+  FEEDBACK_ATTACHMENT_ACCEPT,
+  FEEDBACK_MAX_ATTACHMENT_BYTES,
+  formatFeedbackAttachmentSize,
+  isSupportedFeedbackAttachment,
+} from '../utils/feedbackForm';
 import queryKeys from '../queryKeys';
 import {
   changePassword as changePasswordRequest,
@@ -40,9 +46,6 @@ const DEFAULT_FEEDBACK_DRAFT = {
   message: '',
   allowContact: true,
 };
-const FEEDBACK_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-const FEEDBACK_ATTACHMENT_ACCEPT = 'image/*,video/*,audio/*';
-
 const readFeedbackDraft = () => {
   if (typeof window === 'undefined') {
     return DEFAULT_FEEDBACK_DRAFT;
@@ -63,31 +66,6 @@ const readFeedbackDraft = () => {
   } catch (_error) {
     return DEFAULT_FEEDBACK_DRAFT;
   }
-};
-
-const formatFeedbackAttachmentSize = (size) => {
-  if (!Number.isFinite(size) || size <= 0) {
-    return '0 B';
-  }
-
-  if (size < 1024) {
-    return `${size} B`;
-  }
-
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(size / (1024 * 1024)).toFixed(2)} MB`;
-};
-
-const isSupportedFeedbackAttachment = (file) => {
-  const normalizedType = String(file?.type || '').toLowerCase();
-  return (
-    normalizedType.startsWith('image/') ||
-    normalizedType.startsWith('video/') ||
-    normalizedType.startsWith('audio/')
-  );
 };
 
 const buildFeedbackPreview = (draft, profile, attachment) => {
