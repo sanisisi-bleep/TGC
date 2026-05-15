@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -22,6 +23,7 @@ export const isUnauthorizedError = (error) => error?.response?.status === 401;
 export function SessionProvider({ children }) {
   const queryClient = useQueryClient();
   const [sessionBootstrapBypassed, setSessionBootstrapBypassed] = useState(false);
+  const sessionRecoveryRef = useRef(null);
 
   const markSessionAsLoggedOut = useCallback(() => {
     queryClient.setQueryData(queryKeys.sessionProfile(), null);
@@ -38,10 +40,55 @@ export function SessionProvider({ children }) {
   }, [markSessionAsLoggedOut, queryClient]);
 
   const refreshSession = useCallback(async () => {
-    const profile = await getSessionProfile();
+    const profile = await getSessionProfile(undefined, { skipSessionRecovery: true });
     queryClient.setQueryData(queryKeys.sessionProfile(), profile);
     return profile;
   }, [queryClient]);
+
+  const scheduleProtectedQueryRefresh = useCallback(() => {
+    window.setTimeout(() => {
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const rootKey = Array.isArray(query.queryKey) ? query.queryKey[0] : null;
+          return PROTECTED_QUERY_ROOTS.has(rootKey);
+        },
+      });
+    }, 0);
+  }, [queryClient]);
+
+  const recoverSessionAfterUnauthorized = useCallback(async () => {
+    if (sessionRecoveryRef.current) {
+      return sessionRecoveryRef.current;
+    }
+
+    const knownProfile = queryClient.getQueryData(queryKeys.sessionProfile());
+    if (!knownProfile) {
+      clearProtectedQueryData();
+      return null;
+    }
+
+    sessionRecoveryRef.current = (async () => {
+      try {
+        const profile = await getSessionProfile(undefined, { skipSessionRecovery: true });
+        queryClient.setQueryData(queryKeys.sessionProfile(), profile);
+
+        if (profile) {
+          scheduleProtectedQueryRefresh();
+          return profile;
+        }
+
+        clearProtectedQueryData();
+        return null;
+      } catch (_error) {
+        clearProtectedQueryData();
+        return null;
+      } finally {
+        sessionRecoveryRef.current = null;
+      }
+    })();
+
+    return sessionRecoveryRef.current;
+  }, [clearProtectedQueryData, queryClient, scheduleProtectedQueryRefresh]);
 
   const logout = useCallback(async () => {
     try {
@@ -56,9 +103,13 @@ export function SessionProvider({ children }) {
   useEffect(() => {
     const interceptor = apiClient.interceptors.response.use(
       (response) => response,
-      (error) => {
+      async (error) => {
         if (isUnauthorizedError(error)) {
-          clearProtectedQueryData();
+          if (error?.config?._skipSessionRecovery) {
+            return Promise.reject(error);
+          }
+
+          await recoverSessionAfterUnauthorized();
         }
 
         return Promise.reject(error);
@@ -68,11 +119,11 @@ export function SessionProvider({ children }) {
     return () => {
       apiClient.interceptors.response.eject(interceptor);
     };
-  }, [clearProtectedQueryData]);
+  }, [recoverSessionAfterUnauthorized]);
 
   const sessionQuery = useQuery({
     queryKey: queryKeys.sessionProfile(),
-    queryFn: ({ signal }) => getSessionProfile(signal),
+    queryFn: ({ signal }) => getSessionProfile(signal, { skipSessionRecovery: true }),
     staleTime: SESSION_QUERY_STALE_TIME_MS,
   });
 

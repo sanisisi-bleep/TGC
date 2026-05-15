@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Analytics } from '@vercel/analytics/react';
@@ -105,15 +105,12 @@ function AppShell({
   } = useSession();
   const { showToast } = useToast();
   const installPrompt = useInstallPrompt();
+  const catalogRecoveryAttemptedRef = useRef(false);
   const canPromptInstall = installPrompt.canPrompt;
   const showIosHint = installPrompt.showIosHint;
   const showInstallAction = canPromptInstall || showIosHint;
   const installButtonLabel = showIosHint ? 'Anadir app' : 'Instalar app';
   const promptInstall = installPrompt.promptInstall;
-
-  const handleLoginSuccess = useCallback(async () => {
-    await refreshSession();
-  }, [refreshSession]);
 
   const handleInstallApp = useCallback(async () => {
     if (canPromptInstall) {
@@ -145,6 +142,16 @@ function AppShell({
     queryFn: getTgcCatalog,
     staleTime: QUERY_STALE_TIMES.tgcCatalog,
   });
+
+  const handleLoginSuccess = useCallback(async () => {
+    await refreshSession();
+
+    const catalogResult = await tgcCatalogQuery.refetch();
+    if (Array.isArray(catalogResult.data) && catalogResult.data.length > 0) {
+      catalogRecoveryAttemptedRef.current = false;
+    }
+  }, [refreshSession, tgcCatalogQuery]);
+
   const retryTgcLoad = useCallback(() => {
     tgcCatalogQuery.refetch();
   }, [tgcCatalogQuery]);
@@ -177,6 +184,35 @@ function AppShell({
   const navGames = availableGames.length > 0 ? availableGames : fallbackGames;
   const loadingTgcs = tgcCatalogQuery.isPending && !tgcCatalogQuery.data;
   const tgcLoadError = tgcCatalogQuery.error || null;
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      catalogRecoveryAttemptedRef.current = false;
+      return;
+    }
+
+    if (hasResolvedCatalog) {
+      catalogRecoveryAttemptedRef.current = false;
+      return;
+    }
+
+    if (tgcCatalogQuery.isPending || tgcCatalogQuery.isFetching || !tgcLoadError) {
+      return;
+    }
+
+    if (catalogRecoveryAttemptedRef.current) {
+      return;
+    }
+
+    catalogRecoveryAttemptedRef.current = true;
+    tgcCatalogQuery.refetch();
+  }, [
+    hasResolvedCatalog,
+    isAuthenticated,
+    tgcCatalogQuery,
+    tgcLoadError,
+  ]);
+
   const shouldBlockProtectedGameRoutes = isAuthenticated
     ? (loadingTgcs || (!activeTgc && (!hasResolvedCatalog || Boolean(tgcLoadError))))
     : false;

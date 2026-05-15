@@ -1,7 +1,10 @@
 import apiClient from '../apiClient';
 
-export const getSessionProfile = async (signal) => {
-  const response = await apiClient.get('/auth/session', { signal });
+export const getSessionProfile = async (signal, options = {}) => {
+  const response = await apiClient.get('/auth/session', {
+    signal,
+    ...(options?.skipSessionRecovery ? { _skipSessionRecovery: true } : {}),
+  });
   return response.data?.user || null;
 };
 
