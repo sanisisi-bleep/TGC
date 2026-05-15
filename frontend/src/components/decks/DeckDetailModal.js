@@ -14,6 +14,7 @@ function DeckDetailModal({
   selectedDeckSummary,
   selectedDeckConsideringTotal,
   selectedDeckEggCount,
+  selectedDeckIsGundam,
   selectedDeckIsOnePiece,
   selectedDeckIsDigimon,
   selectedDeckIsRiftbound,
@@ -59,6 +60,17 @@ function DeckDetailModal({
   if (!isOpen) {
     return null;
   }
+
+  const selectedDeckMainCards = Number(selectedDeck?.main_deck_cards ?? selectedDeck?.total_cards) || 0;
+  const selectedDeckRequiredMainCards = selectedDeckIsGundam
+    ? 50
+    : (Number(selectedDeck?.required_main_deck_cards) || 50);
+  const selectedDeckResourceCards = selectedDeckIsGundam
+    ? (Number(selectedDeck?.resource_cards) || 0)
+    : 0;
+  const selectedDeckMaxResourceCards = selectedDeckIsGundam
+    ? (Number(selectedDeck?.max_resource_cards) || 10)
+    : 0;
 
   return (
     <div className="card-modal deck-modal" onClick={onClose}>
@@ -109,6 +121,8 @@ function DeckDetailModal({
                       ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50}`
                       : selectedDeckIsDigimon
                         ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50}`
+                        : selectedDeckIsGundam
+                          ? `Main ${selectedDeckMainCards}/${selectedDeckRequiredMainCards}`
                         : selectedDeckIsRiftbound
                           ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 40}`
                         : `${selectedDeck?.total_cards || 0}/${selectedDeck?.max_cards || 50}`}
@@ -126,6 +140,11 @@ function DeckDetailModal({
                   {selectedDeckIsDigimon && (
                     <span className="deck-status-chip deck-progress-chip">
                       Eggs {selectedDeckEggCount || 0}/{selectedDeck?.max_egg_cards || 5}
+                    </span>
+                  )}
+                  {selectedDeckIsGundam && (
+                    <span className="deck-status-chip deck-progress-chip">
+                      Resources {selectedDeckResourceCards}/{selectedDeckMaxResourceCards}
                     </span>
                   )}
                   {selectedDeckIsRiftbound && (
@@ -233,6 +252,90 @@ function DeckDetailModal({
               <div className="empty-state subtle-empty">
                 <p>Este mazo todavia no tiene cartas.</p>
               </div>
+            )}
+
+            {selectedDeckIsGundam && (
+              <>
+                <section className="deck-considering-section panel">
+                  <div className="deck-considering-header">
+                    <div>
+                      <span className="eyebrow">Resource Deck</span>
+                      <h3>Recursos del mazo</h3>
+                      <p>
+                        Esta zona no cuenta dentro de las 50 cartas del main deck. Si quieres dejarlo listo para jugar del todo,
+                        apunta a 10 Resource cards, pero aqui la mantenemos opcional para que puedas montarla poco a poco.
+                      </p>
+                    </div>
+                    <div className="deck-status-row">
+                      <span className="deck-status-chip deck-progress-chip">
+                        {selectedDeck?.resource_unique_cards || 0} distintas
+                      </span>
+                      <span className="deck-status-chip deck-progress-chip">
+                        {selectedDeckResourceCards}/{selectedDeckMaxResourceCards} copias
+                      </span>
+                    </div>
+                  </div>
+
+                  {(selectedDeck?.resource_cards_data || []).length > 0 ? (
+                    <div
+                      className={`deck-detail-grid ${deckCardView === 'grid' ? 'is-grid' : ''} ${deckCardView === 'inventory' ? 'is-inventory-grid' : ''}`.trim()}
+                    >
+                      {(selectedDeck?.resource_cards_data || []).map((card) => (
+                        <DeckCardRow
+                          key={`resource-${card.id}`}
+                          card={card}
+                          isGuestDemo={isGuestDemo}
+                          actionQuantity={getDeckActionQuantity(`resource:${card.id}`)}
+                          deckCardView={deckCardView}
+                          advancedDeckControlsEnabled={advancedDeckControlsEnabled}
+                          editingAssignmentCardId={editingAssignmentCardId}
+                          updatingAssignmentCardId={updatingAssignmentCardId}
+                          updatingDeckCardId={updatingDeckCardId}
+                          maxCopiesPerCard={selectedDeck?.max_copies_per_card || MAX_COPIES_PER_CARD}
+                          onActionQuantityChange={(cardId, value) => onDeckActionQuantityChange(`resource:${cardId}`, value)}
+                          onApplyBatchQuantity={(cardId, direction) => onApplyDeckBatchQuantity(selectedDeck.id, cardId, `resource:${cardId}`, direction)}
+                          onToggleAssignmentEditor={onToggleAssignmentEditor}
+                          onAdjustCoverage={onAdjustCoverage}
+                          onAdjustQuantity={(cardId, delta) => onAdjustDeckQuantity(selectedDeck.id, cardId, delta)}
+                          onMoveToConsidering={(cardId) => onMoveDeckCardToConsidering(
+                            selectedDeck.id,
+                            cardId,
+                            Math.min(commitDeckActionQuantity(`resource:${cardId}`), Number(card.quantity) || 1),
+                          )}
+                          onOpenCard={onOpenCard}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty-state subtle-empty">
+                      <p>Todavia no has anadido cartas al Resource Deck.</p>
+                    </div>
+                  )}
+                </section>
+
+                <section className="deck-considering-section panel">
+                  <div className="deck-considering-header">
+                    <div>
+                      <span className="eyebrow">Tokens de inicio</span>
+                      <h3>EX Base y EX Resource</h3>
+                      <p>
+                        En Gundam se empieza con 1 EX Base para ambos jugadores y 1 EX Resource para el segundo jugador.
+                        Son tokens oficiales, no forman parte del mazo ni del Resource Deck.
+                      </p>
+                    </div>
+                    <div className="deck-status-row">
+                      {selectedDeck?.supports_ex_base_token && (
+                        <span className="deck-status-chip deck-progress-chip">EX Base inicial</span>
+                      )}
+                      {selectedDeck?.supports_ex_resource_token && (
+                        <span className="deck-status-chip deck-progress-chip">
+                          EX Resource hasta {selectedDeck?.max_ex_resource_tokens || 5}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              </>
             )}
 
             {selectedDeckIsDigimon && (

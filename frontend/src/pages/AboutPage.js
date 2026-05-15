@@ -1,8 +1,14 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ABOUT_SECTIONS, ABOUT_VALUE_POINTS } from '../content/publicContent';
+import { GAME_CONFIGS } from '../tcgConfig';
 
 function AboutPage() {
+  const activeGameNames = Object.values(GAME_CONFIGS)
+    .filter((game) => game.available)
+    .map((game) => game.shortName)
+    .join(' | ');
+
   return (
     <div className="page-shell public-page">
       <section className="page-hero public-page-hero">
@@ -17,7 +23,7 @@ function AboutPage() {
 
         <div className="hero-stat">
           <span>TCGs activos</span>
-          <strong>Gundam | One Piece | Digimon</strong>
+          <strong>{activeGameNames}</strong>
         </div>
       </section>
 

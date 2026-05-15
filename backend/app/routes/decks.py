@@ -73,6 +73,7 @@ class DeckImportPayload(BaseModel):
     rune_cards: List[DeckImportCard] = Field(default_factory=list)
     battlefield_cards: List[DeckImportCard] = Field(default_factory=list)
     sideboard_cards: List[DeckImportCard] = Field(default_factory=list)
+    resource_cards: List[DeckImportCard] = Field(default_factory=list)
     chosen_champion: Optional[DeckImportCard] = None
 
 
@@ -260,6 +261,7 @@ def import_deck(payload: DeckImportPayload, db: Session = Depends(get_db), curre
             [card.dict() for card in payload.rune_cards],
             [card.dict() for card in payload.battlefield_cards],
             [card.dict() for card in payload.sideboard_cards],
+            [card.dict() for card in payload.resource_cards],
             payload.chosen_champion.dict() if payload.chosen_champion else None,
         )
         logger.info(
@@ -275,6 +277,7 @@ def import_deck(payload: DeckImportPayload, db: Session = Depends(get_db), curre
                 imported_rune_cards=len(payload.rune_cards),
                 imported_battlefield_cards=len(payload.battlefield_cards),
                 imported_sideboard_cards=len(payload.sideboard_cards),
+                imported_resource_cards=len(payload.resource_cards),
                 tgc_id=payload.tgc_id,
             ),
         )
@@ -292,6 +295,7 @@ def import_deck(payload: DeckImportPayload, db: Session = Depends(get_db), curre
             imported_rune_cards=len(payload.rune_cards),
             imported_battlefield_cards=len(payload.battlefield_cards),
             imported_sideboard_cards=len(payload.sideboard_cards),
+            imported_resource_cards=len(payload.resource_cards),
             tgc_id=payload.tgc_id,
         )
 

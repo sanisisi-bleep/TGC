@@ -34,19 +34,6 @@ export const PUBLIC_UPDATES = [
     tags: ['mazos', 'historial', 'compare'],
   },
   {
-    id: '2026-05-13-security-hardening',
-    date: '2026-05-13',
-    type: 'fix',
-    title: 'Refuerzo de seguridad y estabilidad',
-    summary: 'Se endurecieron rate limits, validacion de adjuntos y gestion de contrasenas para reducir riesgos y errores.',
-    highlights: [
-      'Rate limit persistente en base de datos.',
-      'Adjuntos multimedia validados por contenido real.',
-      'Registro sin filtrado claro de cuentas existentes.',
-    ],
-    tags: ['seguridad', 'backend', 'feedback'],
-  },
-  {
     id: '2026-05-12-guest-demo',
     date: '2026-05-12',
     type: 'feature',

@@ -108,6 +108,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             "rune_total_cards": int(snapshot.get("rune_total_cards") or 0),
             "battlefield_total_cards": int(snapshot.get("battlefield_total_cards") or 0),
             "sideboard_total_cards": int(snapshot.get("sideboard_total_cards") or 0),
+            "resource_total_cards": int(snapshot.get("resource_total_cards") or 0),
             "distinct_cards": (
                 len(snapshot.get("cards") or [])
                 + len(snapshot.get("egg_cards") or [])
@@ -115,6 +116,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
                 + len(snapshot.get("rune_cards_data") or [])
                 + len(snapshot.get("battlefield_cards_data") or [])
                 + len(snapshot.get("sideboard_cards_data") or [])
+                + len(snapshot.get("resource_cards_data") or [])
             ),
         }
 
@@ -178,6 +180,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         rune_cards: Optional[List[dict]] = None,
         battlefield_cards: Optional[List[dict]] = None,
         sideboard_cards: Optional[List[dict]] = None,
+        resource_cards: Optional[List[dict]] = None,
         chosen_champion: Optional[dict] = None,
     ):
         egg_cards = egg_cards or []
@@ -185,7 +188,8 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         rune_cards = rune_cards or []
         battlefield_cards = battlefield_cards or []
         sideboard_cards = sideboard_cards or []
-        if not cards and not egg_cards and not legend_cards and not rune_cards and not battlefield_cards and not sideboard_cards:
+        resource_cards = resource_cards or []
+        if not cards and not egg_cards and not legend_cards and not rune_cards and not battlefield_cards and not sideboard_cards and not resource_cards:
             raise ValueError("Imported deck must include at least one card")
 
         target_tgc = self._get_tgc_by_id(tgc_id) if tgc_id is not None else self._get_default_tgc()
@@ -201,11 +205,12 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             "rune": {},
             "battlefield": {},
             "sideboard": {},
+            "resource": {},
         }
         deck_entries = []
         chosen_champion_card_id = None
 
-        for raw_card in [*cards, *egg_cards, *legend_cards, *rune_cards, *battlefield_cards, *sideboard_cards]:
+        for raw_card in [*cards, *egg_cards, *legend_cards, *rune_cards, *battlefield_cards, *sideboard_cards, *resource_cards]:
             quantity = int(raw_card.get("quantity") or 0)
             if quantity <= 0:
                 raise ValueError("Imported card quantity must be greater than zero")
@@ -223,6 +228,11 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
                         raise ValueError(f"{card.name} does not belong to the {requested_zone} zone")
                 elif requested_zone != "main":
                     raise ValueError(f"Unsupported import zone: {requested_zone}")
+            if self._is_gundam_tgc(target_tgc) and requested_zone:
+                if requested_zone not in {"main", "resource"}:
+                    raise ValueError(f"Unsupported import zone: {requested_zone}")
+                if requested_zone != storage_section:
+                    raise ValueError(f"{card.name} no pertenece a la zona {requested_zone}.")
             current_quantity = aggregated_cards[storage_section].get(card.id, 0)
             aggregated_cards[storage_section][card.id] = current_quantity + quantity
 
@@ -230,7 +240,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             chosen_champion_card = self._resolve_import_card(resolved_tgc_id, chosen_champion)
             chosen_champion_card_id = chosen_champion_card.id
 
-        for storage_section in ("main", "egg", "legend", "rune", "battlefield", "sideboard"):
+        for storage_section in ("main", "egg", "legend", "rune", "battlefield", "sideboard", "resource"):
             for card_id, quantity in aggregated_cards[storage_section].items():
                 card = self.db.query(Card).filter(Card.id == card_id).first()
                 deck_entries.append(
@@ -271,7 +281,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         for entry in deck_entries:
             if entry["storage_section"] == "egg":
                 model_class = DeckEggCard
-            elif entry["storage_section"] in {"legend", "rune", "battlefield", "sideboard"}:
+            elif entry["storage_section"] in {"legend", "rune", "battlefield", "sideboard", "resource"}:
                 model_class = DeckZoneCard
             else:
                 model_class = DeckCard
@@ -404,8 +414,13 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             raise ValueError("Card belongs to a different TCG")
 
         storage_section = self._get_card_storage_section(deck_tgc, card)
+        requested_zone = (zone or "").strip().lower()
+        if self._is_gundam_tgc(deck_tgc) and requested_zone:
+            if requested_zone not in {"main", "resource"}:
+                raise ValueError(f"Unsupported Gundam zone: {requested_zone}")
+            if requested_zone != storage_section:
+                raise ValueError(f"{card.name} no pertenece a la zona {requested_zone}.")
         if self._is_riftbound_tgc(deck_tgc):
-            requested_zone = (zone or "").strip().lower()
             if requested_zone == "sideboard":
                 if card.riftbound_data and (card.riftbound_data.is_legend or card.riftbound_data.is_rune or card.riftbound_data.is_battlefield):
                     raise ValueError("Legends, runes and battlefields cannot go into the Riftbound sideboard")
@@ -430,7 +445,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             if storage_section == "egg":
                 model_class = DeckEggCard
                 deck_card = model_class(deck_id=deck_id, card_id=card_id, quantity=quantity)
-            elif storage_section in {"legend", "rune", "battlefield", "sideboard"}:
+            elif storage_section in {"legend", "rune", "battlefield", "sideboard", "resource"}:
                 model_class = DeckZoneCard
                 deck_card = model_class(deck_id=deck_id, card_id=card_id, zone=storage_section, quantity=quantity)
             else:
@@ -577,7 +592,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
             if storage_section == "egg":
                 model_class = DeckEggCard
                 deck_card = model_class(deck_id=deck_id, card_id=card_id, quantity=quantity)
-            elif storage_section in {"legend", "rune", "battlefield", "sideboard"}:
+            elif storage_section in {"legend", "rune", "battlefield", "sideboard", "resource"}:
                 model_class = DeckZoneCard
                 deck_card = model_class(deck_id=deck_id, card_id=card_id, zone=storage_section, quantity=quantity)
             else:

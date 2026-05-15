@@ -8,6 +8,7 @@ from app.services.game_rules import (
     RIFTBOUND_TCG_NAME,
     get_digimon_card_role,
     get_digimon_colors,
+    get_gundam_card_role,
     get_gundam_colors,
     get_one_piece_card_role,
     get_one_piece_colors,
@@ -32,6 +33,12 @@ class DeckServiceRulesMixin:
     def _get_card_role(self, deck_tgc, card: Card) -> str:
         if self._is_one_piece_tgc(deck_tgc):
             return get_one_piece_card_role(card.card_type)
+        if self._is_gundam_tgc(deck_tgc):
+            return get_gundam_card_role(
+                card.card_type,
+                getattr(card, "zones", None),
+                getattr(getattr(card, "gundam_data", None), "zone", None),
+            )
         if self._is_digimon_tgc(deck_tgc):
             return get_digimon_card_role(card.card_type)
         if self._is_riftbound_tgc(deck_tgc):
@@ -47,6 +54,8 @@ class DeckServiceRulesMixin:
 
     def _get_card_storage_section(self, deck_tgc, card: Card) -> str:
         role = self._get_card_role(deck_tgc, card)
+        if self._is_gundam_tgc(deck_tgc) and role == "resource":
+            return "resource"
         if self._is_digimon_tgc(deck_tgc) and role == "egg":
             return "egg"
         if self._is_riftbound_tgc(deck_tgc) and role in {"legend", "rune", "battlefield", "sideboard"}:
@@ -78,6 +87,10 @@ class DeckServiceRulesMixin:
                 return rules["required_leader_cards"]
             if role == "don":
                 return rules["max_don_cards"]
+        if self._is_gundam_tgc(deck_tgc):
+            role = self._get_card_role(deck_tgc, card)
+            if role == "resource":
+                return rules.get("max_resource_copies_per_card") or 999
         return rules["max_copies_per_card"]
 
     def _build_generic_deck_composition(self, rules: dict, deck_entries: List[dict]):
@@ -118,6 +131,7 @@ class DeckServiceRulesMixin:
 
     def _build_gundam_deck_composition(self, rules: dict, deck_entries: List[dict]):
         total_cards = sum(entry["quantity"] for entry in deck_entries if entry["storage_section"] == "main")
+        resource_cards = sum(entry["quantity"] for entry in deck_entries if entry["storage_section"] == "resource")
         max_deck_colors = max(int(rules.get("max_deck_colors") or 0), 0)
         deck_color_labels = []
         deck_color_set = set()
@@ -126,6 +140,8 @@ class DeckServiceRulesMixin:
         main_card_names = {}
 
         for entry in deck_entries:
+            if entry["storage_section"] != "main":
+                continue
             card = entry["card"]
             quantity = entry["quantity"]
             source_card_id = self._get_copy_limit_key(None, card)
@@ -165,6 +181,8 @@ class DeckServiceRulesMixin:
             if quantity > rules["max_copies_per_card"]
         ]
 
+        resource_deck_ready = resource_cards == rules.get("required_resource_cards", 0)
+
         return {
             "format_mode": "gundam",
             "leader_cards": 0,
@@ -174,6 +192,16 @@ class DeckServiceRulesMixin:
             "max_main_deck_cards": rules["max_main_deck_cards"],
             "missing_main_deck_cards": max(rules["required_main_deck_cards"] - total_cards, 0),
             "extra_main_deck_cards": max(total_cards - rules["max_main_deck_cards"], 0),
+            "resource_cards": resource_cards,
+            "required_resource_cards": rules.get("required_resource_cards", 0),
+            "max_resource_cards": rules.get("max_resource_cards", 0),
+            "resource_deck_is_optional": bool(rules.get("allow_optional_resource_deck")),
+            "missing_resource_cards": max((rules.get("required_resource_cards", 0) or 0) - resource_cards, 0),
+            "extra_resource_cards": max(resource_cards - (rules.get("max_resource_cards", 0) or 0), 0),
+            "resource_deck_ready": resource_deck_ready,
+            "supports_ex_base_token": bool(rules.get("supports_ex_base_token")),
+            "supports_ex_resource_token": bool(rules.get("supports_ex_resource_token")),
+            "max_ex_resource_tokens": rules.get("max_ex_resource_tokens", 0),
             "don_cards": 0,
             "recommended_don_cards": 0,
             "don_is_optional": False,
@@ -627,6 +655,9 @@ class DeckServiceRulesMixin:
     def _validate_gundam_composition(self, rules: dict, composition: dict, require_complete: bool):
         if composition["main_deck_cards"] > rules["max_main_deck_cards"]:
             raise ValueError("El mazo de Gundam no puede superar 50 cartas.")
+
+        if composition.get("resource_cards", 0) > (rules.get("max_resource_cards", 0) or 0):
+            raise ValueError("El Resource Deck de Gundam no puede superar 10 cartas.")
 
         if composition["copy_limit_exceeded_cards"]:
             exceeded_card = composition["copy_limit_exceeded_cards"][0]

@@ -5,10 +5,60 @@ from typing import List, Optional
 from sqlalchemy import func, literal
 
 from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, DeckZoneCard, Tgc, User, UserCollection
-from app.services.game_rules import DEFAULT_RULES, GUNDAM_TCG_NAME, get_tcg_rules, get_tgc_name_aliases
+from app.services.game_rules import DEFAULT_RULES, GUNDAM_TCG_NAME, canonicalize_tgc_name, get_tcg_rules, get_tgc_name_aliases
 
 
 class DeckServiceQueryMixin:
+    def _get_supported_tgc_name(self, *values: Optional[str]):
+        for value in values:
+            canonical_name = canonicalize_tgc_name(value)
+            if canonical_name and get_tcg_rules(canonical_name) != DEFAULT_RULES:
+                return canonical_name
+        return None
+
+    def _find_best_tgc_for_canonical_name(self, canonical_name: Optional[str]):
+        resolved_name = self._get_supported_tgc_name(canonical_name)
+        if not resolved_name:
+            return None
+
+        candidates = [
+            tgc for tgc in self.db.query(Tgc).all()
+            if self._get_supported_tgc_name(tgc.name, tgc.description) == resolved_name
+        ]
+        if not candidates:
+            return None
+
+        card_counts = {
+            tgc_id: quantity
+            for tgc_id, quantity in (
+                self.db.query(Card.tgc_id, func.count(Card.id))
+                .group_by(Card.tgc_id)
+                .all()
+            )
+            if tgc_id is not None
+        }
+        return max(
+            candidates,
+            key=lambda tgc: (
+                int(card_counts.get(tgc.id, 0) > 0),
+                card_counts.get(tgc.id, 0),
+                int(self._get_supported_tgc_name(tgc.name) == resolved_name),
+                int(self._get_supported_tgc_name(tgc.description) == resolved_name),
+                int((tgc.name or "").strip() == resolved_name),
+                -tgc.id,
+            ),
+        )
+
+    def _resolve_known_tgc(self, tgc: Optional[Tgc]):
+        if not tgc:
+            return None
+
+        canonical_name = self._get_supported_tgc_name(tgc.name, tgc.description)
+        if not canonical_name:
+            return tgc
+
+        return self._find_best_tgc_for_canonical_name(canonical_name) or tgc
+
     def _build_import_lookup_candidates(self, source_card_id: str) -> list[str]:
         raw_value = (source_card_id or "").strip()
         if not raw_value:
@@ -89,7 +139,8 @@ class DeckServiceQueryMixin:
     def _get_tgc_by_id(self, tgc_id: Optional[int]):
         if tgc_id is None:
             return None
-        return self.db.query(Tgc).filter(Tgc.id == tgc_id).first()
+        tgc = self.db.query(Tgc).filter(Tgc.id == tgc_id).first()
+        return self._resolve_known_tgc(tgc)
 
     def _get_tgcs_by_ids(self, tgc_ids: List[int]) -> dict[int, Tgc]:
         if not tgc_ids:
@@ -100,13 +151,12 @@ class DeckServiceQueryMixin:
             .filter(Tgc.id.in_(tgc_ids))
             .all()
         )
-        return {tgc.id: tgc for tgc in tgcs}
+        return {tgc.id: self._resolve_known_tgc(tgc) for tgc in tgcs}
 
     def _get_default_tgc(self):
-        alias_names = {alias.lower() for alias in get_tgc_name_aliases(GUNDAM_TCG_NAME)}
         candidates = [
             tgc for tgc in self.db.query(Tgc).all()
-            if (tgc.name or "").strip().lower() in alias_names
+            if self._get_supported_tgc_name(tgc.name, tgc.description) == GUNDAM_TCG_NAME
         ]
         if candidates:
             card_counts = {
@@ -138,7 +188,7 @@ class DeckServiceQueryMixin:
         inferred_tgc = self._infer_deck_tgc_from_cards(deck.id)
 
         if deck.tgc_id:
-            tgc = self.db.query(Tgc).filter(Tgc.id == deck.tgc_id).first()
+            tgc = self._get_tgc_by_id(deck.tgc_id)
             if tgc and get_tcg_rules(tgc.name) != DEFAULT_RULES:
                 return tgc
             if inferred_tgc:
@@ -504,7 +554,7 @@ class DeckServiceQueryMixin:
     def _get_storage_total_quantity(self, deck_id: int, storage_section: str) -> int:
         if storage_section == "egg":
             return self._get_egg_total_quantity(deck_id)
-        if storage_section in {"legend", "rune", "battlefield", "sideboard"}:
+        if storage_section in {"legend", "rune", "battlefield", "sideboard", "resource"}:
             return (
                 self.db.query(func.coalesce(func.sum(DeckZoneCard.quantity), 0))
                 .filter(DeckZoneCard.deck_id == deck_id, DeckZoneCard.zone == storage_section)
@@ -520,7 +570,7 @@ class DeckServiceQueryMixin:
                 .filter(DeckEggCard.deck_id == deck_id, DeckEggCard.card_id == card_id)
                 .first()
             )
-        if storage_section in {"legend", "rune", "battlefield", "sideboard"}:
+        if storage_section in {"legend", "rune", "battlefield", "sideboard", "resource"}:
             return (
                 self.db.query(DeckZoneCard)
                 .filter(

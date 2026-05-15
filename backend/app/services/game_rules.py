@@ -10,6 +10,8 @@ TGC_NAME_ALIASES = {
     GUNDAM_TCG_NAME: {
         "gundam",
         "gundam card game",
+        "gundam cg",
+        "gundam gcg",
         "gundam tcg",
     },
     ONE_PIECE_TCG_NAME: {
@@ -50,9 +52,13 @@ DEFAULT_RULES = {
     "deck_min_cards": 0,
     "deck_max_cards": 999,
     "max_copies_per_card": 999,
+    "max_resource_copies_per_card": 999,
     "required_leader_cards": 0,
     "required_main_deck_cards": 0,
     "max_main_deck_cards": 999,
+    "required_resource_cards": 0,
+    "max_resource_cards": 0,
+    "allow_optional_resource_deck": False,
     "max_don_cards": 0,
     "allow_optional_don_deck": False,
     "enforce_color_identity": False,
@@ -66,6 +72,9 @@ DEFAULT_RULES = {
     "max_battlefield_cards": 0,
     "required_chosen_champion_cards": 0,
     "max_sideboard_cards": 0,
+    "supports_ex_base_token": False,
+    "supports_ex_resource_token": False,
+    "max_ex_resource_tokens": 0,
 }
 
 
@@ -77,10 +86,17 @@ TGC_RULES = {
         "required_leader_cards": 0,
         "required_main_deck_cards": 50,
         "max_main_deck_cards": 50,
+        "required_resource_cards": 10,
+        "max_resource_cards": 10,
+        "allow_optional_resource_deck": True,
+        "max_resource_copies_per_card": 999,
         "max_don_cards": 0,
         "allow_optional_don_deck": False,
         "enforce_color_identity": True,
         "max_deck_colors": 2,
+        "supports_ex_base_token": True,
+        "supports_ex_resource_token": True,
+        "max_ex_resource_tokens": 5,
     },
     ONE_PIECE_TCG_NAME: {
         "deck_min_cards": 50,
@@ -147,7 +163,12 @@ TGC_RULES = {
 
 
 def normalize_tgc_name(value: str | None):
-    return re.sub(r"\s+", " ", (value or "").strip()).lower()
+    normalized = re.sub(r"[_-]+", " ", (value or "").strip())
+    return re.sub(r"\s+", " ", normalized).lower()
+
+
+def compact_tgc_name(value: str | None):
+    return re.sub(r"[^a-z0-9]+", "", normalize_tgc_name(value))
 
 
 def canonicalize_tgc_name(value: str | None):
@@ -155,9 +176,27 @@ def canonicalize_tgc_name(value: str | None):
     if not normalized:
         return None
 
+    compact_normalized = compact_tgc_name(normalized)
+
     for canonical_name, aliases in TGC_NAME_ALIASES.items():
         if normalized in aliases:
             return canonical_name
+        if compact_normalized and compact_tgc_name(canonical_name) == compact_normalized:
+            return canonical_name
+        for alias in aliases:
+            if compact_normalized and compact_tgc_name(alias) == compact_normalized:
+                return canonical_name
+
+    if "gundam" in compact_normalized:
+        return GUNDAM_TCG_NAME
+    if "onepiece" in compact_normalized:
+        return ONE_PIECE_TCG_NAME
+    if "digimon" in compact_normalized:
+        return DIGIMON_TCG_NAME
+    if "riftbound" in compact_normalized:
+        return RIFTBOUND_TCG_NAME
+    if "magic" in compact_normalized:
+        return MAGIC_TCG_NAME
 
     return re.sub(r"\s+", " ", (value or "").strip()) or None
 
@@ -220,6 +259,22 @@ def detect_colors(raw_color: str | None, known_colors: tuple[str, ...]):
 
 def get_gundam_colors(raw_color: str | None):
     return detect_colors(raw_color, GUNDAM_COLORS)
+
+
+def get_gundam_card_role(card_type: str | None, card_zones: str | None = None, detail_zone: str | None = None):
+    normalized_card_type = normalize_card_type(card_type)
+    if "RESOURCE" in normalized_card_type:
+        return "resource"
+
+    normalized_zones = " ".join(
+        part.strip().lower()
+        for part in (card_zones, detail_zone)
+        if isinstance(part, str) and part.strip()
+    )
+    if normalized_zones and re.search(r"\bresource\b", normalized_zones, flags=re.IGNORECASE):
+        return "resource"
+
+    return "main"
 
 
 def get_one_piece_colors(raw_color: str | None):

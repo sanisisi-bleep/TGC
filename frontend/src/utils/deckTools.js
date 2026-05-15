@@ -7,9 +7,13 @@ const DEFAULT_DECK_RULES = {
   deckMinCards: 0,
   deckMaxCards: 999,
   maxCopiesPerCard: 999,
+  maxResourceCopiesPerCard: 999,
   requiredLeaderCards: 0,
   requiredMainDeckCards: 0,
   maxMainDeckCards: 999,
+  requiredResourceCards: 0,
+  maxResourceCards: 0,
+  allowOptionalResourceDeck: false,
   requiredEggCards: 0,
   maxEggCards: 0,
   maxDonCards: 0,
@@ -23,19 +27,29 @@ const DEFAULT_DECK_RULES = {
   maxBattlefieldCards: 0,
   requiredChosenChampionCards: 0,
   maxSideboardCards: 0,
+  supportsExBaseToken: false,
+  supportsExResourceToken: false,
+  maxExResourceTokens: 0,
 };
 export const TCG_DECK_RULES = {
   gundam: {
     deckMinCards: 50,
     deckMaxCards: 50,
     maxCopiesPerCard: 4,
+    maxResourceCopiesPerCard: 999,
     requiredLeaderCards: 0,
     requiredMainDeckCards: 50,
     maxMainDeckCards: 50,
+    requiredResourceCards: 10,
+    maxResourceCards: 10,
+    allowOptionalResourceDeck: true,
     maxDonCards: 0,
     allowOptionalDonDeck: false,
     enforceColorIdentity: true,
     maxDeckColors: 2,
+    supportsExBaseToken: true,
+    supportsExResourceToken: true,
+    maxExResourceTokens: 5,
   },
   'one-piece': {
     deckMinCards: 50,
@@ -95,7 +109,7 @@ export const TCG_DECK_RULES = {
     maxDeckColors: 0,
   },
 };
-const DECK_ROLE_ORDER = { leader: 0, legend: 1, egg: 2, main: 3, rune: 4, battlefield: 5, don: 6, sideboard: 7 };
+const DECK_ROLE_ORDER = { leader: 0, legend: 1, egg: 2, main: 3, resource: 4, rune: 5, battlefield: 6, don: 7, sideboard: 8 };
 const DECK_COLOR_TONES = {
   Blue: { solid: '#2d6cdf', border: '#17479c', text: '#ffffff' },
   Green: { solid: '#2f8f5b', border: '#1d6440', text: '#ffffff' },
@@ -173,6 +187,28 @@ export const getDigimonColorLabels = (rawColor) => {
   ));
 };
 
+export const getGundamDeckRole = (card) => {
+  const cardType = typeof card === 'string' ? card : card?.card_type;
+  const normalizedCardType = (cardType || '').trim().toLowerCase();
+  if (normalizedCardType.includes('resource')) {
+    return 'resource';
+  }
+
+  const rawZones = [
+    typeof card === 'object' ? card?.zones : '',
+    typeof card === 'object' ? card?.gundam_data?.zone : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (/\bresource\b/.test(rawZones)) {
+    return 'resource';
+  }
+
+  return 'main';
+};
+
 export const getRiftboundDomainLabels = (rawColor) => {
   const normalizedColor = (rawColor || '').trim();
   if (!normalizedColor) {
@@ -207,6 +243,10 @@ export const getDeckCardRole = (activeTcgSlug, cardType) => {
 
   if (activeTcgSlug === 'digimon') {
     return getDigimonDeckRole(cardType);
+  }
+
+  if (activeTcgSlug === 'gundam' && cardType) {
+    return getGundamDeckRole(cardType);
   }
 
   if (activeTcgSlug === 'riftbound' && cardType && typeof cardType === 'object') {
@@ -244,7 +284,7 @@ export const getDeckRuleSummary = (activeTcgSlug) => {
   }
 
   if (activeTcgSlug === 'gundam') {
-    return 'Regla rapida de Gundam: 50 cartas, hasta 4 copias por numero y un maximo de 2 colores por mazo.';
+    return 'Regla rapida de Gundam: 50 cartas en el main deck, Resource Deck de 10 cartas, hasta 4 copias por numero y un maximo de 2 colores por mazo.';
   }
 
   if (activeTcgSlug === 'digimon') {
@@ -287,10 +327,12 @@ const buildOnePieceSearchDeckSummary = (deck, rules) => {
 const buildGundamSearchDeckSummary = (deck, rules) => {
   const totalCards = Number(deck?.main_deck_cards ?? deck?.total_cards) || 0;
   const requiredMainDeckCards = Number(deck?.required_main_deck_cards) || rules.requiredMainDeckCards || 50;
+  const resourceCards = Number(deck?.resource_cards) || 0;
+  const maxResourceCards = Number(deck?.max_resource_cards) || rules.maxResourceCards || 10;
   const deckColorLabels = Array.isArray(deck?.deck_color_labels) ? deck.deck_color_labels : [];
   const colorSummary = formatDeckColorList(deckColorLabels) || 'sin fijar';
 
-  return `Main ${totalCards}/${requiredMainDeckCards} | Colores ${colorSummary}`;
+  return `Main ${totalCards}/${requiredMainDeckCards} | Resources ${resourceCards}/${maxResourceCards} | Colores ${colorSummary}`;
 };
 
 const buildDigimonSearchDeckSummary = (deck, rules) => {
@@ -403,13 +445,16 @@ export const getNewDeckCreationPlan = (activeTcgSlug, card, quantity) => {
   }
 
   if (activeTcgSlug === 'gundam') {
+    const gundamRole = getGundamDeckRole(card);
     return {
       canCreate: true,
       shouldAddCardAfterCreate: true,
       buttonLabel: 'Crear y anadir',
-      helper: cardColors.length > 0
-        ? `El mazo arrancara con los colores ${formatDeckColorList(cardColors)}.`
-        : 'El mazo se creara y podras completarlo hasta 50 cartas.',
+      helper: gundamRole === 'resource'
+        ? `Se creara el mazo y ${quantityLabel} ira al Resource Deck opcional.`
+        : cardColors.length > 0
+          ? `El mazo arrancara con los colores ${formatDeckColorList(cardColors)}.`
+          : 'El mazo se creara y podras completarlo hasta 50 cartas.',
     };
   }
 
@@ -541,12 +586,31 @@ export const getSearchDeckOptionState = ({ activeTcgSlug, deck, card, quantity }
   }
 
   if (activeTcgSlug === 'gundam') {
+    const gundamRole = getGundamDeckRole(card);
     const mainDeckCards = Number(deck?.main_deck_cards ?? deck?.total_cards) || 0;
-    const maxMainDeckCards = Number(deck?.max_cards) || rules.maxMainDeckCards || 50;
+    const maxMainDeckCards = Number(deck?.required_main_deck_cards) || rules.maxMainDeckCards || 50;
+    const resourceCards = Number(deck?.resource_cards) || 0;
+    const maxResourceCards = Number(deck?.max_resource_cards) || rules.maxResourceCards || 10;
     const deckColorLabels = Array.isArray(deck?.deck_color_labels) ? deck.deck_color_labels : [];
     const maxDeckColors = Number(deck?.max_deck_colors) || rules.maxDeckColors || 2;
     const nextDeckColors = [...new Set([...deckColorLabels, ...cardColors])];
     const summary = buildGundamSearchDeckSummary(deck, rules);
+
+    if (gundamRole === 'resource') {
+      if (resourceCards + normalizedQuantity > maxResourceCards) {
+        return {
+          disabled: true,
+          summary,
+          helper: `Con ${quantityLabel} superarias las ${maxResourceCards} cartas del Resource Deck.`,
+        };
+      }
+
+      return {
+        disabled: false,
+        summary,
+        helper: `Anadir ${quantityLabel} al Resource Deck opcional.`,
+      };
+    }
 
     if (mainDeckCards + normalizedQuantity > maxMainDeckCards) {
       return {
@@ -862,6 +926,15 @@ export const buildDeckExportPayload = (deck) => ({
       quantity: card.quantity,
       zone: 'sideboard',
     })),
+    resource_cards: getExportableZoneCards(deck, 'resource_cards_data').map((card) => ({
+      card_id: card.id,
+      source_card_id: card.deck_key || card.source_card_id,
+      version: card.version,
+      name: card.name,
+      set_name: card.set_name,
+      quantity: card.quantity,
+      zone: 'resource',
+    })),
     chosen_champion: deck?.chosen_champion_card ? {
       card_id: deck.chosen_champion_card.id,
       source_card_id: deck.chosen_champion_card.deck_key || deck.chosen_champion_card.source_card_id,
@@ -908,6 +981,17 @@ export const buildDeckListText = (deck) => {
         '# Battlefields',
         ...battlefieldCards.map(formatLine),
         ...(sideboardCards.length > 0 ? ['', '# Sideboard', ...sideboardCards.map(formatLine)] : []),
+      ].join('\n');
+    }
+
+    if (deck?.composition?.format_mode === 'gundam') {
+      const resourceCards = getExportableZoneCards(deck, 'resource_cards_data');
+      const formatLine = (card) => `${Number(card.quantity)} ${card.source_card_id || card.deck_key || `CARD-${card.id}`}${card.name ? ` ${card.name}` : ''}`;
+
+      return [
+        '# Main Deck',
+        ...mainCards.map(formatLine),
+        ...(resourceCards.length > 0 ? ['', '# Resource Deck', ...resourceCards.map(formatLine)] : []),
       ].join('\n');
     }
 

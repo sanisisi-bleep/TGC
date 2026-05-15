@@ -946,11 +946,14 @@ textarea::placeholder {
 
 .hero-stat {
   min-width: 180px;
+  max-width: min(100%, 380px);
   padding: 1.1rem 1.2rem;
   border-radius: 24px;
   background: linear-gradient(145deg, rgba(22, 86, 193, 0.98), rgba(12, 50, 121, 0.94));
   color: white;
   text-align: right;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   transition:
     background var(--motion-slow) var(--ease-standard),
     border-color var(--motion-base) ease,
@@ -969,6 +972,29 @@ textarea::placeholder {
   margin-top: 0.25rem;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 2.4rem;
+  line-height: 1.05;
+}
+
+.hero-stat strong a {
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.hero-stat strong a:hover {
+  text-decoration: underline;
+}
+
+.hero-stat--contact {
+  min-width: min(100%, 320px);
+  text-align: left;
+}
+
+.hero-stat--contact strong {
+  font-size: clamp(1.25rem, 3vw, 2rem);
+  line-height: 1.12;
+  letter-spacing: -0.03em;
 }
 
 .view-toggle-panel {
@@ -5196,6 +5222,10 @@ textarea::placeholder {
 
 .public-page-hero {
   align-items: center;
+}
+
+.public-page-hero .hero-stat {
+  justify-self: end;
 }
 
 .updates-feed,

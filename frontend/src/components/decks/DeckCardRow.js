@@ -37,6 +37,8 @@ function DeckCardRow({
       ? 'Legend'
     : card.deck_role === 'egg'
       ? 'Digi-Egg'
+      : card.deck_role === 'resource'
+        ? 'Resource'
       : card.deck_role === 'rune'
         ? 'Rune'
         : card.deck_role === 'battlefield'

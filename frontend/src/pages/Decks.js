@@ -19,7 +19,7 @@ import usePositiveIntegerDraftMap from '../hooks/usePositiveIntegerDraftMap';
 import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
-import { getGameConfig } from '../tcgConfig';
+import { getGameConfig, resolveTcgSlug } from '../tcgConfig';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { applyCollectionDeckUsageUpdate, renameDeckInCollection } from '../utils/collectionCache';
 import {
@@ -163,13 +163,27 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     selectedDeck?.advanced_mode !== undefined ? selectedDeck.advanced_mode : advancedMode
   );
   const deckStats = useMemo(() => buildDeckStats(selectedDeck), [selectedDeck]);
+  const selectedDeckSlug = selectedDeck?.tgc_name ? resolveTcgSlug(selectedDeck.tgc_name) : null;
+  const selectedDeckIsGundam = selectedDeck?.composition?.format_mode === 'gundam' || selectedDeckSlug === 'gundam';
   const selectedDeckIsOnePiece = selectedDeck?.composition?.format_mode === 'one-piece';
   const selectedDeckIsDigimon = selectedDeck?.composition?.format_mode === 'digimon';
   const selectedDeckIsRiftbound = selectedDeck?.composition?.format_mode === 'riftbound';
+  const selectedDeckMainCards = Number(selectedDeck?.main_deck_cards ?? selectedDeck?.total_cards) || 0;
+  const selectedDeckRequiredMainCards = selectedDeckIsGundam
+    ? 50
+    : (Number(selectedDeck?.required_main_deck_cards) || 50);
+  const selectedDeckResourceCards = selectedDeckIsGundam
+    ? (Number(selectedDeck?.resource_cards) || 0)
+    : 0;
+  const selectedDeckMaxResourceCards = selectedDeckIsGundam
+    ? (Number(selectedDeck?.max_resource_cards) || 10)
+    : 0;
   const selectedDeckEggCount = selectedDeckIsDigimon ? getDeckEggCardCount(selectedDeck) : 0;
   const selectedDeckConsideringTotal = Number(selectedDeck?.considering_total_cards) || 0;
   const selectedDeckDistinctCards = selectedDeckIsDigimon
     ? (selectedDeck?.cards?.length || 0) + (selectedDeck?.egg_cards?.length || 0)
+    : selectedDeckIsGundam
+      ? (selectedDeck?.cards?.length || 0) + (selectedDeck?.resource_cards_data?.length || 0)
     : selectedDeckIsRiftbound
       ? (selectedDeck?.cards?.length || 0)
         + (selectedDeck?.legend_cards_data?.length || 0)
@@ -181,9 +195,11 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     ? `Leader ${selectedDeck?.leader_cards || 0}/${selectedDeck?.required_leader_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | DON ${selectedDeck?.don_cards || 0}/${selectedDeck?.recommended_don_cards || 10}`
     : selectedDeckIsDigimon
       ? `Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 50} | Eggs ${selectedDeckEggCount}/${selectedDeck?.max_egg_cards || 5}`
+      : selectedDeckIsGundam
+        ? `Main ${selectedDeckMainCards}/${selectedDeckRequiredMainCards} | Resources ${selectedDeckResourceCards}/${selectedDeckMaxResourceCards} opcional`
       : selectedDeckIsRiftbound
-        ? `Legend ${selectedDeck?.legend_cards || 0}/${selectedDeck?.required_legend_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 40} | Runes ${selectedDeck?.rune_cards || 0}/${selectedDeck?.required_rune_cards || 12} | Fields ${selectedDeck?.battlefield_cards || 0}/${selectedDeck?.required_battlefield_cards || 3}`
-    : `${selectedDeck?.total_cards || 0} cartas en total`;
+          ? `Legend ${selectedDeck?.legend_cards || 0}/${selectedDeck?.required_legend_cards || 1} | Main ${selectedDeck?.main_deck_cards || 0}/${selectedDeck?.required_main_deck_cards || 40} | Runes ${selectedDeck?.rune_cards || 0}/${selectedDeck?.required_rune_cards || 12} | Fields ${selectedDeck?.battlefield_cards || 0}/${selectedDeck?.required_battlefield_cards || 3}`
+      : `${selectedDeck?.total_cards || 0} cartas en total`;
   const comparisonDeckCandidates = useMemo(
     () => decks.filter((deck) => String(deck.id) !== String(selectedDeck?.id)),
     [decks, selectedDeck?.id]
@@ -1280,6 +1296,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         selectedDeckSummary={selectedDeckSummary}
         selectedDeckConsideringTotal={selectedDeckConsideringTotal}
         selectedDeckEggCount={selectedDeckEggCount}
+        selectedDeckIsGundam={selectedDeckIsGundam}
         selectedDeckIsOnePiece={selectedDeckIsOnePiece}
         selectedDeckIsDigimon={selectedDeckIsDigimon}
         selectedDeckIsRiftbound={selectedDeckIsRiftbound}

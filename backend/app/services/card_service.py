@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload, load_only
 from app.models import Card, Deck, DeckCard, DeckEggCard, DeckZoneCard, Tgc, User, UserCollection
 from app.database.repositories.card_repository import CardRepository
 from app.services.game_rules import DIGIMON_TCG_NAME, GUNDAM_TCG_NAME, ONE_PIECE_TCG_NAME, get_one_piece_card_role
-from app.services.game_rules import get_tgc_name_aliases, is_tgc_name
+from app.services.game_rules import canonicalize_tgc_name, get_tgc_name_aliases, is_tgc_name
 from app.services.image_service import (
     build_card_thumbnail_url,
     resolve_card_image_url,
@@ -535,10 +535,10 @@ class CardService:
         return self.card_repo.create(card)
 
     def _get_default_tgc_id(self):
-        alias_names = {alias.lower() for alias in get_tgc_name_aliases(GUNDAM_TCG_NAME)}
+        alias_names = {canonicalize_tgc_name(alias) for alias in get_tgc_name_aliases(GUNDAM_TCG_NAME)}
         candidates = [
             tgc for tgc in self.db.query(Tgc).all()
-            if (tgc.name or "").strip().lower() in alias_names
+            if canonicalize_tgc_name(tgc.name) in alias_names
         ]
         if not candidates:
             return None

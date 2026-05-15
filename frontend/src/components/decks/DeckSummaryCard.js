@@ -1,5 +1,6 @@
 import React from 'react';
 import { getDeckEggCardCount } from '../../utils/deckTools';
+import { resolveTcgSlug } from '../../tcgConfig';
 
 function DeckSummaryCard({
   deck,
@@ -12,14 +13,22 @@ function DeckSummaryCard({
   isSharing,
   isDeleting,
 }) {
+  const inferredDeckSlug = deck?.tgc_name ? resolveTcgSlug(deck.tgc_name) : null;
+  const isGundamDeck = deck?.composition?.format_mode === 'gundam' || inferredDeckSlug === 'gundam';
   const isOnePieceDeck = deck?.composition?.format_mode === 'one-piece';
   const isDigimonDeck = deck?.composition?.format_mode === 'digimon';
   const isRiftboundDeck = deck?.composition?.format_mode === 'riftbound';
   const deckEggCount = isDigimonDeck ? getDeckEggCardCount(deck) : 0;
   const createdAtLabel = new Date(deck.created_at).toLocaleDateString();
   const totalCards = Number(deck.total_cards) || 0;
-  const maxCards = Number(deck.max_cards) || 50;
-  const remainingCards = Math.max(Number(deck.remaining_cards) || 0, 0);
+  const mainDeckCards = Number(deck.main_deck_cards ?? deck.total_cards) || 0;
+  const maxCards = isGundamDeck ? 50 : (Number(deck.max_cards) || 50);
+  const requiredMainDeckCards = isGundamDeck ? 50 : (Number(deck.required_main_deck_cards) || 50);
+  const gundamResourceCards = isGundamDeck ? (Number(deck.resource_cards) || 0) : 0;
+  const gundamMaxResourceCards = isGundamDeck ? (Number(deck.max_resource_cards) || 10) : 0;
+  const remainingCards = isGundamDeck
+    ? Math.max(maxCards - mainDeckCards, 0)
+    : Math.max(Number(deck.remaining_cards) || 0, 0);
   const summaryCopy = isOnePieceDeck
     ? (
       deck.is_complete
@@ -37,6 +46,12 @@ function DeckSummaryCard({
           deck.is_complete
             ? 'Legend, Main Deck, Runes, Battlefields y Chosen Champion listos para jugar.'
             : 'Revisa la Legend, los domains, el Chosen Champion y las secciones especiales antes de cerrarlo.'
+        )
+      : isGundamDeck
+        ? (
+          deck.is_complete
+            ? 'Main deck y colores listos. Si quieres, completa tambien el Resource Deck opcional para dejarlo redondo.'
+            : 'Todavia le faltan cartas o colores por ajustar antes de dejarlo legal a 50 cartas.'
         )
     : (
       deck.is_complete
@@ -65,6 +80,8 @@ function DeckSummaryCard({
             ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} main`
             : isDigimonDeck
               ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} main`
+              : isGundamDeck
+                ? `${mainDeckCards}/${requiredMainDeckCards} main`
               : isRiftboundDeck
                 ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 40} main`
               : `${totalCards}/${maxCards} cartas`}
@@ -94,6 +111,15 @@ function DeckSummaryCard({
             </span>
             <span className="deck-status-chip deck-progress-chip">
               Eggs {deckEggCount}/{deck.max_egg_cards || 5}
+            </span>
+          </>
+        ) : isGundamDeck ? (
+          <>
+            <span className="deck-status-chip deck-progress-chip">
+              Main {mainDeckCards}/{requiredMainDeckCards}
+            </span>
+            <span className="deck-status-chip deck-progress-chip">
+              Resources {gundamResourceCards}/{gundamMaxResourceCards}
             </span>
           </>
         ) : isRiftboundDeck ? (

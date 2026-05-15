@@ -5,6 +5,7 @@ const SECTION_CONFIG = [
   { key: 'rune_cards_data', section: 'rune', label: 'Rune Deck' },
   { key: 'battlefield_cards_data', section: 'battlefield', label: 'Battlefields' },
   { key: 'sideboard_cards_data', section: 'sideboard', label: 'Sideboard' },
+  { key: 'resource_cards_data', section: 'resource', label: 'Resource Deck' },
   { key: 'considering_cards', section: 'considering', label: 'Considering' },
 ];
 

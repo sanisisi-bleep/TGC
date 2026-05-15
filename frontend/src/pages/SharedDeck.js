@@ -51,16 +51,25 @@ function SharedDeck() {
     );
   }
 
+  const isGundamDeck = deck?.composition?.format_mode === 'gundam' || activeTcgSlug === 'gundam';
   const isOnePieceDeck = deck?.composition?.format_mode === 'one-piece';
   const isDigimonDeck = deck?.composition?.format_mode === 'digimon';
   const deckEggCount = isDigimonDeck ? getDeckEggCardCount(deck) : 0;
+  const mainDeckCards = Number(deck?.main_deck_cards ?? deck?.total_cards) || 0;
+  const requiredMainDeckCards = isGundamDeck ? 50 : (Number(deck?.required_main_deck_cards) || 50);
+  const gundamResourceCards = isGundamDeck ? (Number(deck?.resource_cards) || 0) : 0;
+  const gundamMaxResourceCards = isGundamDeck ? (Number(deck?.max_resource_cards) || 10) : 0;
   const distinctCardCount = isDigimonDeck
     ? (deck?.cards?.length || 0) + (deck?.egg_cards?.length || 0)
+    : isGundamDeck
+      ? (deck?.cards?.length || 0) + (deck?.resource_cards_data?.length || 0)
     : (deck?.cards?.length || 0);
   const sharedDeckSummary = isOnePieceDeck
     ? `Leader ${deck.leader_cards || 0}/${deck.required_leader_cards || 1} | Main ${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} | DON ${deck.don_cards || 0}/${deck.recommended_don_cards || 10}`
     : isDigimonDeck
       ? `Main ${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50} | Eggs ${deckEggCount}/${deck.max_egg_cards || 5}`
+      : isGundamDeck
+        ? `Main ${mainDeckCards}/${requiredMainDeckCards} | Resources ${gundamResourceCards}/${gundamMaxResourceCards}`
     : `${deck.total_cards || 0} cartas en total`;
 
   return (
@@ -81,6 +90,8 @@ function SharedDeck() {
               ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50}`
               : isDigimonDeck
                 ? `${deck.main_deck_cards || 0}/${deck.required_main_deck_cards || 50}`
+                : isGundamDeck
+                  ? `${mainDeckCards}/${requiredMainDeckCards}`
               : `${deck.total_cards || 0}/${deck.max_cards || 50}`}
           </strong>
         </div>
@@ -105,6 +116,16 @@ function SharedDeck() {
             <span className="deck-status-chip deck-progress-chip">
               Eggs {deckEggCount}/{deck.max_egg_cards || 5}
             </span>
+          )}
+          {isGundamDeck && (
+            <>
+              <span className="deck-status-chip deck-progress-chip">
+                Main {mainDeckCards}/{requiredMainDeckCards}
+              </span>
+              <span className="deck-status-chip deck-progress-chip">
+                Resources {gundamResourceCards}/{gundamMaxResourceCards}
+              </span>
+            </>
           )}
         </div>
 
@@ -190,6 +211,65 @@ function SharedDeck() {
               ))}
             </div>
           </div>
+        )}
+
+        {isGundamDeck && (
+          <>
+            <div className="deck-considering-section panel">
+              <div className="deck-considering-header">
+                <div>
+                  <span className="eyebrow">Resource Deck</span>
+                  <h3>Recursos del mazo</h3>
+                  <p>Seccion separada del main deck. No cuenta dentro de las 50 cartas principales.</p>
+                </div>
+              </div>
+              {(deck.resource_cards_data || []).length > 0 ? (
+                <div className="deck-detail-grid">
+                  {(deck.resource_cards_data || []).map((card) => (
+                    <article
+                      key={`resource-${card.id}-${card.quantity}`}
+                      className="deck-card-row is-openable"
+                      onClick={() => setSelectedCard(card)}
+                    >
+                      <img
+                        src={card.image_url}
+                        alt={card.name}
+                        width="132"
+                        height="176"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <div className="deck-card-copy">
+                        <h4>{card.name}</h4>
+                        <div className="deck-owned-panel">
+                          <span className="deck-role-badge is-resource">Resource</span>
+                        </div>
+                        <p>{[card.card_type || 'Sin tipo', card.color || 'Sin color', card.rarity || 'Sin rareza'].join(' | ')}</p>
+                        <span>{card.set_name || 'Set desconocido'}</span>
+                      </div>
+                      <div className="deck-card-controls">
+                        <div className="deck-card-qty">x{card.quantity}</div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state subtle-empty">
+                  <p>Este mazo compartido todavia no muestra Resource Deck.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="deck-considering-section panel">
+              <div className="deck-considering-header">
+                <div>
+                  <span className="eyebrow">Tokens de inicio</span>
+                  <h3>EX Base y EX Resource</h3>
+                  <p>Se usan al empezar la partida, pero no forman parte del mazo ni del Resource Deck.</p>
+                </div>
+              </div>
+            </div>
+          </>
         )}
       </section>
 

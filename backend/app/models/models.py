@@ -5,6 +5,7 @@ from app.database.models import (
     DeckCard,
     DeckConsideringCard,
     DeckEggCard,
+    DeckVersion,
     DeckZoneCard,
     DigimonCard,
     GundamCard,
@@ -32,6 +33,7 @@ __all__ = [
     "DeckCard",
     "DeckConsideringCard",
     "DeckEggCard",
+    "DeckVersion",
     "DeckZoneCard",
     "RateLimitCounter",
 ]

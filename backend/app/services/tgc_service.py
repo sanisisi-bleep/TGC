@@ -68,13 +68,13 @@ class TgcService:
         return {tgc_id: count for tgc_id, count in rows if tgc_id is not None}
 
     def _find_matching_tgcs(self, name: str):
-        alias_names = {alias.lower() for alias in get_tgc_name_aliases(name)}
+        alias_names = {canonicalize_tgc_name(alias) for alias in get_tgc_name_aliases(name)}
         if not alias_names:
             return []
 
         return [
             tgc for tgc in self.tgc_repo.get_all()
-            if (tgc.name or "").strip().lower() in alias_names
+            if canonicalize_tgc_name(tgc.name) in alias_names
         ]
 
     def _find_best_matching_tgc(self, name: str):

@@ -143,9 +143,11 @@ function ContactPage() {
           </p>
         </div>
 
-        <div className="hero-stat">
+        <div className="hero-stat hero-stat--contact">
           <span>Canal directo</span>
-          <strong>multiversetgc@gmail.com</strong>
+          <strong>
+            <a href="mailto:multiversetgc@gmail.com">multiversetgc@gmail.com</a>
+          </strong>
         </div>
       </section>
 

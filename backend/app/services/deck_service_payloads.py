@@ -38,7 +38,7 @@ class DeckServicePayloadMixin:
                     color_warning_text = "Fuera de color con el Leader"
         elif self._is_gundam_tgc(deck_tgc):
             deck_colors = set(composition.get("deck_color_labels") or [])
-            if deck_colors and card_colors and not card_colors.issubset(deck_colors):
+            if storage_section == "main" and deck_colors and card_colors and not card_colors.issubset(deck_colors):
                 color_matches_rule = False
                 color_warning_text = "Fuera de los colores fijados del mazo"
         elif self._is_riftbound_tgc(deck_tgc):
@@ -125,7 +125,7 @@ class DeckServicePayloadMixin:
             "max_copies_per_card": rules["max_copies_per_card"],
             "remaining_cards": (
                 max(rules["required_main_deck_cards"] - composition["main_deck_cards"], 0)
-                if self._is_riftbound_tgc(deck_tgc)
+                if self._is_riftbound_tgc(deck_tgc) or self._is_gundam_tgc(deck_tgc)
                 else (
                 max(rules["deck_max_cards"] - composition["main_deck_cards"], 0)
                 if self._is_one_piece_tgc(deck_tgc) or self._is_digimon_tgc(deck_tgc)
@@ -138,6 +138,14 @@ class DeckServicePayloadMixin:
             "required_leader_cards": composition["required_leader_cards"],
             "main_deck_cards": composition["main_deck_cards"],
             "required_main_deck_cards": composition["required_main_deck_cards"],
+            "resource_cards": composition.get("resource_cards", 0),
+            "required_resource_cards": composition.get("required_resource_cards", 0),
+            "max_resource_cards": composition.get("max_resource_cards", 0),
+            "resource_deck_is_optional": bool(composition.get("resource_deck_is_optional")),
+            "resource_deck_ready": bool(composition.get("resource_deck_ready")),
+            "supports_ex_base_token": bool(composition.get("supports_ex_base_token")),
+            "supports_ex_resource_token": bool(composition.get("supports_ex_resource_token")),
+            "max_ex_resource_tokens": composition.get("max_ex_resource_tokens", 0),
             "don_cards": composition["don_cards"],
             "recommended_don_cards": composition["recommended_don_cards"],
             "don_is_optional": composition["don_is_optional"],
@@ -171,20 +179,37 @@ class DeckServicePayloadMixin:
             "rune_unique_cards": 0,
             "battlefield_unique_cards": 0,
             "sideboard_unique_cards": 0,
+            "resource_total_cards": 0,
+            "resource_unique_cards": 0,
             "considering_total_cards": 0,
             "considering_unique_cards": 0,
         }
 
     def _serialize_deck_summary_payload(self, deck: Deck, deck_tgc, rules: dict, playable_entries: list[dict]):
+        deck_tgc = self._resolve_known_tgc(deck_tgc) if deck_tgc else deck_tgc
+        rules = self._get_rules_for_serialization(deck_tgc)
         composition = self._build_deck_composition(deck_tgc, rules, playable_entries, deck=deck)
         total_cards = sum(entry["quantity"] for entry in playable_entries)
         return self._build_deck_response_base(deck, deck_tgc, rules, composition, total_cards)
 
     def _get_rules_for_serialization(self, deck_tgc):
+        if not deck_tgc:
+            return get_tcg_rules(None)
+
+        resolved_tgc = self._resolve_known_tgc(deck_tgc)
+        if resolved_tgc:
+            rules = get_tcg_rules(resolved_tgc.name)
+            if rules != DEFAULT_RULES:
+                return rules
+            description_rules = get_tcg_rules(getattr(resolved_tgc, "description", None))
+            if description_rules != DEFAULT_RULES:
+                return description_rules
+
         return get_tcg_rules(deck_tgc.name if deck_tgc else None)
 
     def _resolve_summary_deck_tgc(self, deck: Deck, deck_tgc, playable_entries: list[dict], default_tgc=None):
-        if deck_tgc and get_tcg_rules(deck_tgc.name) != DEFAULT_RULES:
+        deck_tgc = self._resolve_known_tgc(deck_tgc) if deck_tgc else deck_tgc
+        if deck_tgc and self._get_rules_for_serialization(deck_tgc) != DEFAULT_RULES:
             return deck_tgc
 
         tgc_counts: dict[int, int] = {}
@@ -210,6 +235,8 @@ class DeckServicePayloadMixin:
         return default_tgc
 
     def _serialize_deck_payload(self, deck: Deck, deck_tgc, rules: dict, user_id: Optional[int] = None, include_share_token: bool = False):
+        deck_tgc = self._resolve_known_tgc(deck_tgc) if deck_tgc else deck_tgc
+        rules = self._get_rules_for_serialization(deck_tgc)
         deck_entries = self._get_deck_entries(deck.id)
         egg_entries = self._get_egg_entries(deck.id)
         zone_entries = self._get_zone_entries(deck.id)
@@ -222,6 +249,7 @@ class DeckServicePayloadMixin:
         rune_total_cards = sum(entry["quantity"] for entry in zone_entries if entry["storage_section"] == "rune")
         battlefield_total_cards = sum(entry["quantity"] for entry in zone_entries if entry["storage_section"] == "battlefield")
         sideboard_total_cards = sum(entry["quantity"] for entry in zone_entries if entry["storage_section"] == "sideboard")
+        resource_total_cards = sum(entry["quantity"] for entry in zone_entries if entry["storage_section"] == "resource")
         considering_total_cards = sum(entry["quantity"] for entry in considering_entries)
         advanced_mode = self._is_advanced_mode_enabled(user_id) if user_id is not None else False
         tracked_card_ids = (
@@ -244,6 +272,7 @@ class DeckServicePayloadMixin:
         serialized_rune_cards = []
         serialized_battlefield_cards = []
         serialized_sideboard_cards = []
+        serialized_resource_cards = []
         serialized_considering_cards = []
         missing_copies = 0
         chosen_champion_card_id = getattr(deck, "riftbound_chosen_champion_card_id", None)
@@ -354,6 +383,8 @@ class DeckServicePayloadMixin:
                 serialized_battlefield_cards.append(base_payload)
             elif storage_section == "sideboard":
                 serialized_sideboard_cards.append(base_payload)
+            elif storage_section == "resource":
+                serialized_resource_cards.append(base_payload)
 
         for entry in considering_entries:
             considering_card = entry["considering_card"]
@@ -365,7 +396,7 @@ class DeckServicePayloadMixin:
 
             serialized_considering_cards.append(base_payload)
 
-        role_order = {"leader": 0, "legend": 1, "egg": 2, "main": 3, "rune": 4, "battlefield": 5, "don": 6, "sideboard": 7}
+        role_order = {"leader": 0, "legend": 1, "egg": 2, "main": 3, "resource": 4, "rune": 5, "battlefield": 6, "don": 7, "sideboard": 8}
         serialized_cards.sort(
             key=lambda item: (
                 role_order.get(item["deck_role"], 9),
@@ -408,6 +439,9 @@ class DeckServicePayloadMixin:
         response["sideboard_cards_data"] = serialized_sideboard_cards
         response["sideboard_total_cards"] = sideboard_total_cards
         response["sideboard_unique_cards"] = len(serialized_sideboard_cards)
+        response["resource_cards_data"] = serialized_resource_cards
+        response["resource_total_cards"] = resource_total_cards
+        response["resource_unique_cards"] = len(serialized_resource_cards)
         response["considering_cards"] = serialized_considering_cards
         response["considering_total_cards"] = considering_total_cards
         response["considering_unique_cards"] = len(serialized_considering_cards)
@@ -527,6 +561,10 @@ class DeckServicePayloadMixin:
                     "required_leader_cards": composition["required_leader_cards"],
                     "main_deck_cards": composition["main_deck_cards"],
                     "required_main_deck_cards": composition["required_main_deck_cards"],
+                    "resource_cards": composition.get("resource_cards", 0),
+                    "required_resource_cards": composition.get("required_resource_cards", 0),
+                    "max_resource_cards": composition.get("max_resource_cards", 0),
+                    "resource_deck_is_optional": bool(composition.get("resource_deck_is_optional")),
                     "don_cards": composition["don_cards"],
                     "recommended_don_cards": composition["recommended_don_cards"],
                     "egg_cards": composition.get("egg_cards", 0),
