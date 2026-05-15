@@ -14,6 +14,7 @@ import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
 import { getGameConfig } from '../tcgConfig';
 import { getApiErrorMessage } from '../utils/apiMessages';
+import { getDeckAddZone } from '../utils/deckTools';
 import {
   buildSetFilterOptions,
   compareCollectionCodes,
@@ -231,7 +232,11 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   });
 
   const addCardToDeckMutation = useMutation({
-    mutationFn: ({ deckId, cardId, quantity }) => addCardToDeck(deckId, { card_id: cardId, quantity }),
+    mutationFn: ({ deckId, cardId, quantity, zone }) => addCardToDeck(deckId, {
+      card_id: cardId,
+      quantity,
+      ...(zone ? { zone } : {}),
+    }),
     onSuccess: (data, variables) => {
       updateCollectionAfterDeckAdd(
         variables.deckId,
@@ -297,7 +302,9 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       return;
     }
 
-    addCardToDeckMutation.mutate({ deckId, cardId, quantity });
+    const card = safeCollection.find((item) => item?.card?.id === cardId)?.card || null;
+    const zone = getDeckAddZone(activeTcgSlug, card);
+    addCardToDeckMutation.mutate({ deckId, cardId, quantity, zone });
   };
 
   const openDeck = (deckId) => {

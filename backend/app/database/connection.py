@@ -197,7 +197,16 @@ def ensure_game_detail_columns():
 
 def ensure_deck_columns():
     statements = [
+        (
+            "CREATE TABLE IF NOT EXISTS deck_folders ("
+            "id SERIAL PRIMARY KEY, "
+            "user_id INTEGER REFERENCES users(id), "
+            "tgc_id INTEGER REFERENCES tgc(id), "
+            "name VARCHAR(100) NOT NULL, "
+            "created_at TIMESTAMP DEFAULT NOW() NOT NULL)"
+        ),
         "ALTER TABLE decks ADD COLUMN IF NOT EXISTS tgc_id INTEGER",
+        "ALTER TABLE decks ADD COLUMN IF NOT EXISTS folder_id INTEGER",
         "ALTER TABLE decks ADD COLUMN IF NOT EXISTS riftbound_chosen_champion_card_id INTEGER",
         "ALTER TABLE decks ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)",
         "ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS assigned_quantity INTEGER",
@@ -235,9 +244,13 @@ def ensure_deck_columns():
             "snapshot_data TEXT NOT NULL, "
             "created_at TIMESTAMP DEFAULT NOW() NOT NULL)"
         ),
+        "CREATE INDEX IF NOT EXISTS idx_deck_folders_user_id ON deck_folders(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_deck_folders_user_tgc_id ON deck_folders(user_id, tgc_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_deck_folders_user_tgc_name ON deck_folders(user_id, tgc_id, name)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_decks_share_token ON decks(share_token)",
         "CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_decks_user_tgc_id ON decks(user_id, tgc_id)",
+        "CREATE INDEX IF NOT EXISTS idx_decks_folder_id ON decks(folder_id)",
         "CREATE INDEX IF NOT EXISTS idx_decks_riftbound_chosen_champion_card_id ON decks(riftbound_chosen_champion_card_id)",
         "CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id)",
         "CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_card_id ON deck_cards(deck_id, card_id)",

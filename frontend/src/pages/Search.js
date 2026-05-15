@@ -16,7 +16,7 @@ import useMediaQuery from '../hooks/useMediaQuery';
 import usePositiveIntegerDraftMap from '../hooks/usePositiveIntegerDraftMap';
 import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import { getApiErrorMessage } from '../utils/apiMessages';
-import { getNewDeckCreationPlan } from '../utils/deckTools';
+import { getDeckAddZone, getNewDeckCreationPlan } from '../utils/deckTools';
 import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
 import { applyCollectionDeckUsageUpdate } from '../utils/collectionCache';
@@ -286,9 +286,10 @@ function Search({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   });
 
   const addToDeckMutation = useMutation({
-    mutationFn: ({ deckId, cardId, quantity }) => addCardToDeck(deckId, {
+    mutationFn: ({ deckId, cardId, quantity, zone }) => addCardToDeck(deckId, {
       card_id: cardId,
       quantity,
+      ...(zone ? { zone } : {}),
     }),
     onSuccess: (data, variables) => {
       const deckName = decks.find((deck) => deck.id === variables.deckId)?.name || 'Mazo';
@@ -481,11 +482,13 @@ function Search({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     }
 
     const quantity = commitActionQuantity(deckPickerCard.id);
+    const zone = getDeckAddZone(activeGame.slug, deckPickerCard);
     try {
       await addToDeckMutation.mutateAsync({
         deckId,
         cardId: deckPickerCard.id,
         quantity,
+        zone,
       });
       setDeckPickerCard(null);
     } catch (_error) {
@@ -555,10 +558,12 @@ function Search({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       }
 
       try {
+        const zone = getDeckAddZone(activeGame.slug, deckPickerCard);
         await addToDeckMutation.mutateAsync({
           deckId,
           cardId: deckPickerCard.id,
           quantity,
+          zone,
         });
         showToast({
           type: 'success',

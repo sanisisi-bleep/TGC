@@ -2833,6 +2833,11 @@ textarea::placeholder {
   line-height: 1.08;
 }
 
+.deck-summary-card.is-dragging {
+  opacity: 0.72;
+  transform: scale(0.985);
+}
+
 .deck-copy {
   margin: 0;
   flex: 1;
@@ -2848,8 +2853,14 @@ textarea::placeholder {
 
 .deck-card-actions-secondary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 0.7rem;
+}
+
+.deck-folder-badge {
+  margin-left: 0.45rem;
+  background: rgba(22, 86, 193, 0.1);
+  color: var(--primary-deep);
 }
 
 .deck-action-group {
@@ -2900,6 +2911,133 @@ textarea::placeholder {
   color: #ffffff;
   border-color: rgba(22, 86, 193, 0.42);
   box-shadow: 0 14px 26px rgba(28, 99, 213, 0.2);
+}
+
+.deck-action-button.is-soft-danger {
+  background: rgba(224, 69, 69, 0.08);
+  color: #b12e2e;
+  border-color: rgba(224, 69, 69, 0.18);
+}
+
+.deck-folders-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.deck-folders-copy {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.deck-folders-copy strong {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.deck-folders-copy span {
+  color: var(--text-soft);
+  line-height: 1.55;
+}
+
+.deck-folder-create-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem;
+}
+
+.deck-folder-create-form input {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--input-border);
+  border-radius: 16px;
+  background: var(--input-bg-strong);
+  color: var(--text);
+  box-shadow: var(--input-shadow);
+  outline: none;
+}
+
+.deck-folder-create-form input:focus {
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+
+.deck-folders-board {
+  display: grid;
+  gap: 1rem;
+}
+
+.deck-folder-section {
+  display: grid;
+  gap: 0.9rem;
+  border-style: dashed;
+}
+
+.deck-folder-section.is-drop-ready {
+  border-color: rgba(28, 99, 213, 0.24);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-strong) 96%, transparent),
+      color-mix(in srgb, var(--surface) 92%, var(--bg))
+    ),
+    radial-gradient(circle at top right, rgba(22, 86, 193, 0.12), transparent 38%);
+}
+
+.deck-folder-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.deck-folder-section-header h3 {
+  margin: 0;
+}
+
+.deck-folder-section-header p {
+  margin: 0.35rem 0 0;
+  color: var(--text-soft);
+}
+
+.deck-folder-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.deck-folder-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(21, 38, 58, 0.06);
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.deck-folder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.deck-folder-actions .deck-action-button {
+  width: auto;
+  min-width: 140px;
+}
+
+.deck-folder-empty {
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
+  border: 1px dashed rgba(28, 99, 213, 0.24);
+  background: rgba(22, 86, 193, 0.04);
+  color: var(--text-soft);
+}
+
+.deck-folder-decks {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 }
 
 .deck-action-button.is-soft {

@@ -1,6 +1,7 @@
 from typing import Optional
 
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload
 
 from app.models import Card, Deck, DeckConsideringCard
 from app.services.game_rules import DEFAULT_RULES, GUNDAM_TCG_NAME, get_tcg_rules
@@ -116,6 +117,8 @@ class DeckServicePayloadMixin:
         return {
             "id": deck.id,
             "name": deck.name,
+            "folder_id": deck.folder_id,
+            "folder_name": deck.folder.name if getattr(deck, "folder", None) else None,
             "tgc_id": deck_tgc.id if deck_tgc else None,
             "tgc_name": deck_tgc.name if deck_tgc else GUNDAM_TCG_NAME,
             "created_at": deck.created_at,
@@ -470,7 +473,7 @@ class DeckServicePayloadMixin:
             else:
                 query = query.filter(Deck.tgc_id == tgc_id)
 
-        decks = query.order_by(Deck.created_at.desc(), Deck.id.desc()).all()
+        decks = query.options(joinedload(Deck.folder)).order_by(Deck.created_at.desc(), Deck.id.desc()).all()
         deck_ids = [deck.id for deck in decks]
         playable_entries_by_deck = self._get_bulk_playable_entries_by_deck(deck_ids)
         tgc_map = self._get_tgcs_by_ids([deck.tgc_id for deck in decks if deck.tgc_id is not None])
@@ -505,11 +508,13 @@ class DeckServicePayloadMixin:
             else:
                 query = query.filter(Deck.tgc_id == tgc_id)
 
-        decks = query.order_by(Deck.created_at.desc(), Deck.id.desc()).all()
+        decks = query.options(joinedload(Deck.folder)).order_by(Deck.created_at.desc(), Deck.id.desc()).all()
         return [
             {
                 "id": deck.id,
                 "name": deck.name,
+                "folder_id": deck.folder_id,
+                "folder_name": deck.folder.name if getattr(deck, "folder", None) else None,
                 "tgc_id": deck.tgc_id,
             }
             for deck in decks
@@ -525,7 +530,7 @@ class DeckServicePayloadMixin:
             else:
                 query = query.filter(Deck.tgc_id == tgc_id)
 
-        decks = query.order_by(Deck.created_at.desc(), Deck.id.desc()).all()
+        decks = query.options(joinedload(Deck.folder)).order_by(Deck.created_at.desc(), Deck.id.desc()).all()
         deck_ids = [deck.id for deck in decks]
         playable_entries_by_deck = self._get_bulk_playable_entries_by_deck(deck_ids)
         tgc_map = self._get_tgcs_by_ids([deck.tgc_id for deck in decks if deck.tgc_id is not None])
@@ -552,6 +557,8 @@ class DeckServicePayloadMixin:
                 {
                     "id": summary["id"],
                     "name": summary["name"],
+                    "folder_id": summary["folder_id"],
+                    "folder_name": summary["folder_name"],
                     "tgc_id": summary["tgc_id"],
                     "tgc_name": summary["tgc_name"],
                     "format_mode": composition["format_mode"],

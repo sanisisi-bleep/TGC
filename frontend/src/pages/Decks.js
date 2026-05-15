@@ -6,6 +6,7 @@ import DeckAdvancedEditorPage from '../components/decks/DeckAdvancedEditorPage';
 import DeckComparePickerModal from '../components/decks/DeckComparePickerModal';
 import DeckCompareResultModal from '../components/decks/DeckCompareResultModal';
 import DeckDetailModal from '../components/decks/DeckDetailModal';
+import DeckFoldersPanel from '../components/decks/DeckFoldersPanel';
 import DeckHistoryModal from '../components/decks/DeckHistoryModal';
 import DeckImportPanel from '../components/decks/DeckImportPanel';
 import DeckListPreviewModal from '../components/decks/DeckListPreviewModal';
@@ -46,14 +47,19 @@ import {
   moveConsideringCardToDeck,
   moveDeckCardToConsidering,
   cloneDeck,
+  createDeckFolder,
   createDeckCheckpoint,
   createDeck,
+  deleteDeckFolder,
   deleteDeck,
+  getDeckFolders,
   getDeckDetail,
   getDeckHistory,
   getDeckHistoryVersion,
   getDecks,
   importDeck,
+  moveDeckToFolder,
+  renameDeckFolder,
   renameDeck,
   setDeckChosenChampion,
   shareDeck,
@@ -77,6 +83,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const { profile } = useSession();
   const queryClient = useQueryClient();
   const [newDeckName, setNewDeckName] = useState('');
+  const [newFolderName, setNewFolderName] = useState('');
   const [selectedDeckId, setSelectedDeckId] = useState(null);
   const [draftDeckName, setDraftDeckName] = useState('');
   const [deckCardView, setDeckCardView] = useBrowserStorageState(
@@ -91,6 +98,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const [deletingDeckId, setDeletingDeckId] = useState(null);
   const [cloningDeckId, setCloningDeckId] = useState(null);
   const [sharingDeckId, setSharingDeckId] = useState(null);
+  const [draggedDeckId, setDraggedDeckId] = useState(null);
   const [renamingDeckId, setRenamingDeckId] = useState(null);
   const [importingDeck, setImportingDeck] = useState(false);
   const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
@@ -119,6 +127,12 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const deckListQuery = useQuery({
     queryKey: queryKeys.decks(activeTgc?.id),
     queryFn: ({ signal }) => getDecks(activeTgc.id, signal),
+    enabled: Boolean(activeTgc?.id && !isGuestDemo && !isEditorRoute),
+    staleTime: QUERY_STALE_TIMES.decks,
+  });
+  const deckFoldersQuery = useQuery({
+    queryKey: queryKeys.deckFolders(activeTgc?.id),
+    queryFn: ({ signal }) => getDeckFolders(activeTgc.id, signal),
     enabled: Boolean(activeTgc?.id && !isGuestDemo && !isEditorRoute),
     staleTime: QUERY_STALE_TIMES.decks,
   });
@@ -154,6 +168,28 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const decks = useMemo(
     () => (isGuestDemo ? demoDecks : (deckListQuery.data || [])),
     [deckListQuery.data, demoDecks, isGuestDemo]
+  );
+  const deckFolders = useMemo(
+    () => (isGuestDemo ? [] : (deckFoldersQuery.data || [])),
+    [deckFoldersQuery.data, isGuestDemo]
+  );
+  const decksByFolderId = useMemo(() => {
+    const grouped = {};
+    decks.forEach((deck) => {
+      if (!deck?.folder_id) {
+        return;
+      }
+      const key = String(deck.folder_id);
+      if (!grouped[key]) {
+        grouped[key] = [];
+      }
+      grouped[key].push(deck);
+    });
+    return grouped;
+  }, [decks]);
+  const ungroupedDecks = useMemo(
+    () => decks.filter((deck) => !deck?.folder_id),
+    [decks]
   );
   const selectedDeck = isGuestDemo
     ? decks.find((deck) => String(deck.id) === String(detailDeckId)) || null
@@ -261,6 +297,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const deckQueryErrors = useMemo(
     () => [
       deckListQuery.error,
+      deckFoldersQuery.error,
       selectedDeckQuery.error,
       deckHistoryQuery.error,
       compareHistoryVersionQuery.error,
@@ -268,6 +305,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     ],
     [
       deckListQuery.error,
+      deckFoldersQuery.error,
       selectedDeckQuery.error,
       deckHistoryQuery.error,
       compareHistoryVersionQuery.error,
@@ -283,6 +321,14 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     }
 
     return queryClient.invalidateQueries({ queryKey: queryKeys.collection(activeTgc.id) });
+  }, [activeTgc?.id, queryClient]);
+
+  const invalidateDeckFoldersQuery = useCallback(() => {
+    if (!activeTgc?.id) {
+      return Promise.resolve();
+    }
+
+    return queryClient.invalidateQueries({ queryKey: queryKeys.deckFolders(activeTgc.id) });
   }, [activeTgc?.id, queryClient]);
 
   const invalidateDeckOptionsQuery = useCallback(() => {
@@ -337,6 +383,30 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     selectedDeck?.id,
     selectedDeck?.name,
   ]);
+
+  const applyDeckFolderInCaches = useCallback((deckId, folderId, folderName) => {
+    queryClient.setQueryData(queryKeys.decks(activeTgc?.id), (current) => (
+      Array.isArray(current)
+        ? current.map((deck) => (
+          deck.id === deckId
+            ? { ...deck, folder_id: folderId, folder_name: folderName }
+            : deck
+        ))
+        : current
+    ));
+    queryClient.setQueryData(queryKeys.deckOptions(activeTgc?.id), (current) => (
+      Array.isArray(current)
+        ? current.map((deck) => (
+          deck.id === deckId
+            ? { ...deck, folder_id: folderId, folder_name: folderName }
+            : deck
+        ))
+        : current
+    ));
+    queryClient.setQueryData(queryKeys.deckDetail(deckId), (current) => (
+      current ? { ...current, folder_id: folderId, folder_name: folderName } : current
+    ));
+  }, [activeTgc?.id, queryClient]);
 
   const createDeckMutation = useMutation({
     mutationFn: createDeck,
@@ -481,9 +551,10 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   });
 
   const addDeckCardMutation = useMutation({
-    mutationFn: ({ deckId, cardId, quantity }) => addCardToDeck(deckId, {
+    mutationFn: ({ deckId, cardId, quantity, zone }) => addCardToDeck(deckId, {
       card_id: cardId,
       quantity,
+      ...(zone ? { zone } : {}),
     }),
     onSuccess: async (payload, variables) => {
       syncCollectionDeckUsage({
@@ -757,6 +828,131 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     },
   });
 
+  const createDeckFolderMutation = useMutation({
+    mutationFn: createDeckFolder,
+    onSuccess: (createdFolder) => {
+      queryClient.setQueryData(queryKeys.deckFolders(activeTgc?.id), (current) => {
+        const nextFolders = Array.isArray(current) ? [...current, createdFolder] : [createdFolder];
+        return nextFolders.sort((left, right) => (
+          String(left.name || '').localeCompare(String(right.name || ''), 'es', { sensitivity: 'base' })
+        ));
+      });
+      invalidateDeckFoldersQuery();
+      setNewFolderName('');
+      showToast({ type: 'success', message: 'Carpeta creada.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo crear la carpeta.'),
+      });
+    },
+  });
+
+  const renameDeckFolderMutation = useMutation({
+    mutationFn: ({ folderId, name }) => renameDeckFolder(folderId, { name }),
+    onSuccess: (updatedFolder) => {
+      queryClient.setQueryData(queryKeys.deckFolders(activeTgc?.id), (current) => (
+        Array.isArray(current)
+          ? current
+            .map((folder) => (folder.id === updatedFolder.id ? updatedFolder : folder))
+            .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), 'es', { sensitivity: 'base' }))
+          : current
+      ));
+      invalidateDeckFoldersQuery();
+      queryClient.setQueryData(queryKeys.decks(activeTgc?.id), (current) => (
+        Array.isArray(current)
+          ? current.map((deck) => (
+            deck.folder_id === updatedFolder.id
+              ? { ...deck, folder_name: updatedFolder.name }
+              : deck
+          ))
+          : current
+      ));
+      if (selectedDeck?.folder_id === updatedFolder.id) {
+        queryClient.setQueryData(queryKeys.deckDetail(selectedDeck.id), (current) => (
+          current ? { ...current, folder_name: updatedFolder.name } : current
+        ));
+      }
+      showToast({ type: 'success', message: 'Carpeta renombrada.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo renombrar la carpeta.'),
+      });
+    },
+  });
+
+  const deleteDeckFolderMutation = useMutation({
+    mutationFn: deleteDeckFolder,
+    onSuccess: (_response, folderId) => {
+      queryClient.setQueryData(queryKeys.deckFolders(activeTgc?.id), (current) => (
+        Array.isArray(current) ? current.filter((folder) => folder.id !== folderId) : current
+      ));
+      invalidateDeckFoldersQuery();
+      queryClient.setQueryData(queryKeys.decks(activeTgc?.id), (current) => (
+        Array.isArray(current)
+          ? current.map((deck) => (
+            deck.folder_id === folderId
+              ? { ...deck, folder_id: null, folder_name: null }
+              : deck
+          ))
+          : current
+      ));
+      if (selectedDeck?.folder_id === folderId) {
+        queryClient.setQueryData(queryKeys.deckDetail(selectedDeck.id), (current) => (
+          current ? { ...current, folder_id: null, folder_name: null } : current
+        ));
+      }
+      showToast({ type: 'success', message: 'Carpeta borrada. Los mazos han vuelto a Sin carpeta.' });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo borrar la carpeta.'),
+      });
+    },
+  });
+
+  const moveDeckToFolderMutation = useMutation({
+    mutationFn: ({ deckId, folderId }) => moveDeckToFolder(deckId, { folder_id: folderId }),
+    onSuccess: (updatedDeck) => {
+      applyDeckFolderInCaches(updatedDeck.id, updatedDeck.folder_id || null, updatedDeck.folder_name || null);
+      showToast({
+        type: 'success',
+        message: updatedDeck.folder_name
+          ? `Mazo movido a ${updatedDeck.folder_name}.`
+          : 'Mazo sacado de la carpeta.',
+      });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo mover el mazo de carpeta.'),
+      });
+    },
+    onSettled: () => {
+      setDraggedDeckId(null);
+    },
+  });
+
   const historyEntries = deckHistoryQuery.data || [];
   const compareTargetDeck = compareDeckDetailQuery.data || null;
   const compareHistoryVersion = compareHistoryVersionQuery.data || null;
@@ -900,6 +1096,83 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const createDeckHandler = (e) => {
     e.preventDefault();
     createDeckMutation.mutate({ name: newDeckName, tgc_id: activeTgc.id });
+  };
+
+  const createDeckFolderHandler = () => {
+    const trimmedName = newFolderName.trim();
+    if (!trimmedName || !activeTgc?.id) {
+      showToast({ type: 'error', message: 'Pon un nombre para la carpeta.' });
+      return;
+    }
+
+    createDeckFolderMutation.mutate({
+      name: trimmedName,
+      tgc_id: activeTgc.id,
+    });
+  };
+
+  const renameDeckFolderHandler = (folderId) => {
+    const currentFolder = deckFolders.find((folder) => folder.id === folderId);
+    if (!currentFolder) {
+      return;
+    }
+
+    const nextName = window.prompt('Nuevo nombre de la carpeta:', currentFolder.name);
+    if (nextName === null) {
+      return;
+    }
+
+    const trimmedName = nextName.trim();
+    if (!trimmedName) {
+      showToast({ type: 'error', message: 'El nombre de la carpeta no puede estar vacio.' });
+      return;
+    }
+
+    if (trimmedName === currentFolder.name) {
+      return;
+    }
+
+    renameDeckFolderMutation.mutate({ folderId, name: trimmedName });
+  };
+
+  const deleteDeckFolderHandler = (folderId) => {
+    const currentFolder = deckFolders.find((folder) => folder.id === folderId);
+    if (!currentFolder) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Se borrara la carpeta "${currentFolder.name}". Los mazos quedaran en Sin carpeta.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    deleteDeckFolderMutation.mutate(folderId);
+  };
+
+  const moveDeckFolderHandler = (deckId, folderId) => {
+    const currentDeck = decks.find((deck) => deck.id === deckId);
+    if (!currentDeck) {
+      setDraggedDeckId(null);
+      return;
+    }
+
+    const normalizedFolderId = folderId || null;
+    if ((currentDeck.folder_id || null) === normalizedFolderId) {
+      setDraggedDeckId(null);
+      return;
+    }
+
+    moveDeckToFolderMutation.mutate({ deckId, folderId: normalizedFolderId });
+  };
+
+  const startDeckDrag = (deckId) => {
+    setDraggedDeckId(deckId);
+  };
+
+  const endDeckDrag = () => {
+    setDraggedDeckId(null);
   };
 
   const deleteDeckHandler = (deckId, deckName) => {
@@ -1119,7 +1392,7 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     navigate('/decks');
   };
 
-  const addDeckCardFromEditor = (cardId, quantity) => {
+  const addDeckCardFromEditor = (cardId, quantity, zone = null) => {
     if (!selectedDeck?.id) {
       return;
     }
@@ -1129,8 +1402,30 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       deckId: selectedDeck.id,
       cardId,
       quantity,
+      zone,
     });
   };
+
+  const renderDeckSummaryCard = (deck) => (
+    <DeckSummaryCard
+      key={deck.id}
+      deck={deck}
+      isGuestDemo={isGuestDemo}
+      isInFolder={Boolean(deck.folder_id)}
+      isDragging={draggedDeckId === deck.id}
+      draggable={!isGuestDemo}
+      onDragStart={() => startDeckDrag(deck.id)}
+      onDragEnd={endDeckDrag}
+      onOpen={() => viewDeckDetails(deck.id)}
+      onClone={() => cloneDeckHandler(deck.id)}
+      onShare={() => shareDeckHandler(deck)}
+      onRemoveFromFolder={() => moveDeckFolderHandler(deck.id, null)}
+      onDelete={() => deleteDeckHandler(deck.id, deck.name)}
+      isCloning={cloningDeckId === deck.id}
+      isSharing={sharingDeckId === deck.id}
+      isDeleting={deletingDeckId === deck.id}
+    />
+  );
 
   if (!isGuestDemo && deckListQuery.isPending && decks.length === 0) {
     return (
@@ -1227,65 +1522,75 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       )}
 
       {!isGuestDemo && (
-        <section className="panel create-deck-panel">
-          <form onSubmit={createDeckHandler} className="create-deck-form">
-            <input
-              type="text"
-              placeholder={`Nombre del mazo de ${activeGame.shortName}`}
-              value={newDeckName}
-              onChange={(e) => setNewDeckName(e.target.value)}
-              required
+        <>
+          <section className="panel create-deck-panel">
+            <form onSubmit={createDeckHandler} className="create-deck-form">
+              <input
+                type="text"
+                placeholder={`Nombre del mazo de ${activeGame.shortName}`}
+                value={newDeckName}
+                onChange={(e) => setNewDeckName(e.target.value)}
+                required
+              />
+              <button type="submit" disabled={createDeckMutation.isPending}>
+                {createDeckMutation.isPending ? 'Creando...' : 'Crear Mazo'}
+              </button>
+            </form>
+            <DeckImportPanel
+              isOpen={isImportPanelOpen}
+              importingDeck={importingDeck}
+              importDeckName={importDeckName}
+              importDeckText={importDeckText}
+              activeTcgSlug={activeTcgSlug}
+              onToggle={() => setIsImportPanelOpen((current) => !current)}
+              onImportDeckNameChange={setImportDeckName}
+              onImportDeckTextChange={setImportDeckText}
+              onSubmitListImport={submitDeckListImport}
+              onImportFile={handleDeckImportFile}
             />
-            <button type="submit" disabled={createDeckMutation.isPending}>
-              {createDeckMutation.isPending ? 'Creando...' : 'Crear Mazo'}
-            </button>
-          </form>
-          <DeckImportPanel
-            isOpen={isImportPanelOpen}
-            importingDeck={importingDeck}
-            importDeckName={importDeckName}
-            importDeckText={importDeckText}
-            activeTcgSlug={activeTcgSlug}
-            onToggle={() => setIsImportPanelOpen((current) => !current)}
-            onImportDeckNameChange={setImportDeckName}
-            onImportDeckTextChange={setImportDeckText}
-            onSubmitListImport={submitDeckListImport}
-            onImportFile={handleDeckImportFile}
+          </section>
+
+          <DeckFoldersPanel
+            activeGame={activeGame}
+            folders={deckFolders}
+            ungroupedDecks={ungroupedDecks}
+            decksByFolderId={decksByFolderId}
+            newFolderName={newFolderName}
+            onNewFolderNameChange={setNewFolderName}
+            onCreateFolder={createDeckFolderHandler}
+            isCreatingFolder={createDeckFolderMutation.isPending}
+            draggedDeckId={draggedDeckId}
+            onDeckDragStart={startDeckDrag}
+            onDeckDragEnd={endDeckDrag}
+            onDropDeckToFolder={(folderId) => {
+              if (draggedDeckId !== null) {
+                moveDeckFolderHandler(draggedDeckId, folderId);
+              }
+            }}
+            onRenameFolder={renameDeckFolderHandler}
+            onDeleteFolder={deleteDeckFolderHandler}
+            renderDeckCard={renderDeckSummaryCard}
           />
-        </section>
+        </>
       )}
 
-      <section className="decks-list">
-        {decks.map((deck) => (
-          <DeckSummaryCard
-            key={deck.id}
-            deck={deck}
-            isGuestDemo={isGuestDemo}
-            onOpen={() => viewDeckDetails(deck.id)}
-            onClone={() => cloneDeckHandler(deck.id)}
-            onShare={() => shareDeckHandler(deck)}
-            onDelete={() => deleteDeckHandler(deck.id, deck.name)}
-            isCloning={cloningDeckId === deck.id}
-            isSharing={sharingDeckId === deck.id}
-            isDeleting={deletingDeckId === deck.id}
-          />
-        ))}
+      {isGuestDemo ? (
+        <section className="decks-list">
+          {decks.map((deck) => renderDeckSummaryCard(deck))}
 
-        {decks.length === 0 && (
-          <div className="empty-state panel">
-            <h3>
-              {isGuestDemo
-                ? `No hay mazos demo cargados para ${activeGame.shortName}`
-                : `Aun no tienes mazos de ${activeGame.shortName}`}
-            </h3>
-            <p>
-              {isGuestDemo
-                ? 'Prueba otra seccion demo o cambia de juego para seguir explorando.'
-                : 'Crea el primero para empezar a organizar tu coleccion.'}
-            </p>
-          </div>
-        )}
-      </section>
+          {decks.length === 0 && (
+            <div className="empty-state panel">
+              <h3>No hay mazos demo cargados para {activeGame.shortName}</h3>
+              <p>Prueba otra seccion demo o cambia de juego para seguir explorando.</p>
+            </div>
+          )}
+        </section>
+      ) : decks.length === 0 ? (
+        <div className="empty-state panel">
+          <h3>Aun no tienes mazos de {activeGame.shortName}</h3>
+          <p>Crea el primero para empezar a organizar tu coleccion o prepara una carpeta para ordenarlos.</p>
+        </div>
+      ) : null}
 
       <DeckDetailModal
         isOpen={Boolean(selectedDeckId)}

@@ -256,6 +256,25 @@ export const getDeckCardRole = (activeTcgSlug, cardType) => {
   return 'main';
 };
 
+export const getDeckAddZone = (activeTcgSlug, card) => {
+  if (!card) {
+    return null;
+  }
+
+  if (activeTcgSlug === 'gundam') {
+    return getGundamDeckRole(card) === 'resource' ? 'resource' : null;
+  }
+
+  if (activeTcgSlug === 'riftbound') {
+    const role = getRiftboundDeckRole(card);
+    if (['legend', 'rune', 'battlefield', 'sideboard'].includes(role)) {
+      return role;
+    }
+  }
+
+  return null;
+};
+
 export const getDeckCardColorLabels = (activeTcgSlug, rawColor) => {
   if (activeTcgSlug === 'one-piece') {
     return getOnePieceColorLabels(rawColor);

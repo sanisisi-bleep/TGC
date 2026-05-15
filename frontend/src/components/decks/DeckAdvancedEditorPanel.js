@@ -10,6 +10,7 @@ import queryKeys from '../../queryKeys';
 import { QUERY_STALE_TIMES } from '../../queryConfig';
 import { getCardFacets, getCards, getCollection } from '../../services/api';
 import {
+  getDeckAddZone,
   getDeckEggCardCount,
   getSearchDeckOptionState,
 } from '../../utils/deckTools';
@@ -472,7 +473,7 @@ function DeckAdvancedEditorPanel({
 
   const handleAddCard = (card, sourceKey) => {
     const quantity = commitSourceActionQuantity(sourceKey);
-    onAddCardToDeck(card.id, quantity);
+    onAddCardToDeck(card.id, quantity, getDeckAddZone(activeTcgSlug, card));
   };
 
   const buildOptionState = (card, quantity, sourceKey) => {

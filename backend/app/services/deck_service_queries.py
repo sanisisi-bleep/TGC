@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from sqlalchemy import func, literal
 
-from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, DeckZoneCard, Tgc, User, UserCollection
+from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, DeckFolder, DeckZoneCard, Tgc, User, UserCollection
 from app.services.game_rules import DEFAULT_RULES, GUNDAM_TCG_NAME, canonicalize_tgc_name, get_tcg_rules, get_tgc_name_aliases
 
 
@@ -96,6 +96,28 @@ class DeckServiceQueryMixin:
         if not deck:
             raise ValueError("Deck not found")
         return deck
+
+    def _get_user_deck_folder_or_error(self, folder_id: int, user_id: int) -> DeckFolder:
+        folder = self.db.query(DeckFolder).filter(DeckFolder.id == folder_id, DeckFolder.user_id == user_id).first()
+        if not folder:
+            raise ValueError("Deck folder not found")
+        return folder
+
+    def _find_user_deck_folder_by_name(
+        self,
+        user_id: int,
+        tgc_id: int,
+        name: str,
+        exclude_folder_id: Optional[int] = None,
+    ) -> Optional[DeckFolder]:
+        query = self.db.query(DeckFolder).filter(
+            DeckFolder.user_id == user_id,
+            DeckFolder.tgc_id == tgc_id,
+            func.lower(DeckFolder.name) == name.strip().lower(),
+        )
+        if exclude_folder_id is not None:
+            query = query.filter(DeckFolder.id != exclude_folder_id)
+        return query.first()
 
     def _get_deck_considering_card_or_error(self, deck_id: int, card_id: int) -> DeckConsideringCard:
         considering_card = (

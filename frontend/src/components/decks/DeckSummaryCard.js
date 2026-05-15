@@ -9,9 +9,15 @@ function DeckSummaryCard({
   onClone,
   onShare,
   onDelete,
+  onRemoveFromFolder,
   isCloning,
   isSharing,
   isDeleting,
+  isInFolder = false,
+  isDragging = false,
+  draggable = false,
+  onDragStart,
+  onDragEnd,
 }) {
   const inferredDeckSlug = deck?.tgc_name ? resolveTcgSlug(deck.tgc_name) : null;
   const isGundamDeck = deck?.composition?.format_mode === 'gundam' || inferredDeckSlug === 'gundam';
@@ -60,10 +66,18 @@ function DeckSummaryCard({
     );
 
   return (
-    <article className="deck-item deck-summary-card">
+    <article
+      className={`deck-item deck-summary-card${isDragging ? ' is-dragging' : ''}`}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+    >
       <div className="deck-item-header">
         <div>
           <span className="deck-badge">Deck #{deck.id}</span>
+          {isInFolder && deck.folder_name ? (
+            <span className="deck-badge deck-folder-badge">{deck.folder_name}</span>
+          ) : null}
           <h3>{deck.name}</h3>
         </div>
         <span className="deck-date">{createdAtLabel}</span>
@@ -176,6 +190,15 @@ function DeckSummaryCard({
               >
                 {isSharing ? 'Compartiendo...' : 'Compartir'}
               </button>
+              {isInFolder ? (
+                <button
+                  type="button"
+                  className="deck-action-button is-soft"
+                  onClick={onRemoveFromFolder}
+                >
+                  Sacar
+                </button>
+              ) : null}
             </div>
 
             <button

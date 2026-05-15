@@ -41,6 +41,7 @@ class CardService:
             "set_name": self._normalize_set_name(card.set_name, card.card_type, card.tgc_id),
             "version": self._normalize_card_value(card.version),
             "block": card.block,
+            "zones": self._normalize_card_value(card.zones),
             "image_url": image_url,
             "thumbnail_url": build_card_thumbnail_url(image_url),
         }
@@ -384,6 +385,7 @@ class CardService:
             Card.set_name,
             Card.version,
             Card.block,
+            Card.zones,
             Card.image_url,
         )
         sorted_query = self._apply_sort(query, sort).options(card_summary_load)
@@ -593,6 +595,7 @@ class CardService:
                         Card.set_name,
                         Card.version,
                         Card.block,
+                        Card.zones,
                         Card.image_url,
                     ),
                     joinedload(Card.riftbound_data),

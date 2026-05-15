@@ -69,6 +69,14 @@ export const getDecks = async (tgcId, signal) => {
   return Array.isArray(response.data) ? response.data : [];
 };
 
+export const getDeckFolders = async (tgcId, signal) => {
+  const response = await apiClient.get('/decks/folders', {
+    params: { tgc_id: tgcId },
+    signal,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+};
+
 export const getDeckOptions = async (tgcId, signal) => {
   const response = await apiClient.get('/decks/options', {
     params: { tgc_id: tgcId },
@@ -110,8 +118,28 @@ export const createDeck = async (payload) => {
   return response.data || null;
 };
 
+export const createDeckFolder = async (payload) => {
+  const response = await apiClient.post('/decks/folders', payload);
+  return response.data || null;
+};
+
+export const renameDeckFolder = async (folderId, payload) => {
+  const response = await apiClient.patch(`/decks/folders/${folderId}`, payload);
+  return response.data || null;
+};
+
+export const deleteDeckFolder = async (folderId) => {
+  const response = await apiClient.delete(`/decks/folders/${folderId}`);
+  return response.data || null;
+};
+
 export const deleteDeck = async (deckId) => {
   const response = await apiClient.delete(`/decks/${deckId}`);
+  return response.data || null;
+};
+
+export const moveDeckToFolder = async (deckId, payload) => {
+  const response = await apiClient.patch(`/decks/${deckId}/folder`, payload);
   return response.data || null;
 };
 

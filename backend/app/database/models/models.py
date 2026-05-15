@@ -191,12 +191,29 @@ class UserCollection(Base):
     card = relationship("Card")
 
 
+class DeckFolder(Base):
+    __tablename__ = "deck_folders"
+    __table_args__ = (
+        UniqueConstraint("user_id", "tgc_id", "name", name="uq_deck_folders_user_tgc_name"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    tgc_id = Column(Integer, ForeignKey("tgc.id"))
+    name = Column(String(100), nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+    user = relationship("User")
+    tgc = relationship("Tgc")
+
+
 class Deck(Base):
     __tablename__ = "decks"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     tgc_id = Column(Integer, ForeignKey("tgc.id"))
+    folder_id = Column(Integer, ForeignKey("deck_folders.id"))
     riftbound_chosen_champion_card_id = Column(Integer)
     name = Column(String(100))
     share_token = Column(String(64), unique=True, index=True)
@@ -204,6 +221,7 @@ class Deck(Base):
 
     user = relationship("User")
     tgc = relationship("Tgc")
+    folder = relationship("DeckFolder")
 
 
 class DeckCard(Base):
@@ -310,6 +328,7 @@ __all__ = [
     "DigimonCard",
     "RiftboundCard",
     "UserCollection",
+    "DeckFolder",
     "Deck",
     "DeckCard",
     "DeckConsideringCard",

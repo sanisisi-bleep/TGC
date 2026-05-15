@@ -6,6 +6,7 @@ export const queryKeys = {
   cardFacets: (tgcId) => ['cards', 'facets', tgcId],
   collection: (tgcId) => ['collection', tgcId],
   decks: (tgcId) => ['decks', tgcId],
+  deckFolders: (tgcId) => ['decks', 'folders', tgcId],
   deckOptions: (tgcId) => ['decks', 'options', tgcId],
   searchDeckOptions: (tgcId) => ['decks', 'search-options', tgcId],
   deckDetail: (deckId) => ['decks', 'detail', deckId],

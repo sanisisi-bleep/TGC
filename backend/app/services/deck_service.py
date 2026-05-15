@@ -1,7 +1,7 @@
 import json
 from typing import List, Optional
 
-from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, DeckVersion, DeckZoneCard
+from app.models import Card, Deck, DeckCard, DeckConsideringCard, DeckEggCard, DeckFolder, DeckVersion, DeckZoneCard
 from app.services.deck_service_payloads import DeckServicePayloadMixin
 from app.services.deck_service_queries import DeckServiceQueryMixin
 from app.services.deck_service_rules import DeckServiceRulesMixin
@@ -28,6 +28,15 @@ DECK_HISTORY_SOURCE_LABELS = {
 class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQueryMixin):
     def __init__(self, db):
         self.db = db
+
+    def _serialize_deck_folder(self, folder: DeckFolder) -> dict:
+        return {
+            "id": folder.id,
+            "user_id": folder.user_id,
+            "tgc_id": folder.tgc_id,
+            "name": folder.name,
+            "created_at": folder.created_at,
+        }
 
     def _build_deck_snapshot_payload(self, deck: Deck) -> dict:
         deck_tgc, rules = self._get_rules_for_deck(deck)
@@ -151,6 +160,80 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         self.db.commit()
         self.db.refresh(version)
         return version
+
+    def get_user_deck_folders(self, user_id: int, tgc_id: int):
+        folders = (
+            self.db.query(DeckFolder)
+            .filter(DeckFolder.user_id == user_id, DeckFolder.tgc_id == tgc_id)
+            .order_by(DeckFolder.name.asc(), DeckFolder.id.asc())
+            .all()
+        )
+        return [self._serialize_deck_folder(folder) for folder in folders]
+
+    def create_deck_folder(self, user_id: int, tgc_id: int, name: str) -> DeckFolder:
+        target_tgc = self._get_tgc_by_id(tgc_id)
+        if not target_tgc:
+            raise ValueError("Target TCG not found for deck folder")
+
+        cleaned_name = (name or "").strip()
+        if not cleaned_name:
+            raise ValueError("Deck folder name cannot be empty")
+
+        if self._find_user_deck_folder_by_name(user_id, target_tgc.id, cleaned_name):
+            raise ValueError("Ya existe una carpeta con ese nombre para este TCG")
+
+        folder = DeckFolder(
+            user_id=user_id,
+            tgc_id=target_tgc.id,
+            name=cleaned_name[:100],
+        )
+        self.db.add(folder)
+        self.db.commit()
+        self.db.refresh(folder)
+        return folder
+
+    def rename_deck_folder(self, folder_id: int, user_id: int, name: str) -> DeckFolder:
+        folder = self._get_user_deck_folder_or_error(folder_id, user_id)
+        cleaned_name = (name or "").strip()
+        if not cleaned_name:
+            raise ValueError("Deck folder name cannot be empty")
+
+        if self._find_user_deck_folder_by_name(user_id, folder.tgc_id, cleaned_name, exclude_folder_id=folder.id):
+            raise ValueError("Ya existe una carpeta con ese nombre para este TCG")
+
+        folder.name = cleaned_name[:100]
+        self.db.commit()
+        self.db.refresh(folder)
+        return folder
+
+    def delete_deck_folder(self, folder_id: int, user_id: int) -> DeckFolder:
+        folder = self._get_user_deck_folder_or_error(folder_id, user_id)
+        self.db.query(Deck).filter(Deck.user_id == user_id, Deck.folder_id == folder.id).update(
+            {Deck.folder_id: None},
+            synchronize_session=False,
+        )
+        self.db.delete(folder)
+        self.db.commit()
+        return folder
+
+    def move_deck_to_folder(self, deck_id: int, user_id: int, folder_id: Optional[int]):
+        deck = self._get_user_deck_or_error(deck_id, user_id)
+        deck_tgc = self._resolve_deck_tgc(deck)
+
+        if folder_id is None:
+            deck.folder_id = None
+            self.db.commit()
+            self.db.refresh(deck)
+            return deck
+
+        folder = self._get_user_deck_folder_or_error(folder_id, user_id)
+        if not deck_tgc or folder.tgc_id != deck_tgc.id:
+            raise ValueError("La carpeta no pertenece al mismo TCG que el mazo")
+
+        deck.folder_id = folder.id
+        self.db.commit()
+        self.db.refresh(deck)
+        return deck
 
     def create_deck(self, user_id: int, name: str, tgc_id: Optional[int] = None) -> Deck:
         resolved_tgc_id = tgc_id
@@ -330,6 +413,7 @@ class DeckService(DeckServicePayloadMixin, DeckServiceRulesMixin, DeckServiceQue
         cloned_deck = Deck(
             user_id=user_id,
             tgc_id=source_deck.tgc_id,
+            folder_id=source_deck.folder_id,
             name=f"{source_deck.name} (Copia)",
             riftbound_chosen_champion_card_id=source_deck.riftbound_chosen_champion_card_id,
         )

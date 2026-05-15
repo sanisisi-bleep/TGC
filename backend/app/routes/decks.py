@@ -21,6 +21,19 @@ class DeckRename(BaseModel):
     name: str
 
 
+class DeckFolderCreate(BaseModel):
+    tgc_id: int
+    name: str
+
+
+class DeckFolderRename(BaseModel):
+    name: str
+
+
+class DeckFolderMove(BaseModel):
+    folder_id: Optional[int] = None
+
+
 class DeckCardCreate(BaseModel):
     card_id: int
     quantity: int = Field(..., gt=0)
@@ -128,6 +141,106 @@ def get_deck_options(tgc_id: Optional[int] = None, db: Session = Depends(get_db)
 def get_deck_search_options(tgc_id: Optional[int] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     service = _deck_service(db)
     return service.get_user_deck_search_options(current_user.id, tgc_id)
+
+
+@router.get("/folders")
+def get_deck_folders(tgc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    return service.get_user_deck_folders(current_user.id, tgc_id)
+
+
+@router.post("/folders")
+def create_deck_folder(payload: DeckFolderCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        folder = service.create_deck_folder(current_user.id, payload.tgc_id, payload.name)
+        logger.info(
+            "Deck folder created",
+            extra=build_log_extra(
+                "deck_folder_created",
+                folder_id=folder.id,
+                tgc_id=folder.tgc_id,
+                user_id=current_user.id,
+                username=current_user.username,
+            ),
+        )
+        return {
+            "id": folder.id,
+            "tgc_id": folder.tgc_id,
+            "name": folder.name,
+            "created_at": folder.created_at,
+        }
+    except ValueError as error:
+        _raise_deck_http_error(
+            400,
+            error,
+            event="deck_folder_create_rejected",
+            tgc_id=payload.tgc_id,
+            user_id=current_user.id,
+            username=current_user.username,
+        )
+
+
+@router.patch("/folders/{folder_id}")
+def rename_deck_folder(folder_id: int, payload: DeckFolderRename, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        folder = service.rename_deck_folder(folder_id, current_user.id, payload.name)
+        logger.info(
+            "Deck folder renamed",
+            extra=build_log_extra(
+                "deck_folder_renamed",
+                folder_id=folder.id,
+                tgc_id=folder.tgc_id,
+                user_id=current_user.id,
+                username=current_user.username,
+            ),
+        )
+        return {
+            "id": folder.id,
+            "tgc_id": folder.tgc_id,
+            "name": folder.name,
+            "created_at": folder.created_at,
+        }
+    except ValueError as error:
+        _raise_deck_http_error(
+            400,
+            error,
+            event="deck_folder_rename_rejected",
+            folder_id=folder_id,
+            user_id=current_user.id,
+            username=current_user.username,
+        )
+
+
+@router.delete("/folders/{folder_id}")
+def delete_deck_folder(folder_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        folder = service.delete_deck_folder(folder_id, current_user.id)
+        logger.info(
+            "Deck folder deleted",
+            extra=build_log_extra(
+                "deck_folder_deleted",
+                folder_id=folder.id,
+                tgc_id=folder.tgc_id,
+                user_id=current_user.id,
+                username=current_user.username,
+            ),
+        )
+        return {
+            "message": "Deck folder deleted",
+            "folder_id": folder.id,
+        }
+    except ValueError as error:
+        _raise_deck_http_error(
+            404,
+            error,
+            event="deck_folder_delete_rejected",
+            folder_id=folder_id,
+            user_id=current_user.id,
+            username=current_user.username,
+        )
 
 
 @router.get("/{deck_id}/history")
@@ -352,6 +465,34 @@ def delete_deck(deck_id: int, db: Session = Depends(get_db), current_user: User 
             error,
             event="deck_delete_rejected",
             deck_id=deck_id,
+            user_id=current_user.id,
+            username=current_user.username,
+        )
+
+
+@router.patch("/{deck_id}/folder")
+def move_deck_to_folder(deck_id: int, payload: DeckFolderMove, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = _deck_service(db)
+    try:
+        moved = service.move_deck_to_folder(deck_id, current_user.id, payload.folder_id)
+        logger.info(
+            "Deck folder updated",
+            extra=build_log_extra(
+                "deck_folder_updated",
+                deck_id=moved.id,
+                folder_id=moved.folder_id,
+                user_id=current_user.id,
+                username=current_user.username,
+            ),
+        )
+        return service.get_deck_summary(moved.id, current_user.id)
+    except ValueError as error:
+        _raise_deck_http_error(
+            400,
+            error,
+            event="deck_folder_move_rejected",
+            deck_id=deck_id,
+            folder_id=payload.folder_id,
             user_id=current_user.id,
             username=current_user.username,
         )

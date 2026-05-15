@@ -19,6 +19,10 @@ const getAddLabel = (activeTcgSlug, cardType) => {
     return 'Anadir DON!!';
   }
 
+  if (role === 'resource') {
+    return 'Anadir Resource';
+  }
+
   return 'Anadir al mazo';
 };
 
@@ -37,7 +41,7 @@ function DeckAdvancedEditorSourceRow({
   onOpenCard,
 }) {
   const metaLine = buildCollectionMeta(card, activeTcgSlug);
-  const addLabel = getAddLabel(activeTcgSlug, card?.card_type);
+  const addLabel = getAddLabel(activeTcgSlug, card);
   const collectionAvailable = Number(card?.collection_available_quantity);
   const collectionTotal = Number(card?.collection_total_quantity);
 
