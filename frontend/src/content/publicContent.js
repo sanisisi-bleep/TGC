@@ -8,6 +8,19 @@ export const PUBLIC_CONTACT_CATEGORIES = [
 
 export const PUBLIC_UPDATES = [
   {
+    id: '2026-05-16-deck-folders',
+    date: '2026-05-16',
+    type: 'feature',
+    title: 'Carpetas para organizar mazos',
+    summary: 'Mis Mazos ya permite agrupar listas por carpetas para ordenar mejor pruebas, sets o arquetipos dentro de cada TCG.',
+    highlights: [
+      'Creacion de carpetas por juego para separar mazos sin mezclar entornos.',
+      'Movimiento de mazos dentro o fuera de carpeta con una gestion mas comoda.',
+      'Vista de carpetas mas compacta para evitar caos visual cuando empiezas a acumular listas.',
+    ],
+    tags: ['mazos', 'organizacion', 'carpetas'],
+  },
+  {
     id: '2026-05-15-public-pages',
     date: '2026-05-15',
     type: 'improvement',
