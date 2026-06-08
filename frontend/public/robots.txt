@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://tgc-drab.vercel.app/sitemap.xml

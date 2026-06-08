@@ -16,6 +16,7 @@ from app.services.image_service import (
 )
 
 SUPPORTED_CARD_SORTS = {"name-asc", "collection-asc", "collection-desc"}
+CARD_RESOLVE_SCAN_LIMIT = 50
 
 class CardService:
     def __init__(self, db: Session):
@@ -213,6 +214,53 @@ class CardService:
 
         compact_value = re.sub(r"[^A-Za-z0-9]+", "", normalized_value).upper()
         return compact_value or None
+
+    def _normalize_resolve_code(self, value: Optional[str]) -> Optional[str]:
+        normalized_value = self._normalize_card_value(value)
+        if not normalized_value:
+            return None
+
+        code = re.sub(r"[\s_]+", "-", normalized_value).upper()
+        code = re.sub(r"[^A-Z0-9-]+", "", code)
+        code = re.sub(r"-+", "-", code).strip("-")
+        return code or None
+
+    def _build_resolve_code_aliases(self, value: Optional[str]):
+        normalized_value = self._normalize_card_value(value)
+        if not normalized_value:
+            return []
+
+        raw_code = normalized_value.upper().replace("_", "-")
+        raw_code = re.sub(r"\s+", "", raw_code)
+        raw_code = re.sub(r"[^A-Z0-9/\-]+", "", raw_code)
+        raw_code = re.sub(r"-+", "-", raw_code).strip("-")
+
+        aliases = set()
+        for candidate in (raw_code, self._normalize_resolve_code(raw_code), self._normalize_collection_code(raw_code)):
+            if candidate:
+                aliases.add(candidate)
+
+        if "/" in raw_code:
+            before_total = raw_code.split("/", 1)[0]
+            for candidate in (
+                before_total,
+                self._normalize_resolve_code(before_total),
+                self._normalize_collection_code(before_total),
+            ):
+                if candidate:
+                    aliases.add(candidate)
+
+        without_printing_variant = re.sub(r"-P\d+$", "", raw_code)
+        if without_printing_variant != raw_code:
+            for candidate in (
+                without_printing_variant,
+                self._normalize_resolve_code(without_printing_variant),
+                self._normalize_collection_code(without_printing_variant),
+            ):
+                if candidate:
+                    aliases.add(candidate)
+
+        return sorted(aliases, key=lambda alias: (-len(alias), alias))
 
     def _build_collection_code_aliases(self, value: Optional[str]):
         normalized_code = self._normalize_collection_code(value)
@@ -431,6 +479,201 @@ class CardService:
             "total_pages": total_pages,
             "has_previous": current_page > 1,
             "has_next": total_pages > 0 and current_page < total_pages,
+        }
+
+    def _score_resolve_candidate(self, card: Card, query: str):
+        normalized_query = self._normalize_card_value(query) or ""
+        code_query = self._normalize_resolve_code(normalized_query) or ""
+        compact_query = self._normalize_collection_code(normalized_query) or ""
+        query_aliases = set(self._build_resolve_code_aliases(normalized_query))
+        lower_query = normalized_query.lower()
+
+        source_code = self._normalize_resolve_code(card.source_card_id) or ""
+        deck_key = self._normalize_resolve_code(card.deck_key) or ""
+        source_compact = self._normalize_collection_code(card.source_card_id) or ""
+        deck_key_compact = self._normalize_collection_code(card.deck_key) or ""
+        source_aliases = set(self._build_resolve_code_aliases(card.source_card_id))
+        deck_key_aliases = set(self._build_resolve_code_aliases(card.deck_key))
+        name = self._normalize_card_value(card.name) or ""
+        set_name = self._normalize_card_value(card.set_name) or ""
+        version = self._normalize_card_value(card.version) or ""
+
+        code_values = [
+            ("source_card_id", source_code, source_compact, card.source_card_id),
+            ("deck_key", deck_key, deck_key_compact, card.deck_key),
+        ]
+
+        best_score = 0
+        match_type = None
+        matched_value = None
+
+        for label, code_value, compact_value, raw_value in code_values:
+            if not code_value and not compact_value:
+                continue
+
+            score = 0
+            candidate_match_type = None
+
+            alias_matches_source = bool(query_aliases & source_aliases)
+            alias_matches_deck_key = bool(query_aliases & deck_key_aliases)
+
+            if label == "source_card_id" and code_query and code_value == code_query:
+                score = 112
+                candidate_match_type = f"exact_{label}"
+            elif label == "deck_key" and code_query and code_value == code_query:
+                score = 104
+                candidate_match_type = f"exact_{label}"
+            elif label == "source_card_id" and alias_matches_source:
+                score = 102
+                candidate_match_type = f"alias_{label}"
+            elif label == "deck_key" and alias_matches_deck_key:
+                score = 98
+                candidate_match_type = f"alias_{label}"
+            elif compact_query and compact_value == compact_query:
+                score = 96
+                candidate_match_type = f"normalized_{label}"
+            elif code_query and code_value.startswith(code_query):
+                score = 88
+                candidate_match_type = f"prefix_{label}"
+            elif compact_query and compact_value.startswith(compact_query):
+                score = 84
+                candidate_match_type = f"prefix_{label}"
+            elif code_query and code_query in code_value:
+                score = 74
+                candidate_match_type = f"contains_{label}"
+            elif compact_query and compact_query in compact_value:
+                score = 70
+                candidate_match_type = f"contains_{label}"
+
+            if score > best_score:
+                best_score = score
+                match_type = candidate_match_type
+                matched_value = raw_value
+
+        if lower_query:
+            name_lower = name.lower()
+            set_lower = set_name.lower()
+            version_lower = version.lower()
+
+            if name_lower == lower_query and best_score < 62:
+                best_score = 62
+                match_type = "exact_name"
+                matched_value = name
+            elif lower_query in name_lower and best_score < 48:
+                best_score = 48
+                match_type = "contains_name"
+                matched_value = name
+            elif lower_query in set_lower and best_score < 34:
+                best_score = 34
+                match_type = "contains_set"
+                matched_value = set_name
+            elif lower_query in version_lower and best_score < 32:
+                best_score = 32
+                match_type = "contains_version"
+                matched_value = version
+
+        return best_score, match_type, matched_value
+
+    def resolve_card_candidates(self, tgc_id: int, query: str, limit: int = 5):
+        normalized_query = self._normalize_filter_value(query)
+        if not normalized_query:
+            return {"query": "", "items": []}
+
+        safe_limit = max(1, min(limit, 10))
+        escaped_query = self._escape_like_pattern(normalized_query)
+        pattern = f"%{escaped_query}%"
+        code_query = self._normalize_resolve_code(normalized_query)
+        compact_query = self._normalize_collection_code(normalized_query)
+
+        conditions = [
+            Card.name.ilike(pattern, escape="\\"),
+            Card.source_card_id.ilike(pattern, escape="\\"),
+            Card.deck_key.ilike(pattern, escape="\\"),
+            Card.set_name.ilike(pattern, escape="\\"),
+            Card.version.ilike(pattern, escape="\\"),
+        ]
+
+        if code_query:
+            escaped_code_query = self._escape_like_pattern(code_query)
+            code_pattern = f"{escaped_code_query}%"
+            conditions.extend([
+                func.upper(func.trim(Card.source_card_id)) == code_query,
+                func.upper(func.trim(Card.deck_key)) == code_query,
+                func.upper(func.trim(Card.source_card_id)).like(code_pattern, escape="\\"),
+                func.upper(func.trim(Card.deck_key)).like(code_pattern, escape="\\"),
+            ])
+
+        if compact_query:
+            compact_pattern = f"{self._escape_like_pattern(compact_query)}%"
+            conditions.extend([
+                func.upper(func.replace(func.replace(func.trim(Card.source_card_id), "-", ""), "_", "")) == compact_query,
+                func.upper(func.replace(func.replace(func.trim(Card.deck_key), "-", ""), "_", "")) == compact_query,
+                func.upper(func.replace(func.replace(func.trim(Card.source_card_id), "-", ""), "_", "")).like(compact_pattern, escape="\\"),
+                func.upper(func.replace(func.replace(func.trim(Card.deck_key), "-", ""), "_", "")).like(compact_pattern, escape="\\"),
+            ])
+
+        card_summary_load = load_only(
+            Card.id,
+            Card.tgc_id,
+            Card.source_card_id,
+            Card.deck_key,
+            Card.name,
+            Card.card_type,
+            Card.lv,
+            Card.cost,
+            Card.ap,
+            Card.hp,
+            Card.color,
+            Card.rarity,
+            Card.set_name,
+            Card.version,
+            Card.block,
+            Card.zones,
+            Card.image_url,
+        )
+
+        candidates = (
+            self.db.query(Card)
+            .filter(Card.tgc_id == tgc_id)
+            .filter(or_(*conditions))
+            .options(card_summary_load, joinedload(Card.riftbound_data))
+            .order_by(Card.source_card_id.asc(), Card.name.asc(), Card.id.asc())
+            .limit(CARD_RESOLVE_SCAN_LIMIT)
+            .all()
+        )
+
+        ranked_candidates = []
+        seen_card_ids = set()
+
+        for card in candidates:
+            if card.id in seen_card_ids:
+                continue
+
+            score, match_type, matched_value = self._score_resolve_candidate(card, normalized_query)
+            if score <= 0:
+                continue
+
+            payload = self.serialize_card_summary(card)
+            payload.update({
+                "score": score,
+                "match_type": match_type,
+                "matched_value": self._normalize_card_value(matched_value),
+            })
+            ranked_candidates.append(payload)
+            seen_card_ids.add(card.id)
+
+        ranked_candidates.sort(
+            key=lambda item: (
+                -item["score"],
+                self._natural_sort_key(item.get("source_card_id")),
+                (item.get("name") or "").lower(),
+                item.get("id") or 0,
+            )
+        )
+
+        return {
+            "query": normalized_query,
+            "items": ranked_candidates[:safe_limit],
         }
 
     def get_card_by_id(self, card_id: int):

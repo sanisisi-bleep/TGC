@@ -20,6 +20,7 @@ function SiteFooter({ navGames = [] }) {
         <nav className="site-footer__nav" aria-label="Enlaces del sitio">
           <Link to="/">Inicio</Link>
           <Link to="/updates">Novedades</Link>
+          <Link to="/guides">Guias</Link>
           <Link to="/contact">Contacto</Link>
           <Link to="/about">Acerca de</Link>
         </nav>

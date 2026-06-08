@@ -38,6 +38,34 @@ export const getCardDetail = async (cardId, signal) => {
   return response.data || null;
 };
 
+export const resolveCardCandidates = async ({ tgcId, query, limit = 5 }, signal) => {
+  const response = await apiClient.get('/cards/resolve', {
+    params: {
+      tgc_id: tgcId,
+      query,
+      limit,
+    },
+    signal,
+  });
+  return response.data || null;
+};
+
+export const getPublicCard = async (tgcSlug, sourceCardId, signal) => {
+  const response = await apiClient.get(
+    `/public/cards/${encodeURIComponent(tgcSlug)}/${encodeURIComponent(sourceCardId)}`,
+    { signal }
+  );
+  return response.data || null;
+};
+
+export const getPublicSet = async (tgcSlug, setCode, signal) => {
+  const response = await apiClient.get(
+    `/public/sets/${encodeURIComponent(tgcSlug)}/${encodeURIComponent(setCode)}`,
+    { signal }
+  );
+  return response.data || null;
+};
+
 export const getCardFacets = async (tgcId, signal) => {
   const response = await apiClient.get('/cards/facets', {
     params: { tgc_id: tgcId },

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ABOUT_SECTIONS, ABOUT_VALUE_POINTS } from '../content/publicContent';
+import usePageMeta from '../hooks/usePageMeta';
 import { GAME_CONFIGS } from '../tcgConfig';
 
 function AboutPage() {
@@ -8,6 +9,12 @@ function AboutPage() {
     .filter((game) => game.available)
     .map((game) => game.shortName)
     .join(' | ');
+
+  usePageMeta({
+    title: 'Acerca de',
+    description: 'Que es Multiverse TCG Manager, que problemas resuelve y que TCGs soporta actualmente.',
+    canonicalPath: '/about',
+  });
 
   return (
     <div className="page-shell public-page">
@@ -61,7 +68,7 @@ function AboutPage() {
           <Link className="guest-demo-primary-link" to="/search">
             Explorar demo
           </Link>
-          <Link className="guest-demo-secondary-link" to="/?auth=login&returns=/about">
+          <Link className="guest-demo-secondary-link" to="/?auth=login&returnTo=/about">
             Iniciar sesion
           </Link>
         </div>

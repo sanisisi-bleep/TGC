@@ -3,12 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import CollectionCardItem from '../components/collection/CollectionCardItem';
 import CollectionControlsPanel from '../components/collection/CollectionControlsPanel';
+import CollectionScannerModal from '../components/collection/CollectionScannerModal';
 import CardDetailModal from '../components/cards/CardDetailModal';
 import GuestDemoBanner from '../components/guest/GuestDemoBanner';
 import { useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
 import { getGuestDemoCollection, getGuestDemoDeckOptions } from '../demo/guestDemoData';
 import useBrowserStorageState from '../hooks/useBrowserStorageState';
+import usePageMeta from '../hooks/usePageMeta';
 import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
@@ -23,7 +25,9 @@ import {
 } from '../utils/setFilters';
 import { applyCollectionDeckUsageUpdate } from '../utils/collectionCache';
 import { normalizeCollectionCardType } from '../utils/collectionView';
+import { trackProductEvent } from '../utils/productAnalytics';
 import {
+  addCardToCollection,
   addCardToDeck,
   adjustCollectionCard,
   getCardDetail,
@@ -76,6 +80,24 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+
+  usePageMeta({
+    title: collectionTitle,
+    description: `Organiza tu coleccion de ${activeGame.shortName}, revisa copias disponibles, cartas usadas en mazos y filtros por set.`,
+    canonicalPath: '/collection',
+  });
+
+  useEffect(() => {
+    if (!isGuestDemo) {
+      return;
+    }
+
+    trackProductEvent('guest_demo_opened', {
+      page: 'collection',
+      tgc: activeTcgSlug,
+    });
+  }, [activeTcgSlug, isGuestDemo]);
+
   const [updatingCardId, setUpdatingCardId] = useState(null);
   const [quantityInputs, setQuantityInputs] = useState({});
   const [collectionSearchTerm, setCollectionSearchTerm] = useState('');
@@ -94,6 +116,7 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     }
   );
   const [selectedCard, setSelectedCard] = useState(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const deferredCollectionSearchTerm = useDeferredValue(collectionSearchTerm);
   const advancedMode = Boolean(profile?.advanced_mode);
 
@@ -266,6 +289,82 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     },
   });
 
+  const addScannedCardMutation = useMutation({
+    mutationFn: ({ card, quantity }) => addCardToCollection({
+      card_id: card.id,
+      quantity,
+    }),
+    onSuccess: (data, variables) => {
+      const nextQuantity = Number(data?.quantity ?? variables.quantity);
+      const {
+        score: _score,
+        match_type: _matchType,
+        matched_value: _matchedValue,
+        ...collectionCard
+      } = variables.card;
+
+      updateCollectionQuery((current) => {
+        let cardWasFound = false;
+        const nextItems = current.map((item) => {
+          if (item?.card?.id !== collectionCard.id) {
+            return item;
+          }
+
+          cardWasFound = true;
+          const usedInDecks = Math.max((item.total_quantity || 0) - (item.available_quantity || 0), 0);
+
+          return {
+            ...item,
+            card: {
+              ...collectionCard,
+              ...item.card,
+            },
+            total_quantity: nextQuantity,
+            available_quantity: Math.max(nextQuantity - usedInDecks, 0),
+          };
+        });
+
+        if (cardWasFound) {
+          return nextItems;
+        }
+
+        return [
+          {
+            card: collectionCard,
+            total_quantity: nextQuantity,
+            available_quantity: nextQuantity,
+            decks: [],
+          },
+          ...nextItems,
+        ];
+      });
+
+      queryClient.invalidateQueries({ queryKey: queryKeys.collection(activeTgc?.id) });
+      trackProductEvent('scanner_card_added', {
+        tgc: activeTcgSlug,
+        card_id: variables.card.id,
+        quantity: variables.quantity,
+      });
+      showToast({
+        type: 'success',
+        message: variables.quantity === 1
+          ? '1 copia agregada a la coleccion.'
+          : `${variables.quantity} copias agregadas a la coleccion.`,
+      });
+      setIsScannerOpen(false);
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        return;
+      }
+
+      showToast({
+        type: 'error',
+        message: getApiErrorMessage(error, 'No se pudo agregar la carta escaneada a la coleccion.'),
+      });
+    },
+  });
+
   const adjustCollectionQuantity = (cardId, delta) => {
     setUpdatingCardId(cardId);
     adjustCollectionMutation.mutate({ cardId, delta });
@@ -305,6 +404,26 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     const card = safeCollection.find((item) => item?.card?.id === cardId)?.card || null;
     const zone = getDeckAddZone(activeTcgSlug, card);
     addCardToDeckMutation.mutate({ deckId, cardId, quantity, zone });
+  };
+
+  const openScanner = () => {
+    if (isGuestDemo) {
+      showToast({
+        type: 'info',
+        message: 'Registrate para escanear cartas y guardar copias en tu coleccion.',
+      });
+      return;
+    }
+
+    setIsScannerOpen(true);
+  };
+
+  const addScannedCardToCollection = (card, quantity) => {
+    if (isGuestDemo) {
+      return;
+    }
+
+    addScannedCardMutation.mutate({ card, quantity });
   };
 
   const openDeck = (deckId) => {
@@ -567,6 +686,8 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         onFilterChange={handleCollectionFilterChange}
         onSortChange={handleCollectionSortChange}
         onClear={clearCollectionFilters}
+        isGuestDemo={isGuestDemo}
+        onOpenScanner={openScanner}
       />
 
       <div className={`collection-list ${collectionView !== 'detail' ? 'is-grid' : ''}`}>
@@ -617,6 +738,17 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         card={resolvedSelectedCard}
         activeTcgSlug={activeTcgSlug}
         onClose={() => setSelectedCard(null)}
+      />
+
+      <CollectionScannerModal
+        isOpen={isScannerOpen}
+        activeTgc={activeTgc}
+        activeTcgSlug={activeTcgSlug}
+        activeGame={activeGame}
+        isGuestDemo={isGuestDemo}
+        isAdding={addScannedCardMutation.isPending}
+        onAddCard={addScannedCardToCollection}
+        onClose={() => setIsScannerOpen(false)}
       />
     </div>
   );

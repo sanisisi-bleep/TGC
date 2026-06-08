@@ -3,7 +3,9 @@ import { useMutation } from '@tanstack/react-query';
 import { flushSync } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { GAME_CONFIGS, getGameConfig } from '../tcgConfig';
+import usePageMeta from '../hooks/usePageMeta';
 import { loginUser, registerUser } from '../services/api';
+import { trackProductEvent } from '../utils/productAnalytics';
 
 const PUBLIC_GAME_OPTIONS = Object.values(GAME_CONFIGS);
 
@@ -110,6 +112,12 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
     [searchParams]
   );
 
+  usePageMeta({
+    title: token ? `Panel ${activeGame.shortName}` : 'Multiverse TCG Manager',
+    description: 'Busca cartas, organiza tu coleccion y crea mazos para Gundam, One Piece, Digimon y Riftbound en una sola herramienta.',
+    canonicalPath: '/',
+  });
+
   useEffect(() => {
     setIsRegister(requestedAuthMode === 'register');
   }, [requestedAuthMode]);
@@ -136,6 +144,7 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
     },
     onSuccess: async () => {
       if (isRegister) {
+        trackProductEvent('signup_completed', { source: 'home' });
         setAuthMessage({
           type: 'success',
           text: 'Registro completado. Ya puedes iniciar sesion con tu usuario.',
@@ -160,6 +169,9 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
     e.preventDefault();
 
     setAuthMessage(null);
+    if (isRegister) {
+      trackProductEvent('signup_started', { source: 'home' });
+    }
     authMutation.mutate();
   };
 
@@ -428,6 +440,7 @@ function Home({ token, onLoginSuccess, activeTcgSlug, setActiveTcgSlug, availabl
               <button
                 onClick={() => {
                   setAuthMessage(null);
+                  trackProductEvent('signup_started', { source: 'home_toggle' });
                   updateAuthRoute('register');
                 }}
                 className={isRegister ? 'active' : ''}

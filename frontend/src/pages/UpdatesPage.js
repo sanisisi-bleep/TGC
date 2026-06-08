@@ -1,9 +1,16 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { PUBLIC_UPDATES } from '../content/publicContent';
+import usePageMeta from '../hooks/usePageMeta';
 
 function UpdatesPage() {
   const latestUpdate = useMemo(() => PUBLIC_UPDATES[0] || null, []);
+
+  usePageMeta({
+    title: 'Novedades',
+    description: 'Ultimas actualizaciones de Multiverse TCG Manager: mejoras de mazos, coleccion, datos, demo y usabilidad.',
+    canonicalPath: '/updates',
+  });
 
   return (
     <div className="page-shell public-page">
@@ -76,7 +83,7 @@ function UpdatesPage() {
           <Link className="guest-demo-primary-link" to="/search">
             Ver demo
           </Link>
-          <Link className="guest-demo-secondary-link" to="/?auth=register&returns=/updates">
+          <Link className="guest-demo-secondary-link" to="/?auth=register&returnTo=/updates">
             Registrarme
           </Link>
         </div>

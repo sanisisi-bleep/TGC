@@ -16,14 +16,32 @@ function CollectionControlsPanel({
   onFilterChange,
   onSortChange,
   onClear,
+  isGuestDemo = false,
+  onOpenScanner,
 }) {
   return (
     <section className="panel collection-controls-panel">
-      <div className="collection-controls-copy">
-        <strong>Filtra tu coleccion</strong>
-        <span>
-          Mostrando {visibleCards} de {totalCards} cartas registradas.
-        </span>
+      <div className="collection-controls-top">
+        <div className="collection-controls-copy">
+          <strong>Filtra tu coleccion</strong>
+          <span>
+            Mostrando {visibleCards} de {totalCards} cartas registradas.
+          </span>
+        </div>
+
+        <div className="collection-scanner-entry">
+          <button
+            type="button"
+            className="scanner-open-button"
+            onClick={onOpenScanner}
+            disabled={isGuestDemo || !onOpenScanner}
+          >
+            Escanear carta
+          </button>
+          <span>
+            {isGuestDemo ? 'Disponible al registrarte.' : 'Deteccion local con confirmacion antes de guardar.'}
+          </span>
+        </div>
       </div>
 
       <div className="collection-controls">

@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import json
 from collections import defaultdict
 from html import unescape
 from io import BytesIO
@@ -33,9 +34,12 @@ DEFAULT_VERBOSE = False
 DEFAULT_INCLUDE_VARIANTS = True
 DEFAULT_ONE_PIECE_CARDLIST_URL = "https://en.onepiece-cardgame.com/cardlist/"
 DEFAULT_ONE_PIECE_FAQ_URL = "https://en.onepiece-cardgame.com/rules/faq/"
+DEFAULT_ONE_PIECE_DON_CARDS_URL = "https://optcgapi.com/api/allDonCards/"
 DEFAULT_SET_CODE_FILTER = ""
 DEFAULT_SERIES_ID_FILTER = ""
 DEFAULT_FETCH_FAQ = True
+DEFAULT_FETCH_SUPPLEMENTAL_DON = True
+DEFAULT_ONLY_SUPPLEMENTAL_DON = False
 
 REQUEST_HEADERS = {
     "User-Agent": (
@@ -151,8 +155,17 @@ INCLUDE_VARIANTS = resolve_optional_bool(
     default=DEFAULT_INCLUDE_VARIANTS,
 )
 FETCH_FAQ = resolve_optional_bool("ONE_PIECE_FETCH_FAQ", default=DEFAULT_FETCH_FAQ)
+FETCH_SUPPLEMENTAL_DON = resolve_optional_bool(
+    "ONE_PIECE_FETCH_SUPPLEMENTAL_DON",
+    default=DEFAULT_FETCH_SUPPLEMENTAL_DON,
+)
+ONLY_SUPPLEMENTAL_DON = resolve_optional_bool(
+    "ONE_PIECE_ONLY_SUPPLEMENTAL_DON",
+    default=DEFAULT_ONLY_SUPPLEMENTAL_DON,
+)
 CARDLIST_URL = os.getenv("ONE_PIECE_CARDLIST_URL", DEFAULT_ONE_PIECE_CARDLIST_URL).strip()
 FAQ_URL = os.getenv("ONE_PIECE_FAQ_URL", DEFAULT_ONE_PIECE_FAQ_URL).strip()
+DON_CARDS_URL = os.getenv("ONE_PIECE_DON_CARDS_URL", DEFAULT_ONE_PIECE_DON_CARDS_URL).strip()
 SET_CODE_FILTER = {
     normalize_filter_token(value)
     for value in resolve_csv_env("ONE_PIECE_SET_CODE_FILTER", DEFAULT_SET_CODE_FILTER)
@@ -215,6 +228,24 @@ def normalize_source_card_id(value):
     return normalized
 
 
+def normalize_token(value):
+    return re.sub(r"[^A-Z0-9]+", "", clean_text(value).upper())
+
+
+def short_hash(value):
+    import hashlib
+
+    return hashlib.sha1(clean_text(value).encode("utf-8")).hexdigest()[:8].upper()
+
+
+def extract_one_piece_trigger(text):
+    normalized = clean_multiline_text(text)
+    if not normalized:
+        return ""
+    match = re.search(r"\[Trigger\]\s*(.*)", normalized, flags=re.IGNORECASE | re.DOTALL)
+    return clean_text(match.group(1)) if match else ""
+
+
 def extract_set_code(label):
     normalized_label = clean_text(label)
     match = re.search(r"\[([A-Z0-9-]+)\]\s*$", normalized_label, flags=re.IGNORECASE)
@@ -261,6 +292,13 @@ def should_include_card_code(code):
     return True
 
 
+def should_include_set_token(set_token):
+    if not SET_CODE_FILTER:
+        return True
+    normalized = normalize_filter_token(set_token)
+    return bool(normalized and normalized in SET_CODE_FILTER)
+
+
 def should_include_series(option):
     if SERIES_ID_FILTER and option["id"] not in SERIES_ID_FILTER:
         return False
@@ -273,6 +311,8 @@ def should_include_series(option):
 
 def build_filter_description():
     parts = []
+    if ONLY_SUPPLEMENTAL_DON:
+        parts.append("mode=only-don")
     if SET_CODE_FILTER:
         parts.append(f"sets={', '.join(sorted(SET_CODE_FILTER))}")
     if SERIES_ID_FILTER:
@@ -366,6 +406,36 @@ def extract_series_options(landing_html):
         )
 
     return options
+
+
+def fetch_json(session, url):
+    response = session.get(
+        url,
+        timeout=REQUEST_TIMEOUT,
+        headers={
+            **REQUEST_HEADERS,
+            "Accept": "application/json, text/plain, */*",
+        },
+    )
+    response.raise_for_status()
+    payload = json.loads((response.text or "").lstrip("\ufeff\r\n\t "))
+    if not isinstance(payload, list):
+        raise ValueError(f"Unexpected JSON payload for {url}")
+    return payload
+
+
+def fetch_json_with_retry(session, url):
+    last_error = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            return fetch_json(session, url)
+        except Exception as exc:  # pragma: no cover - network retry guard
+            last_error = exc
+            if attempt < MAX_RETRIES:
+                time.sleep(0.4)
+
+    raise last_error
 
 
 def extract_attribute_value(node):
@@ -809,12 +879,122 @@ def parse_modal_card(modal, series_option, page_url, qa_map):
     return card_data
 
 
+def build_supplemental_don_card(api_card):
+    card_name = clean_text(api_card.get("card_name")) or "DON!!"
+    image_id = normalize_source_card_id(api_card.get("card_image_id"))
+    don_id = normalize_source_card_id(api_card.get("don_id"))
+    source_card_id = image_id or don_id or f"DON-{short_hash(card_name)}"
+    deck_key = don_id or "DON"
+    set_name = clean_text(api_card.get("optcg_don_name") or api_card.get("set_name") or "Don!! Cards")
+    set_code = extract_set_code(set_name)
+    version = normalize_version(
+        set_code
+        or normalize_source_card_id(api_card.get("set_id"))
+        or deck_key
+        or "DON"
+    )
+    ability_text = clean_multiline_text(api_card.get("card_text"))
+    trigger_text = extract_one_piece_trigger(ability_text)
+    attribute_name = clean_text(api_card.get("attribute"))
+    counter = clean_text(api_card.get("counter_amount"))
+    life = clean_text(api_card.get("life"))
+
+    card_data = {
+        "source_card_id": source_card_id,
+        "deck_key": deck_key,
+        "name": card_name,
+        "card_type": clean_text(api_card.get("card_type")) or "DON!!",
+        "lv": None,
+        "cost": to_int(api_card.get("card_cost")),
+        "ap": to_int(api_card.get("card_power")),
+        "hp": None,
+        "color": clean_text(api_card.get("card_color")),
+        "rarity": clean_text(api_card.get("rarity")),
+        "set_name": set_name,
+        "version": version,
+        "block": None,
+        "traits": clean_text(api_card.get("sub_types")),
+        "link": "",
+        "zones": "",
+        "artist": "",
+        "abilities": ability_text,
+        "description": f"Catalog: Don Cards\nSet: {set_name}",
+        "image_url": clean_text(api_card.get("card_image")),
+        "detail_payload": {
+            "attribute_name": attribute_name,
+            "attribute_image": "",
+            "power": to_int(api_card.get("card_power")),
+            "family": clean_text(api_card.get("sub_types")),
+            "ability": ability_text,
+            "counter": counter,
+            "trigger": trigger_text,
+            "notes": "\n".join(
+                part
+                for part in (
+                    "Catalog: Don Cards",
+                    f"Life: {life}" if life else "",
+                )
+                if part
+            ),
+            "qa": "",
+        },
+    }
+
+    validate_string_lengths(card_data)
+    return card_data
+
+
+def scrape_supplemental_don_cards(session):
+    if not FETCH_SUPPLEMENTAL_DON:
+        return [], False
+
+    api_cards = fetch_json_with_retry(session, DON_CARDS_URL)
+    included_cards = []
+
+    for api_card in api_cards:
+        card_data = build_supplemental_don_card(api_card)
+        if not should_include_card_code(card_data["source_card_id"]):
+            continue
+        if not should_include_set_token(card_data["version"]):
+            continue
+        included_cards.append(card_data)
+
+    return included_cards, True
+
+
 def scrape_one_piece_cards():
     session = build_session()
     scraped_cards = []
     failed_series = []
+    failed_supplemental_catalogs = []
 
     try:
+        if ONLY_SUPPLEMENTAL_DON:
+            try:
+                supplemental_don_cards, used_supplemental_don = scrape_supplemental_don_cards(session)
+                scraped_cards.extend(supplemental_don_cards)
+                if used_supplemental_don:
+                    print(f"Supplemental DON!! catalog processed | Included: {len(supplemental_don_cards)}")
+            except Exception as exc:  # pragma: no cover - network retry guard
+                failed_supplemental_catalogs.append("Supplemental DON!! catalog")
+                print(f"Error fetching supplemental DON!! catalog: {exc}")
+
+            deduplicated_cards, duplicate_count = deduplicate_cards(scraped_cards)
+            deduplicated_cards.sort(key=lambda item: (item["version"], item["deck_key"], item["source_card_id"]))
+            failed_supplemental_catalogs.sort()
+            print(
+                f"Finished One Piece official scrape | Filter: {build_filter_description()} | "
+                f"Collected: {len(deduplicated_cards)} | Deduplicated repeats: {duplicate_count}"
+            )
+            return (
+                deduplicated_cards,
+                failed_series,
+                [],
+                duplicate_count,
+                [],
+                failed_supplemental_catalogs,
+            )
+
         landing_html, _landing_url = fetch_html_with_retry(session, CARDLIST_URL)
         series_options = [
             option for option in extract_series_options(landing_html)
@@ -828,6 +1008,15 @@ def scrape_one_piece_cards():
 
         selected_set_tokens = {option["set_token"] for option in series_options if option["set_token"]}
         qa_map, failed_faq_entries = build_qa_map(session, selected_set_tokens)
+
+        try:
+            supplemental_don_cards, used_supplemental_don = scrape_supplemental_don_cards(session)
+            scraped_cards.extend(supplemental_don_cards)
+            if used_supplemental_don:
+                print(f"Supplemental DON!! catalog processed | Included: {len(supplemental_don_cards)}")
+        except Exception as exc:  # pragma: no cover - network retry guard
+            failed_supplemental_catalogs.append("Supplemental DON!! catalog")
+            print(f"Error fetching supplemental DON!! catalog: {exc}")
 
         for series_option in series_options:
             try:
@@ -870,11 +1059,19 @@ def scrape_one_piece_cards():
         deduplicated_cards.sort(key=lambda item: (item["version"], item["deck_key"], item["source_card_id"]))
         failed_series.sort()
         failed_faq_entries.sort()
+        failed_supplemental_catalogs.sort()
         print(
             f"Finished One Piece official scrape | Filter: {build_filter_description()} | "
             f"Collected: {len(deduplicated_cards)} | Deduplicated repeats: {duplicate_count}"
         )
-        return deduplicated_cards, failed_series, failed_faq_entries, duplicate_count, series_options
+        return (
+            deduplicated_cards,
+            failed_series,
+            failed_faq_entries,
+            duplicate_count,
+            series_options,
+            failed_supplemental_catalogs,
+        )
     finally:
         session.close()
 
@@ -904,6 +1101,9 @@ def ensure_tgc(db):
 
 
 def should_prune_stale_cards():
+    if ONLY_SUPPLEMENTAL_DON:
+        return False
+
     if POPULATE_PRUNE_STALE_MODE == "false":
         return False
     return not HAS_ACTIVE_FILTERS
@@ -1097,8 +1297,16 @@ def main():
         print(f"Prune stale mode: {build_prune_mode_description()}")
         print(f"Include variants: {INCLUDE_VARIANTS}")
         print(f"Fetch FAQ: {FETCH_FAQ}")
+        print(f"Only supplemental DON!!: {ONLY_SUPPLEMENTAL_DON}")
 
-        scraped_cards, failed_series, failed_faq_entries, duplicate_count, selected_series = scrape_one_piece_cards()
+        (
+            scraped_cards,
+            failed_series,
+            failed_faq_entries,
+            duplicate_count,
+            selected_series,
+            failed_supplemental_catalogs,
+        ) = scrape_one_piece_cards()
 
         print("Selected One Piece series:")
         for series in selected_series:
@@ -1112,6 +1320,7 @@ def main():
             print(f"- Deduplicated exact repeats: {duplicate_count}")
             print(f"- Failed series: {len(failed_series)}")
             print(f"- Failed FAQ documents: {len(failed_faq_entries)}")
+            print(f"- Failed supplemental catalogs: {len(failed_supplemental_catalogs)}")
             return
 
         tgc = ensure_tgc(db)
@@ -1128,6 +1337,7 @@ def main():
         print(f"- Deduplicated exact repeats: {duplicate_count}")
         print(f"- Failed series: {len(failed_series)}")
         print(f"- Failed FAQ documents: {len(failed_faq_entries)}")
+        print(f"- Failed supplemental catalogs: {len(failed_supplemental_catalogs)}")
 
         if failed_series:
             print("- Failed series:")
@@ -1137,6 +1347,11 @@ def main():
         if failed_faq_entries:
             print("- Failed FAQ documents:")
             for label in failed_faq_entries:
+                print(f"  {label}")
+
+        if failed_supplemental_catalogs:
+            print("- Failed supplemental catalogs:")
+            for label in failed_supplemental_catalogs:
                 print(f"  {label}")
 
         print("")

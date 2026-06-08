@@ -1,16 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import CardDetailModal from '../components/cards/CardDetailModal';
 import queryKeys from '../queryKeys';
+import usePageMeta from '../hooks/usePageMeta';
 import { getSharedDeck } from '../services/api';
 import { resolveTcgSlug } from '../tcgConfig';
 import { getDeckEggCardCount } from '../utils/deckTools';
+import { trackProductEvent } from '../utils/productAnalytics';
 
 function SharedDeck() {
   const { shareToken } = useParams();
   const navigate = useNavigate();
   const [selectedCard, setSelectedCard] = useState(null);
+  const [copyState, setCopyState] = useState('idle');
   const sharedDeckQuery = useQuery({
     queryKey: queryKeys.sharedDeck(shareToken),
     queryFn: ({ signal }) => getSharedDeck(shareToken, signal),
@@ -20,6 +23,44 @@ function SharedDeck() {
   const deck = sharedDeckQuery.data || null;
   const loading = sharedDeckQuery.isPending;
   const activeTcgSlug = resolveTcgSlug(deck?.tgc_name || '');
+  const metaTitle = deck?.name ? `${deck.name} - mazo ${deck.tgc_name || 'TCG'}` : 'Mazo compartido';
+  const metaDescription = deck
+    ? `Mazo publico de ${deck.tgc_name || 'TCG'} con ${deck.total_cards || deck.main_deck_cards || 0} cartas en Multiverse TCG Manager.`
+    : 'Consulta mazos compartidos en Multiverse TCG Manager.';
+
+  usePageMeta({
+    title: metaTitle,
+    description: metaDescription,
+    canonicalPath: shareToken ? `/decks/public/${shareToken}` : '/decks',
+  });
+
+  useEffect(() => {
+    if (!deck) {
+      return;
+    }
+
+    trackProductEvent('shared_deck_viewed', {
+      tgc: activeTcgSlug,
+      deck_id: deck.id,
+      total_cards: deck.total_cards || deck.main_deck_cards || 0,
+    });
+  }, [activeTcgSlug, deck]);
+
+  const copyPublicLink = async () => {
+    const publicPath = `/decks/public/${shareToken}`;
+    const publicUrl = typeof window !== 'undefined'
+      ? `${window.location.origin}${publicPath}`
+      : publicPath;
+
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopyState('copied');
+    } catch (_error) {
+      setCopyState('failed');
+    }
+
+    window.setTimeout(() => setCopyState('idle'), 2200);
+  };
 
   if (loading) {
     return (
@@ -95,6 +136,14 @@ function SharedDeck() {
               : `${deck.total_cards || 0}/${deck.max_cards || 50}`}
           </strong>
         </div>
+
+        <button type="button" className="ghost-button public-share-copy-button" onClick={copyPublicLink}>
+          {copyState === 'copied'
+            ? 'Enlace copiado'
+            : copyState === 'failed'
+              ? 'No se pudo copiar'
+              : 'Copiar enlace'}
+        </button>
       </section>
 
       <section className="panel">

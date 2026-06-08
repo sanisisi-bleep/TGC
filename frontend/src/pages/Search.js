@@ -13,6 +13,7 @@ import { useToast } from '../context/ToastContext';
 import useBrowserStorageState from '../hooks/useBrowserStorageState';
 import useDebouncedValue from '../hooks/useDebouncedValue';
 import useMediaQuery from '../hooks/useMediaQuery';
+import usePageMeta from '../hooks/usePageMeta';
 import usePositiveIntegerDraftMap from '../hooks/usePositiveIntegerDraftMap';
 import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import { getApiErrorMessage } from '../utils/apiMessages';
@@ -21,6 +22,7 @@ import queryKeys from '../queryKeys';
 import { QUERY_STALE_TIMES } from '../queryConfig';
 import { applyCollectionDeckUsageUpdate } from '../utils/collectionCache';
 import { buildSetFilterOptions } from '../utils/setFilters';
+import { trackProductEvent } from '../utils/productAnalytics';
 import {
   addCardToCollection,
   addCardToConsidering,
@@ -154,6 +156,24 @@ function Search({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  usePageMeta({
+    title: activeGame.searchTitle || `Buscar cartas de ${activeGame.shortName}`,
+    description: `Busca cartas de ${activeGame.shortName} por nombre, codigo, color, tipo, rareza y set en Multiverse TCG Manager.`,
+    canonicalPath: '/search',
+  });
+
+  useEffect(() => {
+    if (!isGuestDemo) {
+      return;
+    }
+
+    trackProductEvent('guest_demo_opened', {
+      page: 'search',
+      tgc: activeTcgSlug,
+    });
+  }, [activeTcgSlug, isGuestDemo]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearchTerm = useDebouncedValue(searchTerm, SEARCH_INPUT_DELAY_MS);
   const [filters, setFilters] = useState({

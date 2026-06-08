@@ -16,6 +16,7 @@ import { isUnauthorizedError, useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
 import { getGuestDemoDecks } from '../demo/guestDemoData';
 import useBrowserStorageState from '../hooks/useBrowserStorageState';
+import usePageMeta from '../hooks/usePageMeta';
 import usePositiveIntegerDraftMap from '../hooks/usePositiveIntegerDraftMap';
 import useQueryErrorToast from '../hooks/useQueryErrorToast';
 import queryKeys from '../queryKeys';
@@ -23,6 +24,7 @@ import { QUERY_STALE_TIMES } from '../queryConfig';
 import { getGameConfig, resolveTcgSlug } from '../tcgConfig';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import { applyCollectionDeckUsageUpdate, renameDeckInCollection } from '../utils/collectionCache';
+import { trackProductEvent } from '../utils/productAnalytics';
 import {
   applyDeckAssignmentMutation,
   applyDeckQuantityMutation,
@@ -82,6 +84,24 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const { showToast } = useToast();
   const { profile } = useSession();
   const queryClient = useQueryClient();
+
+  usePageMeta({
+    title: activeGame.decksTitle || `Mazos de ${activeGame.shortName}`,
+    description: `Crea, valida, importa y organiza mazos de ${activeGame.shortName} conectados con tu coleccion en Multiverse TCG Manager.`,
+    canonicalPath: '/decks',
+  });
+
+  useEffect(() => {
+    if (!isGuestDemo) {
+      return;
+    }
+
+    trackProductEvent('guest_demo_opened', {
+      page: 'decks',
+      tgc: activeTcgSlug,
+    });
+  }, [activeTcgSlug, isGuestDemo]);
+
   const [newDeckName, setNewDeckName] = useState('');
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedDeckId, setSelectedDeckId] = useState(null);
@@ -431,6 +451,10 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
       queryClient.invalidateQueries({ queryKey: queryKeys.searchDeckOptions(activeTgc?.id) });
       invalidateDeckHistoryQuery(createdDeck?.id);
       setNewDeckName('');
+      trackProductEvent('deck_created', {
+        tgc: activeTcgSlug,
+        deck_id: createdDeck?.id,
+      });
       showToast({ type: 'success', message: 'Mazo creado.' });
     },
     onError: (error) => {
@@ -1203,7 +1227,11 @@ function Decks({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
 
     try {
       const response = await shareDeckMutation.mutateAsync(deck.id);
-      const shareUrl = `${window.location.origin}/shared-deck/${response.share_token}`;
+      const shareUrl = `${window.location.origin}/decks/public/${response.share_token}`;
+      trackProductEvent('deck_shared', {
+        tgc: activeTcgSlug,
+        deck_id: deck.id,
+      });
 
       if (navigator.share) {
         await navigator.share({

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
 import { useToast } from '../context/ToastContext';
 import { PUBLIC_CONTACT_CATEGORIES, PUBLIC_FAQ_ITEMS } from '../content/publicContent';
+import usePageMeta from '../hooks/usePageMeta';
 import { sendPublicContact } from '../services/api';
 import { getApiErrorMessage } from '../utils/apiMessages';
 import {
@@ -28,6 +29,12 @@ function ContactPage() {
   const [form, setForm] = useState(DEFAULT_CONTACT_FORM);
   const [attachment, setAttachment] = useState(null);
   const fileInputRef = useRef(null);
+
+  usePageMeta({
+    title: 'Contacto',
+    description: 'Contacta con Multiverse TCG Manager para avisar de bugs, errores de datos, importacion de mazos o sugerencias de mejora.',
+    canonicalPath: '/contact',
+  });
 
   useEffect(() => {
     setForm((current) => ({

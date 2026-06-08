@@ -10,10 +10,14 @@ import SiteFooter from './components/layout/SiteFooter';
 import SiteNavigation from './components/layout/SiteNavigation';
 import AboutPage from './pages/AboutPage';
 import ContactPage from './pages/ContactPage';
+import GuideDetailPage from './pages/GuideDetailPage';
+import GuidesPage from './pages/GuidesPage';
 import Home from './pages/Home';
 import Search from './pages/Search';
 import Collection from './pages/Collection';
 import Decks from './pages/Decks';
+import PublicCardPage from './pages/PublicCardPage';
+import PublicSetPage from './pages/PublicSetPage';
 import Settings from './pages/Settings';
 import SharedDeck from './pages/SharedDeck';
 import UpdatesPage from './pages/UpdatesPage';
@@ -51,6 +55,10 @@ const sanitizeTelemetryPayload = (event) => {
 
     if (parsedUrl.pathname.startsWith('/shared-deck/')) {
       parsedUrl.pathname = '/shared-deck/[token]';
+    }
+
+    if (parsedUrl.pathname.startsWith('/decks/public/')) {
+      parsedUrl.pathname = '/decks/public/[token]';
     }
 
     parsedUrl.search = '';
@@ -269,8 +277,12 @@ function AppShell({
                 }
               />
               <Route path="/updates" element={<UpdatesPage />} />
+              <Route path="/guides" element={<GuidesPage />} />
+              <Route path="/guides/:guideSlug" element={<GuideDetailPage />} />
               <Route path="/contact" element={<ContactPage />} />
               <Route path="/about" element={<AboutPage />} />
+              <Route path="/cards/:tgcSlug/:sourceCardId" element={<PublicCardPage />} />
+              <Route path="/sets/:tgcSlug/:setCode" element={<PublicSetPage />} />
               <Route
                 path="/search"
                 element={
@@ -324,6 +336,7 @@ function AppShell({
                 }
               />
               <Route path="/shared-deck/:shareToken" element={<SharedDeck />} />
+              <Route path="/decks/public/:shareToken" element={<SharedDeck />} />
               <Route path="/settings" element={isAuthenticated ? <Settings /> : <Navigate to="/" />} />
             </Routes>
           </main>
