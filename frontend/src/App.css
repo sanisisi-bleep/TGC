@@ -2852,54 +2852,26 @@ textarea::placeholder {
 
 .scanner-guide {
   position: absolute;
-  left: 50%;
-  top: 4%;
-  bottom: 4%;
-  width: min(62%, 340px);
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
   display: flex;
-  justify-content: center;
-  border: 2px solid rgba(255, 255, 255, 0.82);
-  border-radius: 18px;
-  box-shadow: 0 0 0 999px rgba(4, 12, 24, 0.18);
+  justify-content: flex-start;
   pointer-events: none;
-  transform: translateX(-50%);
-}
-
-.scanner-guide::after {
-  content: "";
-  position: absolute;
-  left: 5%;
-  right: 5%;
-  bottom: 4%;
-  height: 19%;
-  border: 2px dashed rgba(255, 255, 255, 0.78);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.scanner-guide::before {
-  content: "";
-  position: absolute;
-  right: 4%;
-  top: 3%;
-  width: 42%;
-  height: 12%;
-  border: 2px dashed rgba(255, 255, 255, 0.62);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
 }
 
 .scanner-guide span {
-  align-self: start;
-  margin-top: -14px;
-  padding: 0.25rem 0.7rem;
+  max-width: min(100%, 430px);
+  padding: 0.45rem 0.75rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.94);
-  color: #13233d;
+  background: rgba(255, 255, 255, 0.9);
+  color: #11233d;
   font-size: 0.78rem;
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  box-shadow: 0 12px 26px rgba(4, 12, 24, 0.22);
+  backdrop-filter: blur(10px);
 }
 
 .scanner-camera-actions,

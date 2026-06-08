@@ -8,6 +8,7 @@ import { getScannerProfile, SCANNER_TEXT_WHITELIST } from './scannerProfiles';
 
 const MIN_QUERY_LENGTH = 2;
 const DEFAULT_QUANTITY = '1';
+const MAX_PROCESSED_REGION_SIZE = 1400;
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -23,7 +24,11 @@ const normalizeCodeCandidate = (value) => {
 
   compactCode = compactCode
     .replace(/^0P/, 'OP')
-    .replace(/^D0N/, 'DON');
+    .replace(/^D0N/, 'DON')
+    .replace(/^6D/, 'GD')
+    .replace(/^G0/, 'GD')
+    .replace(/^GO/, 'GD')
+    .replace(/^QD/, 'GD');
 
   const match = compactCode.match(/^([A-Z]+)(.*)$/);
   if (!match) {
@@ -178,32 +183,49 @@ const cropRegionFromCard = (cardBounds, region) => ({
 
 const getScannerRegions = (sourceCanvas, scannerProfile) => {
   const cardBoundsCandidates = getCardBoundCandidates(sourceCanvas, scannerProfile);
+  const cardBoundsForRegions = cardBoundsCandidates.slice(0, scannerProfile.maxCardBoundsForRegions || cardBoundsCandidates.length);
+  const fullFrameRegions = (scannerProfile.fullFrameRegions || []).map((region) => ({
+    ...region,
+    x: sourceCanvas.width * region.x,
+    y: sourceCanvas.height * region.y,
+    width: sourceCanvas.width * region.width,
+    height: sourceCanvas.height * region.height,
+    scale: region.scale || 3,
+    mode: region.mode || 'code',
+    label: `${region.label} (imagen)`,
+  }));
 
-  return scannerProfile.regions.flatMap((region) => (
-    cardBoundsCandidates.map((cardBounds) => cropRegionFromCard(cardBounds, {
+  const cardRegions = scannerProfile.regions.flatMap((region) => (
+    cardBoundsForRegions.map((cardBounds) => cropRegionFromCard(cardBounds, {
       ...region,
       label: `${region.label} (${cardBounds.label})`,
     }))
   ));
+
+  return [...fullFrameRegions, ...cardRegions];
 };
 
-const createProcessedRegionImage = (sourceCanvas, region) => {
+const createProcessedRegionImages = (sourceCanvas, region) => {
   const sourceX = clamp(Math.round(region.x), 0, sourceCanvas.width - 1);
   const sourceY = clamp(Math.round(region.y), 0, sourceCanvas.height - 1);
   const sourceWidth = clamp(Math.round(region.width), 1, sourceCanvas.width - sourceX);
   const sourceHeight = clamp(Math.round(region.height), 1, sourceCanvas.height - sourceY);
   const outputCanvas = document.createElement('canvas');
-  const outputScale = region.scale || 3;
+  const requestedScale = region.scale || 3;
+  const maxScaleByWidth = MAX_PROCESSED_REGION_SIZE / sourceWidth;
+  const maxScaleByHeight = MAX_PROCESSED_REGION_SIZE / sourceHeight;
+  const outputScale = Math.max(1, Math.min(requestedScale, maxScaleByWidth, maxScaleByHeight));
 
   outputCanvas.width = Math.max(Math.round(sourceWidth * outputScale), 1);
   outputCanvas.height = Math.max(Math.round(sourceHeight * outputScale), 1);
 
   const context = outputCanvas.getContext('2d', { willReadFrequently: true });
   if (!context) {
-    return null;
+    return [];
   }
 
-  context.imageSmoothingEnabled = false;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
   context.drawImage(
     sourceCanvas,
     sourceX,
@@ -218,7 +240,7 @@ const createProcessedRegionImage = (sourceCanvas, region) => {
 
   const imageData = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
   const { data } = imageData;
-  const contrast = region.mode === 'code' ? 1.82 : 1.35;
+  const contrast = region.mode === 'code' ? 2.05 : 1.42;
 
   for (let index = 0; index < data.length; index += 4) {
     const gray = (data[index] * 0.299) + (data[index + 1] * 0.587) + (data[index + 2] * 0.114);
@@ -229,26 +251,77 @@ const createProcessedRegionImage = (sourceCanvas, region) => {
   }
 
   context.putImageData(imageData, 0, 0);
-  return outputCanvas.toDataURL('image/png');
+
+  if (region.mode !== 'code') {
+    return [{ label: 'contraste', image: outputCanvas.toDataURL('image/png') }];
+  }
+
+  const thresholdCanvas = document.createElement('canvas');
+  thresholdCanvas.width = outputCanvas.width;
+  thresholdCanvas.height = outputCanvas.height;
+  const thresholdContext = thresholdCanvas.getContext('2d', { willReadFrequently: true });
+
+  const invertedCanvas = document.createElement('canvas');
+  invertedCanvas.width = outputCanvas.width;
+  invertedCanvas.height = outputCanvas.height;
+  const invertedContext = invertedCanvas.getContext('2d', { willReadFrequently: true });
+
+  if (!thresholdContext || !invertedContext) {
+    return [{ label: 'contraste', image: outputCanvas.toDataURL('image/png') }];
+  }
+
+  const thresholdImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
+  const invertedImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
+
+  for (let index = 0; index < thresholdImage.data.length; index += 4) {
+    const value = thresholdImage.data[index] > 142 ? 255 : 0;
+    thresholdImage.data[index] = value;
+    thresholdImage.data[index + 1] = value;
+    thresholdImage.data[index + 2] = value;
+
+    const invertedValue = value === 255 ? 0 : 255;
+    invertedImage.data[index] = invertedValue;
+    invertedImage.data[index + 1] = invertedValue;
+    invertedImage.data[index + 2] = invertedValue;
+  }
+
+  thresholdContext.putImageData(thresholdImage, 0, 0);
+  invertedContext.putImageData(invertedImage, 0, 0);
+
+  return [
+    { label: 'invertido', image: invertedCanvas.toDataURL('image/png') },
+    { label: 'binario', image: thresholdCanvas.toDataURL('image/png') },
+  ];
 };
 
 const extractLikelyQuery = (text, scannerProfile) => {
   const normalizedText = normalizeDetectionText(text);
-  const upperText = normalizedText.toUpperCase();
+  const upperText = normalizedText.toUpperCase()
+    .replace(/\b6D/g, 'GD')
+    .replace(/\bG0/g, 'GD')
+    .replace(/\bGO/g, 'GD')
+    .replace(/\bQD/g, 'GD');
+  const textVariants = [
+    upperText,
+    upperText.replace(/\s+/g, ''),
+    upperText.replace(/[^A-Z0-9/-]+/g, ''),
+  ];
   const codeMatches = [];
 
-  for (const pattern of scannerProfile.codePatterns) {
-    const matcher = new RegExp(pattern.source, 'gi');
-    let match = matcher.exec(upperText);
-    while (match) {
-      const detectedCode = formatCodeForProfile(match[0], scannerProfile);
-      if (detectedCode) {
-        codeMatches.push({
-          query: detectedCode,
-          index: match.index,
-        });
+  for (const textVariant of textVariants) {
+    for (const pattern of scannerProfile.codePatterns) {
+      const matcher = new RegExp(pattern.source, 'gi');
+      let match = matcher.exec(textVariant);
+      while (match) {
+        const detectedCode = formatCodeForProfile(match[0], scannerProfile);
+        if (detectedCode) {
+          codeMatches.push({
+            query: detectedCode,
+            index: match.index,
+          });
+        }
+        match = matcher.exec(textVariant);
       }
-      match = matcher.exec(upperText);
     }
   }
 
@@ -474,7 +547,7 @@ function CollectionScannerModal({
       }
 
       setCameraStatus('ready');
-      setDetectionNotice('Deteccion activa. Centra la carta dentro del marco.');
+      setDetectionNotice('Deteccion activa. Acerca la zona del codigo y evita reflejos.');
     } catch (_error) {
       setCameraStatus('idle');
       setCameraError('No pudimos abrir la camara. Revisa permisos o usa la busqueda manual.');
@@ -506,38 +579,44 @@ function CollectionScannerModal({
       let detection = { query: '', type: 'manual' };
 
       for (const region of codeRegions) {
-        const regionImage = createProcessedRegionImage(sourceCanvas, region);
+        const regionImages = createProcessedRegionImages(sourceCanvas, region);
 
-        if (!regionImage) {
+        if (regionImages.length === 0) {
           continue;
         }
 
-        const result = await recognize(regionImage, 'eng', {
-          tessedit_char_whitelist: SCANNER_TEXT_WHITELIST,
-          tessedit_pageseg_mode: '7',
-          preserve_interword_spaces: '1',
-        });
-        const detectedText = result?.data?.text || '';
-        regionTexts.push(`${region.label}: ${detectedText.trim()}`);
+        for (const regionImage of regionImages) {
+          const result = await recognize(regionImage.image, 'eng', {
+            tessedit_char_whitelist: SCANNER_TEXT_WHITELIST,
+            tessedit_pageseg_mode: '7',
+            preserve_interword_spaces: '1',
+          });
+          const detectedText = result?.data?.text || '';
+          regionTexts.push(`${region.label} / ${regionImage.label}: ${detectedText.trim()}`);
 
-        const regionDetection = extractLikelyQuery(detectedText, scannerProfile);
-        if (regionDetection.type === 'code') {
-          detection = regionDetection;
+          const regionDetection = extractLikelyQuery(detectedText, scannerProfile);
+          if (regionDetection.type === 'code') {
+            detection = regionDetection;
+            break;
+          }
+        }
+
+        if (detection.type === 'code') {
           break;
         }
       }
 
       if (detection.type !== 'code') {
         for (const region of nameRegions) {
-          const regionImage = createProcessedRegionImage(sourceCanvas, region);
+          const regionImages = createProcessedRegionImages(sourceCanvas, region);
 
-          if (!regionImage) {
+          if (regionImages.length === 0) {
             continue;
           }
 
-          const result = await recognize(regionImage, 'eng');
+          const result = await recognize(regionImages[0].image, 'eng');
           const detectedText = result?.data?.text || '';
-          regionTexts.push(`${region.label}: ${detectedText.trim()}`);
+          regionTexts.push(`${region.label} / ${regionImages[0].label}: ${detectedText.trim()}`);
 
           const nameDetection = extractLikelyNameQuery(detectedText, scannerProfile);
           if (nameDetection.query) {
@@ -559,7 +638,7 @@ function CollectionScannerModal({
           ? `Carta detectada por codigo: ${nextQuery}`
           : detection.type === 'name'
             ? `Posible carta detectada por nombre: ${nextQuery}`
-            : 'No he fijado una carta clara todavia. Centra mejor la carta o busca por codigo/nombre.'
+            : 'No he fijado una carta clara todavia. Acerca mejor el codigo o busca por codigo/nombre.'
       );
       setScanStatus('ready');
 
@@ -583,7 +662,7 @@ function CollectionScannerModal({
       return;
     }
 
-    if (!force && (resolvedQuery || candidates.length > 0)) {
+    if (!force && candidates.length > 0) {
       return;
     }
 
@@ -617,7 +696,7 @@ function CollectionScannerModal({
     } finally {
       scanInProgressRef.current = false;
     }
-  }, [analyzeFrame, cameraStatus, candidates.length, resolvedQuery]);
+  }, [analyzeFrame, cameraStatus, candidates.length]);
 
   useEffect(() => {
     if (!isOpen || isGuestDemo || cameraStatus !== 'ready') {
@@ -694,7 +773,7 @@ function CollectionScannerModal({
             <span className="eyebrow">Scanner</span>
             <h2 id="scanner-title">Detectar carta</h2>
             <p>
-              Centra la carta de {activeGameName} dentro del marco. La deteccion se hace en tu navegador,
+              Acerca la zona del codigo de {activeGameName} a la camara. La deteccion se hace en tu navegador,
               no guardamos imagenes y siempre confirmas antes de sumar copias. Ejemplos: {scannerProfile.examples}.
             </p>
           </div>
@@ -726,8 +805,8 @@ function CollectionScannerModal({
                   />
                   {cameraStatus !== 'ready' && (
                     <div className="scanner-camera-placeholder">
-                      <strong>Activa la camara y centra la carta</strong>
-                      <span>Deja visible la zona marcada y evita reflejos fuertes. Ejemplos: {scannerProfile.examples}.</span>
+                      <strong>Activa la camara y acerca el codigo</strong>
+                      <span>Evita reflejos fuertes y manten la carta quieta. Ejemplos: {scannerProfile.examples}.</span>
                     </div>
                   )}
                   <div className="scanner-guide">
