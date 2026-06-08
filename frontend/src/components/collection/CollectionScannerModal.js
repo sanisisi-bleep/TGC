@@ -10,6 +10,29 @@ const MIN_QUERY_LENGTH = 2;
 const DEFAULT_QUANTITY = '1';
 const MAX_PROCESSED_REGION_SIZE = 1400;
 const MAX_SCAN_EVENTS = 10;
+const NAME_TEXT_WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-:/.,'!&()[] ";
+const TEXT_READER_CONFIG = {
+  load_system_dawg: '0',
+  load_freq_dawg: '0',
+  load_unambig_dawg: '0',
+  load_punc_dawg: '0',
+  load_number_dawg: '0',
+  load_bigram_dawg: '0',
+};
+const TEXT_READER_PARAMS = {
+  code: {
+    tessedit_char_whitelist: SCANNER_TEXT_WHITELIST,
+    tessedit_pageseg_mode: '7',
+    preserve_interword_spaces: '1',
+    user_defined_dpi: '300',
+  },
+  name: {
+    tessedit_char_whitelist: NAME_TEXT_WHITELIST,
+    tessedit_pageseg_mode: '6',
+    preserve_interword_spaces: '1',
+    user_defined_dpi: '300',
+  },
+};
 
 const createEmptyScanActivity = () => ({
   cycle: 0,
@@ -269,28 +292,40 @@ const createProcessedRegionImages = (sourceCanvas, region) => {
     return [{ label: 'contraste', image: outputCanvas.toDataURL('image/png') }];
   }
 
+  const contrastImageUrl = outputCanvas.toDataURL('image/png');
   const thresholdCanvas = document.createElement('canvas');
   thresholdCanvas.width = outputCanvas.width;
   thresholdCanvas.height = outputCanvas.height;
   const thresholdContext = thresholdCanvas.getContext('2d', { willReadFrequently: true });
+
+  const softThresholdCanvas = document.createElement('canvas');
+  softThresholdCanvas.width = outputCanvas.width;
+  softThresholdCanvas.height = outputCanvas.height;
+  const softThresholdContext = softThresholdCanvas.getContext('2d', { willReadFrequently: true });
 
   const invertedCanvas = document.createElement('canvas');
   invertedCanvas.width = outputCanvas.width;
   invertedCanvas.height = outputCanvas.height;
   const invertedContext = invertedCanvas.getContext('2d', { willReadFrequently: true });
 
-  if (!thresholdContext || !invertedContext) {
-    return [{ label: 'contraste', image: outputCanvas.toDataURL('image/png') }];
+  if (!thresholdContext || !softThresholdContext || !invertedContext) {
+    return [{ label: 'contraste', image: contrastImageUrl }];
   }
 
   const thresholdImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
+  const softThresholdImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
   const invertedImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
 
   for (let index = 0; index < thresholdImage.data.length; index += 4) {
     const value = thresholdImage.data[index] > 142 ? 255 : 0;
+    const softValue = softThresholdImage.data[index] > 112 ? 255 : 0;
     thresholdImage.data[index] = value;
     thresholdImage.data[index + 1] = value;
     thresholdImage.data[index + 2] = value;
+
+    softThresholdImage.data[index] = softValue;
+    softThresholdImage.data[index + 1] = softValue;
+    softThresholdImage.data[index + 2] = softValue;
 
     const invertedValue = value === 255 ? 0 : 255;
     invertedImage.data[index] = invertedValue;
@@ -299,9 +334,12 @@ const createProcessedRegionImages = (sourceCanvas, region) => {
   }
 
   thresholdContext.putImageData(thresholdImage, 0, 0);
+  softThresholdContext.putImageData(softThresholdImage, 0, 0);
   invertedContext.putImageData(invertedImage, 0, 0);
 
   return [
+    { label: 'contraste', image: contrastImageUrl },
+    { label: 'binario suave', image: softThresholdCanvas.toDataURL('image/png') },
     { label: 'invertido', image: invertedCanvas.toDataURL('image/png') },
     { label: 'binario', image: thresholdCanvas.toDataURL('image/png') },
   ];
@@ -416,6 +454,72 @@ const getCandidateMatchLabel = (candidate) => {
   return 'Coincidencia posible';
 };
 
+const formatReaderProgress = (message) => {
+  if (!message?.status || typeof message.progress !== 'number') {
+    return '';
+  }
+
+  const percent = Math.max(0, Math.min(100, Math.round(message.progress * 100)));
+  const status = String(message.status).toLowerCase();
+
+  if (status.includes('recognizing')) {
+    return `Analizando zona ${percent}%`;
+  }
+
+  if (status.includes('loading') || status.includes('initializing')) {
+    return `Preparando detector ${percent}%`;
+  }
+
+  return `Procesando ${percent}%`;
+};
+
+const roundConfidence = (value) => Math.round(Math.max(0, Math.min(1, value)) * 100) / 100;
+
+const buildStructuredScanResult = ({
+  activeGameName,
+  detection,
+  detectedText,
+  scannerProfile,
+}) => {
+  const fallbackCode = extractLikelyQuery(detectedText, scannerProfile);
+  const fallbackName = extractLikelyNameQuery(detectedText, scannerProfile);
+  const cardCode = detection.type === 'code'
+    ? detection.query
+    : fallbackCode.type === 'code'
+      ? fallbackCode.query
+      : null;
+  const cardName = detection.type === 'name'
+    ? detection.query
+    : fallbackName.type === 'name'
+      ? fallbackName.query
+      : null;
+  const isKnownProfile = scannerProfile.slug !== 'default';
+  const confidence = {
+    tcg: roundConfidence(scannerProfile.slug === 'gundam' ? 0.96 : isKnownProfile ? 0.88 : 0.2),
+    cardCode: roundConfidence(cardCode ? (detection.type === 'code' ? 0.92 : 0.72) : 0),
+    cardName: roundConfidence(cardName ? (detection.type === 'name' ? 0.78 : 0.55) : 0),
+  };
+  const strongestCardSignal = Math.max(confidence.cardCode, confidence.cardName);
+  const evidence = [
+    isKnownProfile ? `Perfil activo: ${activeGameName}` : 'Perfil generico activo',
+    cardCode ? `Patron de codigo: ${cardCode}` : null,
+    cardName ? `Nombre candidato: ${cardName}` : null,
+    strongestCardSignal ? null : 'Sin candidato fiable todavia',
+  ].filter(Boolean);
+
+  return {
+    tcg: activeGameName,
+    cardCode,
+    cardName,
+    confidence: {
+      ...confidence,
+      overall: roundConfidence((confidence.tcg * 0.3) + (strongestCardSignal * 0.7)),
+    },
+    evidence,
+    needsManualReview: strongestCardSignal < 0.7,
+  };
+};
+
 function CollectionScannerModal({
   isOpen,
   activeTgc,
@@ -428,6 +532,9 @@ function CollectionScannerModal({
 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const textWorkerRef = useRef(null);
+  const textWorkerParamsKeyRef = useRef('');
+  const uploadedPreviewUrlRef = useRef('');
   const streamRef = useRef(null);
   const scanInProgressRef = useRef(false);
   const [cameraStatus, setCameraStatus] = useState('idle');
@@ -436,8 +543,11 @@ function CollectionScannerModal({
   const [scanError, setScanError] = useState('');
   const [detectionNotice, setDetectionNotice] = useState('');
   const [rawDetectionText, setRawDetectionText] = useState('');
+  const [readerProgress, setReaderProgress] = useState('');
   const [scanActivity, setScanActivity] = useState(createEmptyScanActivity);
   const [scanEvents, setScanEvents] = useState([]);
+  const [structuredScanResult, setStructuredScanResult] = useState(null);
+  const [uploadedPreviewUrl, setUploadedPreviewUrl] = useState('');
   const [manualQuery, setManualQuery] = useState('');
   const [resolvedQuery, setResolvedQuery] = useState('');
   const [selectedCardId, setSelectedCardId] = useState('');
@@ -461,6 +571,68 @@ function CollectionScannerModal({
     ].slice(0, MAX_SCAN_EVENTS));
   }, []);
 
+  const setUploadedPreview = useCallback((nextUrl) => {
+    if (uploadedPreviewUrlRef.current) {
+      URL.revokeObjectURL(uploadedPreviewUrlRef.current);
+    }
+
+    uploadedPreviewUrlRef.current = nextUrl;
+    setUploadedPreviewUrl(nextUrl);
+  }, []);
+
+  const clearUploadedPreview = useCallback(() => {
+    setUploadedPreview('');
+  }, [setUploadedPreview]);
+
+  const terminateTextWorker = useCallback(() => {
+    const worker = textWorkerRef.current;
+    textWorkerRef.current = null;
+    textWorkerParamsKeyRef.current = '';
+    setReaderProgress('');
+
+    if (worker?.terminate) {
+      worker.terminate().catch(() => {});
+    }
+  }, []);
+
+  const getTextWorker = useCallback(async () => {
+    if (textWorkerRef.current) {
+      return textWorkerRef.current;
+    }
+
+    const tesseractModule = await import('tesseract.js');
+    const createWorker = tesseractModule.createWorker || tesseractModule.default?.createWorker;
+
+    if (!createWorker) {
+      throw new Error('Text detector unavailable');
+    }
+
+    const worker = await createWorker('eng', 1, {
+      logger: (message) => {
+        const nextProgress = formatReaderProgress(message);
+        if (nextProgress) {
+          setReaderProgress(nextProgress);
+        }
+      },
+    }, TEXT_READER_CONFIG);
+
+    textWorkerRef.current = worker;
+    return worker;
+  }, []);
+
+  const recognizeRegionImage = useCallback(async (image, mode) => {
+    const worker = await getTextWorker();
+    const params = TEXT_READER_PARAMS[mode] || TEXT_READER_PARAMS.code;
+    const paramsKey = `${mode}:${JSON.stringify(params)}`;
+
+    if (textWorkerParamsKeyRef.current !== paramsKey) {
+      await worker.setParameters(params);
+      textWorkerParamsKeyRef.current = paramsKey;
+    }
+
+    return worker.recognize(image);
+  }, [getTextWorker]);
+
   const stopCamera = useCallback(() => {
     scanInProgressRef.current = false;
 
@@ -477,11 +649,17 @@ function CollectionScannerModal({
     setScanStatus('idle');
   }, []);
 
-  useEffect(() => () => stopCamera(), [stopCamera]);
+  useEffect(() => () => {
+    stopCamera();
+    terminateTextWorker();
+    clearUploadedPreview();
+  }, [clearUploadedPreview, stopCamera, terminateTextWorker]);
 
   useEffect(() => {
     if (!isOpen) {
       stopCamera();
+      terminateTextWorker();
+      clearUploadedPreview();
       return;
     }
 
@@ -491,8 +669,10 @@ function CollectionScannerModal({
     setScanError('');
     setDetectionNotice('');
     setRawDetectionText('');
+    setReaderProgress('');
     setScanActivity(createEmptyScanActivity());
     setScanEvents([]);
+    setStructuredScanResult(null);
     setManualQuery('');
     setResolvedQuery('');
     setSelectedCardId('');
@@ -502,7 +682,7 @@ function CollectionScannerModal({
     trackProductEvent('scanner_opened', {
       tgc: activeTcgSlug,
     });
-  }, [activeTcgSlug, isOpen, stopCamera]);
+  }, [activeTcgSlug, clearUploadedPreview, isOpen, stopCamera, terminateTextWorker]);
 
   const candidatesQuery = useQuery({
     queryKey: queryKeys.cardResolve(activeTgc?.id, resolvedQuery),
@@ -555,6 +735,7 @@ function CollectionScannerModal({
   const startCamera = async () => {
     setCameraError('');
     setScanError('');
+    clearUploadedPreview();
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError('Este navegador no permite abrir la camara desde aqui. Puedes usar la busqueda manual.');
@@ -591,15 +772,9 @@ function CollectionScannerModal({
     setScanError('');
     setFormError('');
     setDetectionNotice('Detectando carta...');
+    setReaderProgress('Preparando detector...');
 
     try {
-      const tesseractModule = await import('tesseract.js');
-      const recognize = tesseractModule.recognize || tesseractModule.default?.recognize;
-
-      if (!recognize) {
-        throw new Error('Text detector unavailable');
-      }
-
       const scannerRegions = getScannerRegions(sourceCanvas, scannerProfile);
       const codeRegions = scannerRegions
         .filter((region) => region.mode !== 'name')
@@ -639,11 +814,7 @@ function CollectionScannerModal({
             currentVariant: regionImage.label,
           }));
 
-          const result = await recognize(regionImage.image, 'eng', {
-            tessedit_char_whitelist: SCANNER_TEXT_WHITELIST,
-            tessedit_pageseg_mode: '7',
-            preserve_interword_spaces: '1',
-          });
+          const result = await recognizeRegionImage(regionImage.image, 'code');
           const detectedText = result?.data?.text || '';
           regionTexts.push(`${region.label} / ${regionImage.label}: ${detectedText.trim()}`);
 
@@ -693,7 +864,7 @@ function CollectionScannerModal({
             currentVariant: regionImages[0].label,
           }));
 
-          const result = await recognize(regionImages[0].image, 'eng');
+          const result = await recognizeRegionImage(regionImages[0].image, 'name');
           const detectedText = result?.data?.text || '';
           regionTexts.push(`${region.label} / ${regionImages[0].label}: ${detectedText.trim()}`);
 
@@ -720,10 +891,21 @@ function CollectionScannerModal({
       }
 
       const detectedText = regionTexts.filter(Boolean).join('\n\n');
+      const structuredDetectionText = regionTexts
+        .map((entry) => entry.replace(/^[^:]*:\s*/, '').trim())
+        .filter(Boolean)
+        .join('\n\n');
       const nextQuery = detection.query || '';
       const canResolve = shouldAutoResolveDetection(detection);
+      const nextStructuredResult = buildStructuredScanResult({
+        activeGameName,
+        detection,
+        detectedText: structuredDetectionText,
+        scannerProfile,
+      });
 
       setRawDetectionText(detectedText);
+      setStructuredScanResult(nextStructuredResult);
       setManualQuery(nextQuery);
       setResolvedQuery(canResolve ? nextQuery : '');
       setDetectionNotice(
@@ -734,6 +916,7 @@ function CollectionScannerModal({
             : 'No he fijado una carta clara todavia. Acerca mejor el codigo o busca por codigo/nombre.'
       );
       setScanStatus('ready');
+      setReaderProgress('');
       appendScanEvent({
         tone: canResolve ? 'success' : 'warning',
         title: canResolve ? `Busqueda enviada: ${nextQuery}` : 'Sin candidato claro',
@@ -749,6 +932,7 @@ function CollectionScannerModal({
       });
     } catch (_error) {
       setScanStatus('error');
+      setReaderProgress('');
       setScanError('No se pudo analizar la carta. Puedes buscar por codigo o nombre.');
       appendScanEvent({
         tone: 'error',
@@ -760,7 +944,7 @@ function CollectionScannerModal({
         has_query: false,
       });
     }
-  }, [activeTcgSlug, appendScanEvent, scannerProfile]);
+  }, [activeGameName, activeTcgSlug, appendScanEvent, recognizeRegionImage, scannerProfile]);
 
   const analyzeCurrentFrame = useCallback(async ({ force = false } = {}) => {
     if (scanInProgressRef.current) {
@@ -802,6 +986,75 @@ function CollectionScannerModal({
       scanInProgressRef.current = false;
     }
   }, [analyzeFrame, cameraStatus, candidates.length]);
+
+  const analyzeUploadedImage = useCallback((file) => {
+    if (!file || scanInProgressRef.current) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setScanError('Sube una imagen valida para probar la deteccion.');
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setUploadedPreview(previewUrl);
+    setCameraError('');
+    setScanError('');
+    setFormError('');
+    setDetectionNotice('Analizando imagen de prueba...');
+    setStructuredScanResult(null);
+    setRawDetectionText('');
+    setManualQuery('');
+    setResolvedQuery('');
+    setSelectedCardId('');
+
+    const image = new Image();
+    image.onload = async () => {
+      if (!canvasRef.current) {
+        setScanError('No se pudo preparar la imagen. Prueba con la busqueda manual.');
+        return;
+      }
+
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+
+      if (!context) {
+        setScanError('No se pudo preparar la imagen. Prueba con la busqueda manual.');
+        return;
+      }
+
+      const maxDimension = 1800;
+      const naturalWidth = image.naturalWidth || image.width || 1280;
+      const naturalHeight = image.naturalHeight || image.height || 720;
+      const scale = Math.min(1, maxDimension / Math.max(naturalWidth, naturalHeight));
+
+      canvas.width = Math.max(1, Math.round(naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(naturalHeight * scale));
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      scanInProgressRef.current = true;
+      try {
+        await analyzeFrame(canvas);
+      } finally {
+        scanInProgressRef.current = false;
+      }
+    };
+    image.onerror = () => {
+      setScanStatus('error');
+      setScanError('No se pudo leer esa imagen. Prueba otra foto o usa la busqueda manual.');
+    };
+    image.src = previewUrl;
+  }, [analyzeFrame, setUploadedPreview]);
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      analyzeUploadedImage(file);
+    }
+    event.target.value = '';
+  };
 
   useEffect(() => {
     if (!isOpen || isGuestDemo || cameraStatus !== 'ready') {
@@ -866,6 +1119,12 @@ function CollectionScannerModal({
     onAddCard(selectedCandidate, parsedQuantity);
   };
 
+  const showScannerTrace = cameraStatus === 'ready'
+    || scanStatus === 'detecting'
+    || scanActivity.cycle > 0
+    || Boolean(uploadedPreviewUrl)
+    || Boolean(structuredScanResult);
+
   if (!isOpen) {
     return null;
   }
@@ -909,23 +1168,31 @@ function CollectionScannerModal({
                     aria-label="Vista previa de camara"
                   />
                   {cameraStatus !== 'ready' && (
-                    <div className="scanner-camera-placeholder">
-                      <strong>Activa la camara y acerca el codigo</strong>
-                      <span>Evita reflejos fuertes y manten la carta quieta. Ejemplos: {scannerProfile.examples}.</span>
-                    </div>
+                    uploadedPreviewUrl ? (
+                      <img
+                        className="scanner-upload-preview"
+                        src={uploadedPreviewUrl}
+                        alt="Imagen seleccionada para detectar"
+                      />
+                    ) : (
+                      <div className="scanner-camera-placeholder">
+                        <strong>Activa la camara o sube una imagen</strong>
+                        <span>Evita reflejos fuertes y manten la carta quieta. Ejemplos: {scannerProfile.examples}.</span>
+                      </div>
+                    )
                   )}
                   <div className="scanner-guide">
                     <span>{scannerProfile.guide}</span>
                   </div>
                 </div>
 
-                {cameraStatus === 'ready' && (
+                {showScannerTrace && (
                   <>
                     <div className={`scanner-live-status ${scanStatus === 'detecting' ? 'is-detecting' : ''}`} aria-live="polite">
                       <strong>{scanStatus === 'detecting' ? 'Escaneando en tiempo real...' : 'Escaneo activo'}</strong>
                       <span>
                         {scanStatus === 'detecting'
-                          ? 'Manten la carta quieta un momento.'
+                          ? readerProgress || 'Manten la carta quieta un momento.'
                           : 'Si no aparece candidato, acerca el codigo o pulsa reintentar.'}
                       </span>
                     </div>
@@ -961,9 +1228,28 @@ function CollectionScannerModal({
                         <b>Ultima pista</b>
                         <code>{scanActivity.lastSnippet || 'Todavia no hay texto util en la imagen.'}</code>
                       </div>
+                      {structuredScanResult && (
+                        <div className="scanner-structured-result">
+                          <b>Resultado estructurado</b>
+                          <span>
+                            TCG: <strong>{structuredScanResult.tcg}</strong>
+                          </span>
+                          <span>
+                            Codigo: <strong>{structuredScanResult.cardCode || 'Pendiente'}</strong>
+                          </span>
+                          <span>
+                            Nombre: <strong>{structuredScanResult.cardName || 'Pendiente'}</strong>
+                          </span>
+                          <span>
+                            Confianza: <strong>{Math.round(structuredScanResult.confidence.overall * 100)}%</strong>
+                            {structuredScanResult.needsManualReview ? ' | revisar manualmente' : ' | lista para confirmar'}
+                          </span>
+                          <em>{structuredScanResult.evidence.join(' | ')}</em>
+                        </div>
+                      )}
                       <div className="scanner-admin-events">
                         {scanEvents.length === 0 ? (
-                          <span className="scanner-admin-event is-muted">Activa la camara para ver eventos en vivo.</span>
+                          <span className="scanner-admin-event is-muted">Activa la camara o sube una imagen para ver eventos en vivo.</span>
                         ) : scanEvents.map((event) => (
                           <span key={event.id} className={`scanner-admin-event is-${event.tone || 'muted'}`}>
                             <i>{event.time}</i>
@@ -1005,6 +1291,10 @@ function CollectionScannerModal({
                       </button>
                     </>
                   )}
+                  <label className="ghost-button scanner-upload-button">
+                    Subir imagen de prueba
+                    <input type="file" accept="image/*" onChange={handleImageUpload} />
+                  </label>
                 </div>
               </section>
 

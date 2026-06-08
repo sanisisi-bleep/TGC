@@ -15,12 +15,12 @@ const DEFAULT_CARD_BOUND_TEMPLATES = [
 ];
 
 const GUNDAM_CARD_BOUND_TEMPLATES = [
-  { widthRatio: 0.34, centerX: 0.5, centerY: 0.54 },
-  { widthRatio: 0.38, centerX: 0.5, centerY: 0.54 },
-  { widthRatio: 0.42, centerX: 0.5, centerY: 0.53 },
-  { widthRatio: 0.46, centerX: 0.5, centerY: 0.52 },
   { widthRatio: 0.50, centerX: 0.5, centerY: 0.5 },
+  { widthRatio: 0.46, centerX: 0.5, centerY: 0.52 },
   { widthRatio: 0.56, centerX: 0.5, centerY: 0.5 },
+  { widthRatio: 0.42, centerX: 0.5, centerY: 0.53 },
+  { widthRatio: 0.38, centerX: 0.5, centerY: 0.54 },
+  { widthRatio: 0.34, centerX: 0.5, centerY: 0.54 },
   { widthRatio: 0.42, centerX: 0.46, centerY: 0.53 },
   { widthRatio: 0.42, centerX: 0.54, centerY: 0.53 },
   { widthRatio: 0.48, centerX: 0.48, centerY: 0.54 },
@@ -73,12 +73,12 @@ export const SCANNER_PROFILES = {
   gundam: {
     slug: 'gundam',
     examples: 'GD04-018, GD02-002, GD01-001-P1, EXB-001, R-001',
-    guide: 'Gundam: acerca la esquina superior derecha',
+    guide: 'Gundam: prioriza esquina superior derecha o nombre central',
     cardFrameRatio: DEFAULT_CARD_FRAME_RATIO,
     cardBoundTemplates: GUNDAM_CARD_BOUND_TEMPLATES,
-    maxCodeRegions: 12,
-    maxNameRegions: 6,
-    maxCardBoundsForRegions: 3,
+    maxCodeRegions: 18,
+    maxNameRegions: 8,
+    maxCardBoundsForRegions: 5,
     ignoredNameFragments: [
       ...DEFAULT_IGNORED_NAME_FRAGMENTS,
       'breach',
@@ -93,6 +93,8 @@ export const SCANNER_PROFILES = {
       /\b(?:EXB|EXR|R)\s*[-_ ]?\s*[0-9OILSB]{3}(?:\s*[-_ ]?\s*P[0-9OILSB]{1,2})?/i,
     ],
     fullFrameRegions: [
+      { label: 'imagen tercio superior derecho', x: 0.48, y: 0.14, width: 0.44, height: 0.24, scale: 2.3 },
+      { label: 'imagen superior central derecha', x: 0.34, y: 0.18, width: 0.50, height: 0.20, scale: 2.2 },
       { label: 'imagen superior derecha', x: 0.42, y: 0.02, width: 0.56, height: 0.18, scale: 2.2 },
       { label: 'imagen superior completa', x: 0.08, y: 0.02, width: 0.90, height: 0.20, scale: 1.8 },
       { label: 'imagen centro superior derecha', x: 0.44, y: 0.10, width: 0.54, height: 0.24, scale: 2 },
@@ -105,6 +107,7 @@ export const SCANNER_PROFILES = {
       { label: 'codigo superior derecho completo', x: 0.38, y: 0.00, width: 0.60, height: 0.18, scale: 4.2 },
       { label: 'cabecera completa', x: 0.03, y: 0.00, width: 0.96, height: 0.16, scale: 3.5 },
       { label: 'cabecera alta', x: 0.00, y: 0.00, width: 1.00, height: 0.22, scale: 3.1 },
+      { label: 'codigo lateral derecho', x: 0.82, y: 0.08, width: 0.17, height: 0.62, scale: 3.8 },
       { label: 'codigo inferior completo', x: 0.03, y: 0.76, width: 0.94, height: 0.2, scale: 3.8 },
       { label: 'codigo inferior izquierdo', x: 0.02, y: 0.78, width: 0.5, height: 0.18, scale: 4.2 },
       { label: 'codigo inferior derecho', x: 0.48, y: 0.78, width: 0.5, height: 0.18, scale: 4.2 },
