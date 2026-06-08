@@ -186,6 +186,53 @@ const buildCardBounds = (canvas, template, scannerProfile) => {
   };
 };
 
+const getPixelGray = (context, x, y, canvas) => {
+  const sampleX = clamp(Math.round(x), 0, canvas.width - 1);
+  const sampleY = clamp(Math.round(y), 0, canvas.height - 1);
+  const pixel = context.getImageData(sampleX, sampleY, 1, 1).data;
+  return (pixel[0] * 0.299) + (pixel[1] * 0.587) + (pixel[2] * 0.114);
+};
+
+const scoreCardBoundsCandidate = (canvas, bounds) => {
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) {
+    return bounds.priority || 0.5;
+  }
+
+  const samplesPerSide = 10;
+  const inset = Math.max(Math.min(bounds.width, bounds.height) * 0.025, 3);
+  const outset = Math.max(Math.min(bounds.width, bounds.height) * 0.018, 2);
+  let edgeDelta = 0;
+  let sampleCount = 0;
+
+  for (let index = 0; index < samplesPerSide; index += 1) {
+    const offset = (index + 0.5) / samplesPerSide;
+    const x = bounds.x + (bounds.width * offset);
+    const y = bounds.y + (bounds.height * offset);
+
+    edgeDelta += Math.abs(
+      getPixelGray(context, x, bounds.y + inset, canvas)
+      - getPixelGray(context, x, bounds.y - outset, canvas)
+    );
+    edgeDelta += Math.abs(
+      getPixelGray(context, x, bounds.y + bounds.height - inset, canvas)
+      - getPixelGray(context, x, bounds.y + bounds.height + outset, canvas)
+    );
+    edgeDelta += Math.abs(
+      getPixelGray(context, bounds.x + inset, y, canvas)
+      - getPixelGray(context, bounds.x - outset, y, canvas)
+    );
+    edgeDelta += Math.abs(
+      getPixelGray(context, bounds.x + bounds.width - inset, y, canvas)
+      - getPixelGray(context, bounds.x + bounds.width + outset, y, canvas)
+    );
+    sampleCount += 4;
+  }
+
+  const shapeScore = clamp((edgeDelta / Math.max(sampleCount, 1)) / 42, 0, 1);
+  return clamp(((bounds.priority || 0.5) * 0.62) + (shapeScore * 0.38), 0.35, 1);
+};
+
 const getCardBoundCandidates = (canvas, scannerProfile) => {
   const seenBounds = new Set();
 
@@ -205,7 +252,12 @@ const getCardBoundCandidates = (canvas, scannerProfile) => {
 
       seenBounds.add(key);
       return true;
-    });
+    })
+    .map((bounds) => ({
+      ...bounds,
+      shapeScore: scoreCardBoundsCandidate(canvas, bounds),
+    }))
+    .sort((left, right) => right.shapeScore - left.shapeScore);
 };
 
 const cropRegionFromCard = (cardBounds, region) => ({
@@ -220,7 +272,7 @@ const cropRegionFromCard = (cardBounds, region) => ({
   source: 'card',
 });
 
-const getScannerRegions = (sourceCanvas, scannerProfile) => {
+const buildScannerPlan = (sourceCanvas, scannerProfile) => {
   const cardBoundsCandidates = getCardBoundCandidates(sourceCanvas, scannerProfile);
   const cardBoundsForRegions = cardBoundsCandidates.slice(0, scannerProfile.maxCardBoundsForRegions || cardBoundsCandidates.length);
   const fullFrameRegions = (scannerProfile.fullFrameRegions || []).map((region) => ({
@@ -243,7 +295,50 @@ const getScannerRegions = (sourceCanvas, scannerProfile) => {
     }))
   ));
 
-  return [...cardRegions, ...fullFrameRegions];
+  const regions = [...cardRegions, ...fullFrameRegions].map((region, index) => ({
+    ...region,
+    id: `scan-region-${index}`,
+  }));
+
+  return {
+    cardBounds: cardBoundsCandidates[0] || null,
+    cardBoundsCandidates,
+    regions,
+  };
+};
+
+const createOverlayFromBounds = (bounds, sourceCanvas) => ({
+  id: 'detected-card',
+  label: 'Carta principal',
+  kind: 'card',
+  status: 'detected',
+  left: clamp((bounds.x / sourceCanvas.width) * 100, 0, 100),
+  top: clamp((bounds.y / sourceCanvas.height) * 100, 0, 100),
+  width: clamp((bounds.width / sourceCanvas.width) * 100, 0, 100),
+  height: clamp((bounds.height / sourceCanvas.height) * 100, 0, 100),
+});
+
+const createOverlayFromRegion = (region, sourceCanvas) => ({
+  id: region.id,
+  label: region.label,
+  kind: region.mode === 'name' ? 'name' : 'code',
+  status: 'queued',
+  left: clamp((region.x / sourceCanvas.width) * 100, 0, 100),
+  top: clamp((region.y / sourceCanvas.height) * 100, 0, 100),
+  width: clamp((region.width / sourceCanvas.width) * 100, 0, 100),
+  height: clamp((region.height / sourceCanvas.height) * 100, 0, 100),
+});
+
+const createScanOverlays = (sourceCanvas, scannerPlan) => {
+  const cardOverlay = scannerPlan.cardBounds
+    ? [createOverlayFromBounds(scannerPlan.cardBounds, sourceCanvas)]
+    : [];
+  const regionOverlays = scannerPlan.regions
+    .filter((region) => region.source === 'card')
+    .slice(0, 14)
+    .map((region) => createOverlayFromRegion(region, sourceCanvas));
+
+  return [...cardOverlay, ...regionOverlays];
 };
 
 const createProcessedRegionImages = (sourceCanvas, region) => {
@@ -605,6 +700,34 @@ const formatReaderProgress = (message) => {
   return `Procesando ${percent}%`;
 };
 
+const getScanStageLabel = (scanStage) => {
+  if (scanStage === 'detecting-card') {
+    return 'Detectando carta principal';
+  }
+
+  if (scanStage === 'card-detected') {
+    return 'Carta principal localizada';
+  }
+
+  if (scanStage === 'card-not-found') {
+    return 'Usando zonas de respaldo';
+  }
+
+  if (scanStage === 'resolved') {
+    return 'Candidato preparado';
+  }
+
+  if (scanStage === 'review') {
+    return 'Revision manual recomendada';
+  }
+
+  if (scanStage === 'error') {
+    return 'Analisis interrumpido';
+  }
+
+  return 'Esperando imagen';
+};
+
 const roundConfidence = (value) => Math.round(Math.max(0, Math.min(1, value)) * 100) / 100;
 
 const buildStructuredScanResult = ({
@@ -676,6 +799,8 @@ function CollectionScannerModal({
   const [detectionNotice, setDetectionNotice] = useState('');
   const [rawDetectionText, setRawDetectionText] = useState('');
   const [readerProgress, setReaderProgress] = useState('');
+  const [scanStage, setScanStage] = useState('idle');
+  const [scanOverlays, setScanOverlays] = useState([]);
   const [scanActivity, setScanActivity] = useState(createEmptyScanActivity);
   const [scanEvents, setScanEvents] = useState([]);
   const [structuredScanResult, setStructuredScanResult] = useState(null);
@@ -765,6 +890,31 @@ function CollectionScannerModal({
     return worker.recognize(image);
   }, [getTextWorker]);
 
+  const clearScanVisuals = useCallback(() => {
+    setScanStage('idle');
+    setScanOverlays([]);
+  }, []);
+
+  const markScanOverlay = useCallback((regionId, status) => {
+    setScanOverlays((current) => current.map((overlay) => {
+      if (overlay.kind === 'card') {
+        return overlay;
+      }
+
+      if (overlay.id === regionId) {
+        return {
+          ...overlay,
+          status,
+        };
+      }
+
+      return {
+        ...overlay,
+        status: overlay.status === 'active' ? 'queued' : overlay.status,
+      };
+    }));
+  }, []);
+
   const stopCamera = useCallback(() => {
     scanInProgressRef.current = false;
 
@@ -779,7 +929,8 @@ function CollectionScannerModal({
 
     setCameraStatus('idle');
     setScanStatus('idle');
-  }, []);
+    clearScanVisuals();
+  }, [clearScanVisuals]);
 
   useEffect(() => () => {
     stopCamera();
@@ -802,6 +953,7 @@ function CollectionScannerModal({
     setDetectionNotice('');
     setRawDetectionText('');
     setReaderProgress('');
+    clearScanVisuals();
     setScanActivity(createEmptyScanActivity());
     setScanEvents([]);
     setStructuredScanResult(null);
@@ -814,7 +966,7 @@ function CollectionScannerModal({
     trackProductEvent('scanner_opened', {
       tgc: activeTcgSlug,
     });
-  }, [activeTcgSlug, clearUploadedPreview, isOpen, stopCamera, terminateTextWorker]);
+  }, [activeTcgSlug, clearScanVisuals, clearUploadedPreview, isOpen, stopCamera, terminateTextWorker]);
 
   const candidatesQuery = useQuery({
     queryKey: queryKeys.cardResolve(activeTgc?.id, resolvedQuery),
@@ -868,6 +1020,7 @@ function CollectionScannerModal({
     setCameraError('');
     setScanError('');
     clearUploadedPreview();
+    clearScanVisuals();
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError('Este navegador no permite abrir la camara desde aqui. Puedes usar la busqueda manual.');
@@ -903,11 +1056,23 @@ function CollectionScannerModal({
     setScanStatus('detecting');
     setScanError('');
     setFormError('');
-    setDetectionNotice('Detectando carta...');
+    setDetectionNotice('Detectando carta principal...');
     setReaderProgress('Preparando detector...');
+    setScanStage('detecting-card');
 
     try {
-      const scannerRegions = getScannerRegions(sourceCanvas, scannerProfile);
+      const scannerPlan = buildScannerPlan(sourceCanvas, scannerProfile);
+      const scannerRegions = scannerPlan.regions;
+      setScanOverlays(createScanOverlays(sourceCanvas, scannerPlan));
+      setScanStage(scannerPlan.cardBounds ? 'card-detected' : 'card-not-found');
+      appendScanEvent({
+        tone: scannerPlan.cardBounds ? 'success' : 'warning',
+        title: scannerPlan.cardBounds ? 'Carta principal detectada' : 'No se fijo carta principal',
+        detail: scannerPlan.cardBounds
+          ? `Hipotesis ${scannerPlan.cardBounds.label}, forma ${Math.round((scannerPlan.cardBounds.shapeScore || 0) * 100)}%.`
+          : 'Se usaran zonas generales como respaldo.',
+      });
+
       const codeRegions = scannerRegions
         .filter((region) => region.mode !== 'name')
         .slice(0, scannerProfile.maxCodeRegions);
@@ -948,6 +1113,7 @@ function CollectionScannerModal({
           }
 
           codeAttempts += 1;
+          markScanOverlay(region.id, 'active');
           setScanActivity((current) => ({
             ...current,
             attempts: current.attempts + 1,
@@ -973,6 +1139,7 @@ function CollectionScannerModal({
           const bestCodeDetection = chooseBestCodeDetection(codeDetections);
           const regionDetection = bestCodeDetection || extractLikelyQuery(detectedText, scannerProfile);
           const snippet = detectedText.replace(/\s+/g, ' ').trim().slice(0, 96);
+          markScanOverlay(region.id, bestCodeDetection ? 'hit' : 'read');
 
           setScanActivity((current) => ({
             ...current,
@@ -1035,12 +1202,14 @@ function CollectionScannerModal({
             currentVariant: regionImages[0].label,
           }));
 
+          markScanOverlay(region.id, 'active');
           const result = await recognizeRegionImage(regionImages[0].image, 'name');
           const detectedText = result?.data?.text || '';
           regionTexts.push(`${region.label} / ${regionImages[0].label}: ${detectedText.trim()}`);
 
           const nameDetection = extractLikelyNameQuery(detectedText, scannerProfile);
           const snippet = detectedText.replace(/\s+/g, ' ').trim().slice(0, 96);
+          markScanOverlay(region.id, nameDetection.query ? 'hit' : 'read');
 
           setScanActivity((current) => ({
             ...current,
@@ -1088,6 +1257,7 @@ function CollectionScannerModal({
       );
       setScanStatus('ready');
       setReaderProgress('');
+      setScanStage(canResolve ? 'resolved' : 'review');
       appendScanEvent({
         tone: canResolve ? 'success' : 'warning',
         title: canResolve ? `Busqueda enviada: ${nextQuery}` : 'Sin candidato claro',
@@ -1104,6 +1274,7 @@ function CollectionScannerModal({
     } catch (_error) {
       setScanStatus('error');
       setReaderProgress('');
+      setScanStage('error');
       setScanError('No se pudo analizar la carta. Puedes buscar por codigo o nombre.');
       appendScanEvent({
         tone: 'error',
@@ -1115,7 +1286,7 @@ function CollectionScannerModal({
         has_query: false,
       });
     }
-  }, [activeGameName, activeTcgSlug, appendScanEvent, recognizeRegionImage, scannerProfile]);
+  }, [activeGameName, activeTcgSlug, appendScanEvent, markScanOverlay, recognizeRegionImage, scannerProfile]);
 
   const analyzeCurrentFrame = useCallback(async ({ force = false } = {}) => {
     if (scanInProgressRef.current) {
@@ -1175,6 +1346,7 @@ function CollectionScannerModal({
     setFormError('');
     setDetectionNotice('Analizando imagen de prueba...');
     setStructuredScanResult(null);
+    clearScanVisuals();
     setRawDetectionText('');
     setManualQuery('');
     setResolvedQuery('');
@@ -1217,7 +1389,7 @@ function CollectionScannerModal({
       setScanError('No se pudo leer esa imagen. Prueba otra foto o usa la busqueda manual.');
     };
     image.src = previewUrl;
-  }, [analyzeFrame, setUploadedPreview]);
+  }, [analyzeFrame, clearScanVisuals, setUploadedPreview]);
 
   const handleImageUpload = (event) => {
     const file = event.target.files?.[0];
@@ -1351,6 +1523,31 @@ function CollectionScannerModal({
                         <span>Evita reflejos fuertes y manten la carta quieta. Ejemplos: {scannerProfile.examples}.</span>
                       </div>
                     )
+                  )}
+                  {scanOverlays.length > 0 && (
+                    <div className="scanner-vision-overlay" aria-hidden="true">
+                      {scanOverlays.map((overlay) => (
+                        <span
+                          key={overlay.id}
+                          className={`scanner-vision-box is-${overlay.kind} is-${overlay.status}`}
+                          style={{
+                            left: `${overlay.left}%`,
+                            top: `${overlay.top}%`,
+                            width: `${overlay.width}%`,
+                            height: `${overlay.height}%`,
+                          }}
+                        >
+                          {(overlay.kind === 'card' || overlay.status === 'active' || overlay.status === 'hit') && (
+                            <i>{overlay.label}</i>
+                          )}
+                        </span>
+                      ))}
+                      <div className="scanner-vision-readout">
+                        <strong>{getScanStageLabel(scanStage)}</strong>
+                        <span>{scanActivity.currentRegion || scannerProfile.guide}</span>
+                        <code>{scanActivity.lastSnippet || 'Esperando una pista util en la imagen.'}</code>
+                      </div>
+                    </div>
                   )}
                   <div className="scanner-guide">
                     <span>{scannerProfile.guide}</span>
