@@ -277,6 +277,8 @@ const createProcessedRegionImages = (sourceCanvas, region) => {
   const imageData = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
   const { data } = imageData;
   const contrast = region.mode === 'code' ? 2.05 : 1.42;
+  let graySum = 0;
+  let pixelCount = 0;
 
   for (let index = 0; index < data.length; index += 4) {
     const gray = (data[index] * 0.299) + (data[index + 1] * 0.587) + (data[index + 2] * 0.114);
@@ -284,6 +286,8 @@ const createProcessedRegionImages = (sourceCanvas, region) => {
     data[index] = boosted;
     data[index + 1] = boosted;
     data[index + 2] = boosted;
+    graySum += boosted;
+    pixelCount += 1;
   }
 
   context.putImageData(imageData, 0, 0);
@@ -315,10 +319,13 @@ const createProcessedRegionImages = (sourceCanvas, region) => {
   const thresholdImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
   const softThresholdImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
   const invertedImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
+  const averageGray = pixelCount ? graySum / pixelCount : 128;
+  const hardCutoff = clamp(Math.round(averageGray + 18), 118, 176);
+  const softCutoff = clamp(Math.round(averageGray * 0.84), 72, 136);
 
   for (let index = 0; index < thresholdImage.data.length; index += 4) {
-    const value = thresholdImage.data[index] > 142 ? 255 : 0;
-    const softValue = softThresholdImage.data[index] > 112 ? 255 : 0;
+    const value = thresholdImage.data[index] > hardCutoff ? 255 : 0;
+    const softValue = softThresholdImage.data[index] > softCutoff ? 255 : 0;
     thresholdImage.data[index] = value;
     thresholdImage.data[index + 1] = value;
     thresholdImage.data[index + 2] = value;
@@ -394,6 +401,116 @@ const extractLikelyQuery = (text, scannerProfile) => {
     query: usefulLine || normalizedText.replace(/\s+/g, ' ').trim().slice(0, 80),
     type: 'manual',
   };
+};
+
+const isCanonicalCodeForProfile = (query, scannerProfile) => {
+  if (scannerProfile.slug === 'gundam') {
+    return /^(?:GD|ST)\d{2}-\d{3}(?:-P\d{1,2})?$/.test(query)
+      || /^(?:EXB|EXR|R)-\d{3}(?:-P\d{1,2})?$/.test(query);
+  }
+
+  return /^[A-Z]{1,4}\d{0,2}-?[0-9]{1,3}(?:-P\d{1,2})?$/.test(query);
+};
+
+const getRecognitionConfidence = (result) => {
+  const confidence = Number(result?.data?.confidence);
+  if (!Number.isFinite(confidence)) {
+    return 0.35;
+  }
+
+  return clamp(confidence / 100, 0, 1);
+};
+
+const extractCodeDetections = (text, scannerProfile) => {
+  const normalizedText = normalizeDetectionText(text);
+  const upperText = normalizedText.toUpperCase()
+    .replace(/\b6D/g, 'GD')
+    .replace(/\bG0/g, 'GD')
+    .replace(/\bGO/g, 'GD')
+    .replace(/\bQD/g, 'GD');
+  const textVariants = [
+    upperText,
+    upperText.replace(/\s+/g, ''),
+    upperText.replace(/[^A-Z0-9/-]+/g, ''),
+  ];
+  const codeDetections = [];
+  const seen = new Set();
+
+  for (const textVariant of textVariants) {
+    for (const pattern of scannerProfile.codePatterns) {
+      const matcher = new RegExp(pattern.source, 'gi');
+      let match = matcher.exec(textVariant);
+
+      while (match) {
+        const detectedCode = formatCodeForProfile(match[0], scannerProfile);
+        const key = detectedCode;
+
+        if (detectedCode && !seen.has(key)) {
+          seen.add(key);
+          codeDetections.push({
+            query: detectedCode,
+            type: 'code',
+            index: match.index,
+            canonical: isCanonicalCodeForProfile(detectedCode, scannerProfile),
+          });
+        }
+
+        match = matcher.exec(textVariant);
+      }
+    }
+  }
+
+  return codeDetections;
+};
+
+const chooseBestCodeDetection = (detections) => {
+  if (detections.length === 0) {
+    return null;
+  }
+
+  const grouped = new Map();
+
+  detections.forEach((detection) => {
+    const current = grouped.get(detection.query) || {
+      ...detection,
+      confidenceSum: 0,
+      maxConfidence: 0,
+      votes: 0,
+      regions: new Set(),
+      variants: new Set(),
+    };
+
+    current.votes += 1;
+    current.confidenceSum += detection.confidence || 0.35;
+    current.maxConfidence = Math.max(current.maxConfidence, detection.confidence || 0.35);
+    current.canonical = current.canonical || detection.canonical;
+
+    if (detection.region) {
+      current.regions.add(detection.region);
+    }
+
+    if (detection.variant) {
+      current.variants.add(detection.variant);
+    }
+
+    grouped.set(detection.query, current);
+  });
+
+  return Array.from(grouped.values())
+    .map((detection) => {
+      const regionBonus = Math.min(detection.regions.size, 3) * 0.08;
+      const variantBonus = Math.min(detection.variants.size, 3) * 0.04;
+      const canonicalBonus = detection.canonical ? 0.22 : 0;
+      const voteBonus = Math.min(detection.votes, 4) * 0.13;
+      const confidence = Math.max(detection.maxConfidence, detection.confidenceSum / detection.votes);
+
+      return {
+        ...detection,
+        confidence: roundConfidence(confidence),
+        score: confidence + canonicalBonus + voteBonus + regionBonus + variantBonus,
+      };
+    })
+    .sort((left, right) => right.score - left.score || right.votes - left.votes)[0];
 };
 
 const extractLikelyNameQuery = (text, scannerProfile) => {
@@ -496,7 +613,7 @@ const buildStructuredScanResult = ({
   const isKnownProfile = scannerProfile.slug !== 'default';
   const confidence = {
     tcg: roundConfidence(scannerProfile.slug === 'gundam' ? 0.96 : isKnownProfile ? 0.88 : 0.2),
-    cardCode: roundConfidence(cardCode ? (detection.type === 'code' ? 0.92 : 0.72) : 0),
+    cardCode: roundConfidence(cardCode ? (detection.type === 'code' ? detection.confidence || 0.92 : 0.72) : 0),
     cardName: roundConfidence(cardName ? (detection.type === 'name' ? 0.78 : 0.55) : 0),
   };
   const strongestCardSignal = Math.max(confidence.cardCode, confidence.cardName);
@@ -785,6 +902,10 @@ function CollectionScannerModal({
       const regionTexts = [];
       let detection = { query: '', type: 'manual' };
       const totalRegions = codeRegions.length + nameRegions.length;
+      const codeDetections = [];
+      const maxCodeAttempts = scannerProfile.maxCodeAttempts || 32;
+      let codeAttempts = 0;
+      let stopCodeSearch = false;
 
       setScanActivity((current) => ({
         ...createEmptyScanActivity(),
@@ -797,7 +918,7 @@ function CollectionScannerModal({
         detail: `${codeRegions.length} zonas de codigo y ${nameRegions.length} zonas de nombre.`,
       });
 
-      for (let regionIndex = 0; regionIndex < codeRegions.length; regionIndex += 1) {
+      for (let regionIndex = 0; regionIndex < codeRegions.length && !stopCodeSearch; regionIndex += 1) {
         const region = codeRegions[regionIndex];
         const regionImages = createProcessedRegionImages(sourceCanvas, region);
 
@@ -806,6 +927,12 @@ function CollectionScannerModal({
         }
 
         for (const regionImage of regionImages) {
+          if (codeAttempts >= maxCodeAttempts) {
+            stopCodeSearch = true;
+            break;
+          }
+
+          codeAttempts += 1;
           setScanActivity((current) => ({
             ...current,
             attempts: current.attempts + 1,
@@ -816,9 +943,19 @@ function CollectionScannerModal({
 
           const result = await recognizeRegionImage(regionImage.image, 'code');
           const detectedText = result?.data?.text || '';
+          const resultConfidence = getRecognitionConfidence(result);
           regionTexts.push(`${region.label} / ${regionImage.label}: ${detectedText.trim()}`);
 
-          const regionDetection = extractLikelyQuery(detectedText, scannerProfile);
+          const regionCodeDetections = extractCodeDetections(detectedText, scannerProfile)
+            .map((codeDetection) => ({
+              ...codeDetection,
+              confidence: resultConfidence,
+              region: region.label,
+              variant: regionImage.label,
+            }));
+          codeDetections.push(...regionCodeDetections);
+          const bestCodeDetection = chooseBestCodeDetection(codeDetections);
+          const regionDetection = bestCodeDetection || extractLikelyQuery(detectedText, scannerProfile);
           const snippet = detectedText.replace(/\s+/g, ' ').trim().slice(0, 96);
 
           setScanActivity((current) => ({
@@ -828,22 +965,36 @@ function CollectionScannerModal({
             lastType: regionDetection.type,
           }));
 
-          if (snippet || regionDetection.type === 'code') {
+          if (snippet || bestCodeDetection) {
             appendScanEvent({
-              tone: regionDetection.type === 'code' ? 'success' : 'muted',
-              title: regionDetection.type === 'code' ? `Codigo candidato: ${regionDetection.query}` : region.label,
-              detail: snippet || 'Sin texto util en esta zona.',
+              tone: bestCodeDetection ? 'success' : 'muted',
+              title: bestCodeDetection
+                ? `Codigo candidato: ${bestCodeDetection.query}`
+                : region.label,
+              detail: bestCodeDetection
+                ? `${bestCodeDetection.votes} voto(s), confianza ${Math.round(bestCodeDetection.confidence * 100)}%. ${snippet || 'Sin texto adicional.'}`
+                : snippet || 'Sin texto util en esta zona.',
             });
           }
 
-          if (regionDetection.type === 'code') {
-            detection = regionDetection;
+          if (
+            bestCodeDetection
+            && (
+              bestCodeDetection.votes >= 2
+              || (bestCodeDetection.canonical && bestCodeDetection.confidence >= 0.74)
+            )
+          ) {
+            detection = bestCodeDetection;
+            stopCodeSearch = true;
             break;
           }
         }
+      }
 
-        if (detection.type === 'code') {
-          break;
+      if (detection.type !== 'code') {
+        const bestCodeDetection = chooseBestCodeDetection(codeDetections);
+        if (bestCodeDetection) {
+          detection = bestCodeDetection;
         }
       }
 
