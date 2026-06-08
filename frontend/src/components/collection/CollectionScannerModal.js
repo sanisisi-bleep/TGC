@@ -9,6 +9,19 @@ import { getScannerProfile, SCANNER_TEXT_WHITELIST } from './scannerProfiles';
 const MIN_QUERY_LENGTH = 2;
 const DEFAULT_QUANTITY = '1';
 const MAX_PROCESSED_REGION_SIZE = 1400;
+const MAX_SCAN_EVENTS = 10;
+
+const createEmptyScanActivity = () => ({
+  cycle: 0,
+  attempts: 0,
+  inspectedRegions: 0,
+  totalRegions: 0,
+  currentRegion: '',
+  currentVariant: '',
+  lastSnippet: '',
+  lastQuery: '',
+  lastType: '',
+});
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -423,6 +436,8 @@ function CollectionScannerModal({
   const [scanError, setScanError] = useState('');
   const [detectionNotice, setDetectionNotice] = useState('');
   const [rawDetectionText, setRawDetectionText] = useState('');
+  const [scanActivity, setScanActivity] = useState(createEmptyScanActivity);
+  const [scanEvents, setScanEvents] = useState([]);
   const [manualQuery, setManualQuery] = useState('');
   const [resolvedQuery, setResolvedQuery] = useState('');
   const [selectedCardId, setSelectedCardId] = useState('');
@@ -430,6 +445,21 @@ function CollectionScannerModal({
   const [formError, setFormError] = useState('');
   const scannerProfile = useMemo(() => getScannerProfile(activeTcgSlug), [activeTcgSlug]);
   const activeGameName = activeGame?.shortName || 'este TCG';
+
+  const appendScanEvent = useCallback((event) => {
+    setScanEvents((current) => [
+      {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        time: new Date().toLocaleTimeString('es-ES', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+        ...event,
+      },
+      ...current,
+    ].slice(0, MAX_SCAN_EVENTS));
+  }, []);
 
   const stopCamera = useCallback(() => {
     scanInProgressRef.current = false;
@@ -461,6 +491,8 @@ function CollectionScannerModal({
     setScanError('');
     setDetectionNotice('');
     setRawDetectionText('');
+    setScanActivity(createEmptyScanActivity());
+    setScanEvents([]);
     setManualQuery('');
     setResolvedQuery('');
     setSelectedCardId('');
@@ -577,8 +609,21 @@ function CollectionScannerModal({
         .slice(0, scannerProfile.maxNameRegions);
       const regionTexts = [];
       let detection = { query: '', type: 'manual' };
+      const totalRegions = codeRegions.length + nameRegions.length;
 
-      for (const region of codeRegions) {
+      setScanActivity((current) => ({
+        ...createEmptyScanActivity(),
+        cycle: current.cycle + 1,
+        totalRegions,
+      }));
+      appendScanEvent({
+        tone: 'info',
+        title: 'Nueva pasada',
+        detail: `${codeRegions.length} zonas de codigo y ${nameRegions.length} zonas de nombre.`,
+      });
+
+      for (let regionIndex = 0; regionIndex < codeRegions.length; regionIndex += 1) {
+        const region = codeRegions[regionIndex];
         const regionImages = createProcessedRegionImages(sourceCanvas, region);
 
         if (regionImages.length === 0) {
@@ -586,6 +631,14 @@ function CollectionScannerModal({
         }
 
         for (const regionImage of regionImages) {
+          setScanActivity((current) => ({
+            ...current,
+            attempts: current.attempts + 1,
+            inspectedRegions: regionIndex + 1,
+            currentRegion: region.label,
+            currentVariant: regionImage.label,
+          }));
+
           const result = await recognize(regionImage.image, 'eng', {
             tessedit_char_whitelist: SCANNER_TEXT_WHITELIST,
             tessedit_pageseg_mode: '7',
@@ -595,6 +648,23 @@ function CollectionScannerModal({
           regionTexts.push(`${region.label} / ${regionImage.label}: ${detectedText.trim()}`);
 
           const regionDetection = extractLikelyQuery(detectedText, scannerProfile);
+          const snippet = detectedText.replace(/\s+/g, ' ').trim().slice(0, 96);
+
+          setScanActivity((current) => ({
+            ...current,
+            lastSnippet: snippet,
+            lastQuery: regionDetection.query || current.lastQuery,
+            lastType: regionDetection.type,
+          }));
+
+          if (snippet || regionDetection.type === 'code') {
+            appendScanEvent({
+              tone: regionDetection.type === 'code' ? 'success' : 'muted',
+              title: regionDetection.type === 'code' ? `Codigo candidato: ${regionDetection.query}` : region.label,
+              detail: snippet || 'Sin texto util en esta zona.',
+            });
+          }
+
           if (regionDetection.type === 'code') {
             detection = regionDetection;
             break;
@@ -607,20 +677,43 @@ function CollectionScannerModal({
       }
 
       if (detection.type !== 'code') {
-        for (const region of nameRegions) {
+        for (let regionIndex = 0; regionIndex < nameRegions.length; regionIndex += 1) {
+          const region = nameRegions[regionIndex];
           const regionImages = createProcessedRegionImages(sourceCanvas, region);
 
           if (regionImages.length === 0) {
             continue;
           }
 
+          setScanActivity((current) => ({
+            ...current,
+            attempts: current.attempts + 1,
+            inspectedRegions: codeRegions.length + regionIndex + 1,
+            currentRegion: region.label,
+            currentVariant: regionImages[0].label,
+          }));
+
           const result = await recognize(regionImages[0].image, 'eng');
           const detectedText = result?.data?.text || '';
           regionTexts.push(`${region.label} / ${regionImages[0].label}: ${detectedText.trim()}`);
 
           const nameDetection = extractLikelyNameQuery(detectedText, scannerProfile);
+          const snippet = detectedText.replace(/\s+/g, ' ').trim().slice(0, 96);
+
+          setScanActivity((current) => ({
+            ...current,
+            lastSnippet: snippet,
+            lastQuery: nameDetection.query || current.lastQuery,
+            lastType: nameDetection.type,
+          }));
+
           if (nameDetection.query) {
             detection = nameDetection;
+            appendScanEvent({
+              tone: 'success',
+              title: `Nombre candidato: ${nameDetection.query}`,
+              detail: snippet || 'Coincidencia por nombre.',
+            });
             break;
           }
         }
@@ -641,6 +734,13 @@ function CollectionScannerModal({
             : 'No he fijado una carta clara todavia. Acerca mejor el codigo o busca por codigo/nombre.'
       );
       setScanStatus('ready');
+      appendScanEvent({
+        tone: canResolve ? 'success' : 'warning',
+        title: canResolve ? `Busqueda enviada: ${nextQuery}` : 'Sin candidato claro',
+        detail: canResolve
+          ? 'Se ha enviado al resolvedor de cartas.'
+          : 'Se seguira intentando mientras no haya candidatos.',
+      });
 
       trackProductEvent('scanner_analysis_completed', {
         tgc: activeTcgSlug,
@@ -650,12 +750,17 @@ function CollectionScannerModal({
     } catch (_error) {
       setScanStatus('error');
       setScanError('No se pudo analizar la carta. Puedes buscar por codigo o nombre.');
+      appendScanEvent({
+        tone: 'error',
+        title: 'Error de analisis',
+        detail: 'No se pudo completar esta pasada.',
+      });
       trackProductEvent('scanner_analysis_completed', {
         tgc: activeTcgSlug,
         has_query: false,
       });
     }
-  }, [activeTcgSlug, scannerProfile]);
+  }, [activeTcgSlug, appendScanEvent, scannerProfile]);
 
   const analyzeCurrentFrame = useCallback(async ({ force = false } = {}) => {
     if (scanInProgressRef.current) {
@@ -815,14 +920,60 @@ function CollectionScannerModal({
                 </div>
 
                 {cameraStatus === 'ready' && (
-                  <div className={`scanner-live-status ${scanStatus === 'detecting' ? 'is-detecting' : ''}`} aria-live="polite">
-                    <strong>{scanStatus === 'detecting' ? 'Detectando carta...' : 'Deteccion activa'}</strong>
-                    <span>
-                      {scanStatus === 'detecting'
-                        ? 'Manten la carta quieta un momento.'
-                        : 'Si no aparece candidato, acerca el codigo o pulsa reintentar.'}
-                    </span>
-                  </div>
+                  <>
+                    <div className={`scanner-live-status ${scanStatus === 'detecting' ? 'is-detecting' : ''}`} aria-live="polite">
+                      <strong>{scanStatus === 'detecting' ? 'Escaneando en tiempo real...' : 'Escaneo activo'}</strong>
+                      <span>
+                        {scanStatus === 'detecting'
+                          ? 'Manten la carta quieta un momento.'
+                          : 'Si no aparece candidato, acerca el codigo o pulsa reintentar.'}
+                      </span>
+                    </div>
+
+                    <div className="scanner-admin-trace" aria-live="polite">
+                      <div className="scanner-admin-trace-header">
+                        <strong>Panel admin de deteccion</strong>
+                        <span>
+                          Pasada {scanActivity.cycle || 0} | Intentos {scanActivity.attempts || 0}
+                        </span>
+                      </div>
+                      <div className="scanner-admin-trace-grid">
+                        <span>
+                          <b>Zona actual</b>
+                          {scanActivity.currentRegion || 'Esperando imagen estable'}
+                        </span>
+                        <span>
+                          <b>Variante</b>
+                          {scanActivity.currentVariant || 'Sin intento todavia'}
+                        </span>
+                        <span>
+                          <b>Progreso</b>
+                          {scanActivity.totalRegions
+                            ? `${scanActivity.inspectedRegions}/${scanActivity.totalRegions} zonas`
+                            : 'Preparando zonas'}
+                        </span>
+                        <span>
+                          <b>Query candidata</b>
+                          {scanActivity.lastQuery || 'Sin candidato'}
+                        </span>
+                      </div>
+                      <div className="scanner-admin-last-text">
+                        <b>Ultima pista</b>
+                        <code>{scanActivity.lastSnippet || 'Todavia no hay texto util en la imagen.'}</code>
+                      </div>
+                      <div className="scanner-admin-events">
+                        {scanEvents.length === 0 ? (
+                          <span className="scanner-admin-event is-muted">Activa la camara para ver eventos en vivo.</span>
+                        ) : scanEvents.map((event) => (
+                          <span key={event.id} className={`scanner-admin-event is-${event.tone || 'muted'}`}>
+                            <i>{event.time}</i>
+                            <b>{event.title}</b>
+                            <em>{event.detail}</em>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </>
                 )}
 
                 {cameraError && <p className="scanner-error">{cameraError}</p>}

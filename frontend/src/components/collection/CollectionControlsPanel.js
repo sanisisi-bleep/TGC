@@ -18,6 +18,7 @@ function CollectionControlsPanel({
   onClear,
   isGuestDemo = false,
   onOpenScanner,
+  canUseScanner = false,
 }) {
   return (
     <section className="panel collection-controls-panel">
@@ -29,19 +30,19 @@ function CollectionControlsPanel({
           </span>
         </div>
 
-        <div className="collection-scanner-entry">
-          <button
-            type="button"
-            className="scanner-open-button"
-            onClick={onOpenScanner}
-            disabled={isGuestDemo || !onOpenScanner}
-          >
-            Escanear carta
-          </button>
-          <span>
-            {isGuestDemo ? 'Disponible al registrarte.' : 'Deteccion local con confirmacion antes de guardar.'}
-          </span>
-        </div>
+        {canUseScanner && (
+          <div className="collection-scanner-entry">
+            <button
+              type="button"
+              className="scanner-open-button"
+              onClick={onOpenScanner}
+              disabled={!onOpenScanner}
+            >
+              Escanear carta
+            </button>
+            <span>Herramienta admin para diagnosticar deteccion y sumar copias con confirmacion.</span>
+          </div>
+        )}
       </div>
 
       <div className="collection-controls">

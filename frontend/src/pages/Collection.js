@@ -119,6 +119,8 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const deferredCollectionSearchTerm = useDeferredValue(collectionSearchTerm);
   const advancedMode = Boolean(profile?.advanced_mode);
+  const isAdmin = (profile?.role || 'player') === 'admin';
+  const canUseScanner = !isGuestDemo && isAdmin;
 
   const collectionQuery = useQuery({
     queryKey: queryKeys.collection(activeTgc?.id),
@@ -167,6 +169,12 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
     setCollectionSort('name-asc');
     setSelectedCard(null);
   }, [activeTcgSlug, activeTgc?.id]);
+
+  useEffect(() => {
+    if (!canUseScanner && isScannerOpen) {
+      setIsScannerOpen(false);
+    }
+  }, [canUseScanner, isScannerOpen]);
 
   useEffect(() => {
     setQuantityInputs((current) => {
@@ -407,10 +415,10 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
   };
 
   const openScanner = () => {
-    if (isGuestDemo) {
+    if (!canUseScanner) {
       showToast({
         type: 'info',
-        message: 'Registrate para escanear cartas y guardar copias en tu coleccion.',
+        message: 'El scanner esta disponible solo para administradores mientras lo afinamos.',
       });
       return;
     }
@@ -687,7 +695,8 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         onSortChange={handleCollectionSortChange}
         onClear={clearCollectionFilters}
         isGuestDemo={isGuestDemo}
-        onOpenScanner={openScanner}
+        canUseScanner={canUseScanner}
+        onOpenScanner={canUseScanner ? openScanner : undefined}
       />
 
       <div className={`collection-list ${collectionView !== 'detail' ? 'is-grid' : ''}`}>
@@ -740,16 +749,18 @@ function Collection({ activeTcgSlug, activeTgc, isGuestDemo = false }) {
         onClose={() => setSelectedCard(null)}
       />
 
-      <CollectionScannerModal
-        isOpen={isScannerOpen}
-        activeTgc={activeTgc}
-        activeTcgSlug={activeTcgSlug}
-        activeGame={activeGame}
-        isGuestDemo={isGuestDemo}
-        isAdding={addScannedCardMutation.isPending}
-        onAddCard={addScannedCardToCollection}
-        onClose={() => setIsScannerOpen(false)}
-      />
+      {canUseScanner && (
+        <CollectionScannerModal
+          isOpen={isScannerOpen}
+          activeTgc={activeTgc}
+          activeTcgSlug={activeTcgSlug}
+          activeGame={activeGame}
+          isGuestDemo={isGuestDemo}
+          isAdding={addScannedCardMutation.isPending}
+          onAddCard={addScannedCardToCollection}
+          onClose={() => setIsScannerOpen(false)}
+        />
+      )}
     </div>
   );
 }
