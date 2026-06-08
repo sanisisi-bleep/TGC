@@ -182,6 +182,7 @@ const buildCardBounds = (canvas, template, scannerProfile) => {
     width: cardWidth,
     height: cardHeight,
     label: `${Math.round(template.widthRatio * 100)}%`,
+    priority: template.priority || clamp(1 - (Math.abs(template.centerX - 0.5) * 0.8) - (Math.abs(template.centerY - 0.52) * 0.55), 0.55, 1),
   };
 };
 
@@ -215,6 +216,8 @@ const cropRegionFromCard = (cardBounds, region) => ({
   height: cardBounds.height * region.height,
   scale: region.scale || 3,
   mode: region.mode || 'code',
+  priority: clamp((region.priority || 0.9) * (cardBounds.priority || 0.8), 0.45, 1),
+  source: 'card',
 });
 
 const getScannerRegions = (sourceCanvas, scannerProfile) => {
@@ -228,6 +231,8 @@ const getScannerRegions = (sourceCanvas, scannerProfile) => {
     height: sourceCanvas.height * region.height,
     scale: region.scale || 3,
     mode: region.mode || 'code',
+    priority: region.priority || 0.42,
+    source: 'frame',
     label: `${region.label} (imagen)`,
   }));
 
@@ -238,7 +243,7 @@ const getScannerRegions = (sourceCanvas, scannerProfile) => {
     }))
   ));
 
-  return [...fullFrameRegions, ...cardRegions];
+  return [...cardRegions, ...fullFrameRegions];
 };
 
 const createProcessedRegionImages = (sourceCanvas, region) => {
@@ -475,6 +480,8 @@ const chooseBestCodeDetection = (detections) => {
       ...detection,
       confidenceSum: 0,
       maxConfidence: 0,
+      maxPriority: 0,
+      prioritySum: 0,
       votes: 0,
       regions: new Set(),
       variants: new Set(),
@@ -483,6 +490,8 @@ const chooseBestCodeDetection = (detections) => {
     current.votes += 1;
     current.confidenceSum += detection.confidence || 0.35;
     current.maxConfidence = Math.max(current.maxConfidence, detection.confidence || 0.35);
+    current.prioritySum += detection.priority || 0.5;
+    current.maxPriority = Math.max(current.maxPriority, detection.priority || 0.5);
     current.canonical = current.canonical || detection.canonical;
 
     if (detection.region) {
@@ -503,11 +512,13 @@ const chooseBestCodeDetection = (detections) => {
       const canonicalBonus = detection.canonical ? 0.22 : 0;
       const voteBonus = Math.min(detection.votes, 4) * 0.13;
       const confidence = Math.max(detection.maxConfidence, detection.confidenceSum / detection.votes);
+      const averagePriority = detection.prioritySum / detection.votes;
+      const priorityBonus = (detection.maxPriority * 0.2) + (averagePriority * 0.16);
 
       return {
         ...detection,
         confidence: roundConfidence(confidence),
-        score: confidence + canonicalBonus + voteBonus + regionBonus + variantBonus,
+        score: confidence + canonicalBonus + voteBonus + regionBonus + variantBonus + priorityBonus,
       };
     })
     .sort((left, right) => right.score - left.score || right.votes - left.votes)[0];
@@ -540,9 +551,13 @@ const extractLikelyNameQuery = (text, scannerProfile) => {
   };
 };
 
-const shouldAutoResolveDetection = (detection) => (
+const shouldAutoResolveDetection = (detection, scannerProfile) => (
   detection.type === 'code'
-  || (detection.type === 'name' && detection.query.trim().length >= 4)
+  || (
+    !scannerProfile.requireCodeForAutoResolve
+    && detection.type === 'name'
+    && detection.query.trim().length >= 4
+  )
 );
 
 const getCandidateMatchLabel = (candidate) => {
@@ -952,6 +967,7 @@ function CollectionScannerModal({
               confidence: resultConfidence,
               region: region.label,
               variant: regionImage.label,
+              priority: region.priority || 0.5,
             }));
           codeDetections.push(...regionCodeDetections);
           const bestCodeDetection = chooseBestCodeDetection(codeDetections);
@@ -981,7 +997,11 @@ function CollectionScannerModal({
             bestCodeDetection
             && (
               bestCodeDetection.votes >= 2
-              || (bestCodeDetection.canonical && bestCodeDetection.confidence >= 0.74)
+              || (
+                bestCodeDetection.canonical
+                && bestCodeDetection.confidence >= 0.78
+                && bestCodeDetection.maxPriority >= 0.72
+              )
             )
           ) {
             detection = bestCodeDetection;
@@ -1047,7 +1067,7 @@ function CollectionScannerModal({
         .filter(Boolean)
         .join('\n\n');
       const nextQuery = detection.query || '';
-      const canResolve = shouldAutoResolveDetection(detection);
+      const canResolve = shouldAutoResolveDetection(detection, scannerProfile);
       const nextStructuredResult = buildStructuredScanResult({
         activeGameName,
         detection,
