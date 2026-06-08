@@ -341,6 +341,24 @@ const createScanOverlays = (sourceCanvas, scannerPlan) => {
   return [...cardOverlay, ...regionOverlays];
 };
 
+const createPaddedDataUrl = (canvas, background = '#ffffff') => {
+  const padding = Math.max(12, Math.round(Math.min(canvas.width, canvas.height) * 0.08));
+  const paddedCanvas = document.createElement('canvas');
+  paddedCanvas.width = canvas.width + (padding * 2);
+  paddedCanvas.height = canvas.height + (padding * 2);
+  const paddedContext = paddedCanvas.getContext('2d');
+
+  if (!paddedContext) {
+    return canvas.toDataURL('image/png');
+  }
+
+  paddedContext.fillStyle = background;
+  paddedContext.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
+  paddedContext.drawImage(canvas, padding, padding);
+
+  return paddedCanvas.toDataURL('image/png');
+};
+
 const createProcessedRegionImages = (sourceCanvas, region) => {
   const sourceX = clamp(Math.round(region.x), 0, sourceCanvas.width - 1);
   const sourceY = clamp(Math.round(region.y), 0, sourceCanvas.height - 1);
@@ -396,7 +414,6 @@ const createProcessedRegionImages = (sourceCanvas, region) => {
     return [{ label: 'contraste', image: outputCanvas.toDataURL('image/png') }];
   }
 
-  const contrastImageUrl = outputCanvas.toDataURL('image/png');
   const thresholdCanvas = document.createElement('canvas');
   thresholdCanvas.width = outputCanvas.width;
   thresholdCanvas.height = outputCanvas.height;
@@ -412,13 +429,19 @@ const createProcessedRegionImages = (sourceCanvas, region) => {
   invertedCanvas.height = outputCanvas.height;
   const invertedContext = invertedCanvas.getContext('2d', { willReadFrequently: true });
 
-  if (!thresholdContext || !softThresholdContext || !invertedContext) {
-    return [{ label: 'contraste', image: contrastImageUrl }];
+  const softInvertedCanvas = document.createElement('canvas');
+  softInvertedCanvas.width = outputCanvas.width;
+  softInvertedCanvas.height = outputCanvas.height;
+  const softInvertedContext = softInvertedCanvas.getContext('2d', { willReadFrequently: true });
+
+  if (!thresholdContext || !softThresholdContext || !invertedContext || !softInvertedContext) {
+    return [{ label: 'contraste', image: createPaddedDataUrl(outputCanvas) }];
   }
 
   const thresholdImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
   const softThresholdImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
   const invertedImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
+  const softInvertedImage = context.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
   const averageGray = pixelCount ? graySum / pixelCount : 128;
   const hardCutoff = clamp(Math.round(averageGray + 18), 118, 176);
   const softCutoff = clamp(Math.round(averageGray * 0.84), 72, 136);
@@ -438,16 +461,23 @@ const createProcessedRegionImages = (sourceCanvas, region) => {
     invertedImage.data[index] = invertedValue;
     invertedImage.data[index + 1] = invertedValue;
     invertedImage.data[index + 2] = invertedValue;
+
+    const softInvertedValue = softValue === 255 ? 0 : 255;
+    softInvertedImage.data[index] = softInvertedValue;
+    softInvertedImage.data[index + 1] = softInvertedValue;
+    softInvertedImage.data[index + 2] = softInvertedValue;
   }
 
   thresholdContext.putImageData(thresholdImage, 0, 0);
   softThresholdContext.putImageData(softThresholdImage, 0, 0);
   invertedContext.putImageData(invertedImage, 0, 0);
+  softInvertedContext.putImageData(softInvertedImage, 0, 0);
 
   return [
-    { label: 'contraste', image: contrastImageUrl },
+    { label: 'invertido limpio', image: createPaddedDataUrl(invertedCanvas) },
+    { label: 'invertido suave', image: createPaddedDataUrl(softInvertedCanvas) },
+    { label: 'contraste', image: createPaddedDataUrl(outputCanvas) },
     { label: 'binario suave', image: softThresholdCanvas.toDataURL('image/png') },
-    { label: 'invertido', image: invertedCanvas.toDataURL('image/png') },
     { label: 'binario', image: thresholdCanvas.toDataURL('image/png') },
   ];
 };
@@ -647,7 +677,13 @@ const extractLikelyNameQuery = (text, scannerProfile) => {
 };
 
 const shouldAutoResolveDetection = (detection, scannerProfile) => (
-  detection.type === 'code'
+  (
+    detection.type === 'code'
+    && (
+      !scannerProfile.requireCodeForAutoResolve
+      || detection.canonical !== false
+    )
+  )
   || (
     !scannerProfile.requireCodeForAutoResolve
     && detection.type === 'name'
@@ -728,6 +764,18 @@ const getScanStageLabel = (scanStage) => {
   return 'Esperando imagen';
 };
 
+const getScanReadoutHint = (scanActivity, scannerProfile) => {
+  if (scanActivity.lastType === 'code' && scanActivity.lastQuery) {
+    return scanActivity.lastQuery;
+  }
+
+  if (scannerProfile.requireCodeForAutoResolve) {
+    return 'Codigo pendiente: acerca la esquina superior derecha';
+  }
+
+  return scanActivity.lastSnippet || 'Esperando una pista util en la imagen.';
+};
+
 const roundConfidence = (value) => Math.round(Math.max(0, Math.min(1, value)) * 100) / 100;
 
 const buildStructuredScanResult = ({
@@ -749,29 +797,32 @@ const buildStructuredScanResult = ({
       ? fallbackName.query
       : null;
   const isKnownProfile = scannerProfile.slug !== 'default';
+  const requiresCode = Boolean(scannerProfile.requireCodeForAutoResolve);
+  const safeCardName = requiresCode && !cardCode ? null : cardName;
   const confidence = {
     tcg: roundConfidence(scannerProfile.slug === 'gundam' ? 0.96 : isKnownProfile ? 0.88 : 0.2),
     cardCode: roundConfidence(cardCode ? (detection.type === 'code' ? detection.confidence || 0.92 : 0.72) : 0),
-    cardName: roundConfidence(cardName ? (detection.type === 'name' ? 0.78 : 0.55) : 0),
+    cardName: roundConfidence(safeCardName ? (detection.type === 'name' ? 0.78 : 0.55) : 0),
   };
-  const strongestCardSignal = Math.max(confidence.cardCode, confidence.cardName);
+  const strongestCardSignal = requiresCode ? confidence.cardCode : Math.max(confidence.cardCode, confidence.cardName);
   const evidence = [
     isKnownProfile ? `Perfil activo: ${activeGameName}` : 'Perfil generico activo',
     cardCode ? `Patron de codigo: ${cardCode}` : null,
-    cardName ? `Nombre candidato: ${cardName}` : null,
+    safeCardName ? `Nombre candidato: ${safeCardName}` : null,
+    requiresCode && !cardCode ? 'Este TCG necesita codigo para confirmar' : null,
     strongestCardSignal ? null : 'Sin candidato fiable todavia',
   ].filter(Boolean);
 
   return {
     tcg: activeGameName,
     cardCode,
-    cardName,
+    cardName: safeCardName,
     confidence: {
       ...confidence,
       overall: roundConfidence((confidence.tcg * 0.3) + (strongestCardSignal * 0.7)),
     },
     evidence,
-    needsManualReview: strongestCardSignal < 0.7,
+    needsManualReview: requiresCode ? !cardCode : strongestCardSignal < 0.7,
   };
 };
 
@@ -1076,9 +1127,13 @@ function CollectionScannerModal({
       const codeRegions = scannerRegions
         .filter((region) => region.mode !== 'name')
         .slice(0, scannerProfile.maxCodeRegions);
+      const allowNameFallback = !(
+        scannerProfile.requireCodeForAutoResolve
+        && scannerProfile.skipNameFallbackWhenCodeRequired
+      );
       const nameRegions = scannerRegions
         .filter((region) => region.mode === 'name')
-        .slice(0, scannerProfile.maxNameRegions);
+        .slice(0, allowNameFallback ? scannerProfile.maxNameRegions : 0);
       const regionTexts = [];
       let detection = { query: '', type: 'manual' };
       const totalRegions = codeRegions.length + nameRegions.length;
@@ -1095,7 +1150,9 @@ function CollectionScannerModal({
       appendScanEvent({
         tone: 'info',
         title: 'Nueva pasada',
-        detail: `${codeRegions.length} zonas de codigo y ${nameRegions.length} zonas de nombre.`,
+        detail: allowNameFallback
+          ? `${codeRegions.length} zonas de codigo y ${nameRegions.length} zonas de referencia.`
+          : `${codeRegions.length} zonas de codigo. Confirmacion por codigo obligatorio.`,
       });
 
       for (let regionIndex = 0; regionIndex < codeRegions.length && !stopCodeSearch; regionIndex += 1) {
@@ -1144,8 +1201,8 @@ function CollectionScannerModal({
           setScanActivity((current) => ({
             ...current,
             lastSnippet: snippet,
-            lastQuery: regionDetection.query || current.lastQuery,
-            lastType: regionDetection.type,
+            lastQuery: regionDetection.type === 'code' ? regionDetection.query : current.lastQuery,
+            lastType: regionDetection.type === 'code' ? 'code' : current.lastType || 'manual',
           }));
 
           if (snippet || bestCodeDetection) {
@@ -1185,7 +1242,7 @@ function CollectionScannerModal({
         }
       }
 
-      if (detection.type !== 'code') {
+      if (detection.type !== 'code' && allowNameFallback) {
         for (let regionIndex = 0; regionIndex < nameRegions.length; regionIndex += 1) {
           const region = nameRegions[regionIndex];
           const regionImages = createProcessedRegionImages(sourceCanvas, region);
@@ -1228,6 +1285,12 @@ function CollectionScannerModal({
             break;
           }
         }
+      } else if (detection.type !== 'code' && scannerProfile.requireCodeForAutoResolve) {
+        appendScanEvent({
+          tone: 'warning',
+          title: 'Codigo pendiente',
+          detail: 'No se ha encontrado un patron valido. Acerca la esquina superior derecha y evita reflejos.',
+        });
       }
 
       const detectedText = regionTexts.filter(Boolean).join('\n\n');
@@ -1251,9 +1314,11 @@ function CollectionScannerModal({
       setDetectionNotice(
         detection.type === 'code'
           ? `Carta detectada por codigo: ${nextQuery}`
-          : detection.type === 'name'
+          : detection.type === 'name' && !scannerProfile.requireCodeForAutoResolve
             ? `Posible carta detectada por nombre: ${nextQuery}`
-            : 'No he fijado una carta clara todavia. Acerca mejor el codigo o busca por codigo/nombre.'
+            : scannerProfile.requireCodeForAutoResolve
+              ? 'Codigo pendiente. Acerca la esquina superior derecha hasta que se vea nitida.'
+              : 'No he fijado una carta clara todavia. Acerca mejor el codigo o busca por codigo/nombre.'
       );
       setScanStatus('ready');
       setReaderProgress('');
@@ -1545,7 +1610,7 @@ function CollectionScannerModal({
                       <div className="scanner-vision-readout">
                         <strong>{getScanStageLabel(scanStage)}</strong>
                         <span>{scanActivity.currentRegion || scannerProfile.guide}</span>
-                        <code>{scanActivity.lastSnippet || 'Esperando una pista util en la imagen.'}</code>
+                        <code>{getScanReadoutHint(scanActivity, scannerProfile)}</code>
                       </div>
                     </div>
                   )}
